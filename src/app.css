@@ -1,0 +1,63 @@
+/* Inkboard global styles — dark-first, neutral canvas app shell */
+:root {
+	color-scheme: dark;
+	--bg-app: #1e1f24;
+	--bg-panel: #26272e;
+	--bg-hover: #2f313a;
+	--bg-active: #3a3d48;
+	--border: #3a3d48;
+	--text-primary: #e8e9ec;
+	--text-secondary: #9a9ca8;
+	--accent: #5b8cff;
+	--danger: #e5534b;
+	--radius: 6px;
+	--font-ui:
+		'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	overflow: hidden;
+	font-family: var(--font-ui);
+	font-size: 14px;
+	color: var(--text-primary);
+	background: var(--bg-app);
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+button {
+	font-family: inherit;
+	font-size: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+	cursor: pointer;
+}
+
+input,
+textarea {
+	font-family: inherit;
+}
+
+/* thin scrollbars for panels */
+::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--border);
+	border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}

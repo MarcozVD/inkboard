@@ -1,0 +1,33 @@
+[package]
+name = "inkboard"
+version = "0.1.0"
+description = "Inkboard — infinite whiteboard app (Tauri 2 + SvelteKit)"
+authors = ["Inkboard"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "inkboard_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-log = "2"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+anyhow = "1"
+log = "0.4"
+
+# --- Dependencias por fase (añadir cuando se implemente la fase) ---
+# Fase 11 — Persistencia: rusqlite { version = "0.31", features = ["bundled"] }, zstd = "0.13", sha2 = "0.10", tokio = { version = "1", features = ["full"] }
+# Fase 13/14 — Import/Export: image = { version = "0.25", features = ["png", "jpeg", "webp"] }, resvg = "0.43", usvg = "0.43", printpdf = "0.7", zip = "2.1"

@@ -1,0 +1,2 @@
+-- Fase 11 — SQLite schema (implementation_plan.md §16).
+-- Created as scaffold; filled when persistence lands.

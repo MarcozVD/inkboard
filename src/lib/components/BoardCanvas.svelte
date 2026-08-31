@@ -14,6 +14,9 @@
 	import type { ShapeType } from '$lib/objects/types';
 	import { stickyNoteColors } from '$lib/objects/renderers';
 	import { loadBoard, saveBoard } from '$lib/io/persistence';
+	import { boardToSvg } from '$lib/io/SvgExporter';
+	import { boardToPngDataUrl } from '$lib/io/PngExporter';
+	import { serializeBoard } from '$lib/io/InternalFormat';
 	import type { Board } from '$lib/objects/types';
 
 	let { boardId }: { boardId: string } = $props();
@@ -23,6 +26,7 @@
 	let editingText = $state<EditableObj | null>(null);
 	let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
 	let boardName = $state('Untitled');
+	let showExportMenu = $state(false);
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -470,6 +474,63 @@
 		markDirty();
 	}
 
+	// ── Fase 14: export (browser download — works in Tauri webview too) ──
+	function downloadFile(filename: string, content: string, mime: string) {
+		const blob = new Blob([content], { type: mime });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = filename;
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		URL.revokeObjectURL(url);
+	}
+
+	async function exportBoard(format: 'svg' | 'png' | 'json') {
+		if (!engine) return;
+		showExportMenu = false;
+		const objects = engine.store.toJSON();
+		const base = `inkboard-${boardId.slice(0, 8)}`;
+		try {
+			if (format === 'svg') {
+				const svg = boardToSvg(objects);
+				downloadFile(`${base}.svg`, svg, 'image/svg+xml');
+			} else if (format === 'png') {
+				const dataUrl = await boardToPngDataUrl(objects, { scale: 2 });
+				// data URL → blob
+				const res = await fetch(dataUrl);
+				const blob = await res.blob();
+				const url = URL.createObjectURL(blob);
+				const a = document.createElement('a');
+				a.href = url;
+				a.download = `${base}.png`;
+				document.body.appendChild(a);
+				a.click();
+				a.remove();
+				URL.revokeObjectURL(url);
+			} else {
+				const board: Board = {
+					id: boardId,
+					workspaceId: 'default',
+					name: boardName,
+					version: 1,
+					schemaVersion: '1.0.0',
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					camera,
+					objects,
+					background: { type: 'solid', color: '#1e1f24' },
+					grid,
+					metadata: {}
+				};
+				downloadFile(`${base}.json`, serializeBoard(board), 'application/json');
+			}
+		} catch (err) {
+			console.error('export failed', err);
+		}
+	}
+
 	function onKeyUp(e: KeyboardEvent) {
 		if (e.code === 'Space') {
 			spaceDown = false;
@@ -628,6 +689,12 @@
 		<span class="save-indicator" class:saved={saveState === 'saved'} class:saving={saveState === 'saving'}>
 			{saveState === 'saving' ? '●' : saveState === 'saved' ? '✓' : ''}
 		</span>
+		<span class="toolbar-divider"></span>
+		<button
+			title="Export"
+			class:active={showExportMenu}
+			onclick={() => (showExportMenu = !showExportMenu)}
+		>⭳</button>
 		{#each TOOLBAR_TOOLS as tool}
 			<button
 				class:active={activeTool === tool}
@@ -665,6 +732,15 @@
 					onclick={() => engine?.stickyTool.setColor(i)}
 				></button>
 			{/each}
+		</div>
+	{/if}
+
+	<!-- Export menu -->
+	{#if showExportMenu}
+		<div class="export-menu">
+			<button onclick={() => exportBoard('png')}>PNG</button>
+			<button onclick={() => exportBoard('svg')}>SVG</button>
+			<button onclick={() => exportBoard('json')}>JSON</button>
 		</div>
 	{/if}
 
@@ -826,5 +902,35 @@
 	.shape-palette button.active {
 		background: var(--accent);
 		color: #fff;
+	}
+
+	.export-menu {
+		position: absolute;
+		top: 62px;
+		right: 12px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 4px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		z-index: 10;
+		min-width: 90px;
+	}
+
+	.export-menu button {
+		width: 100%;
+		padding: 6px 12px;
+		text-align: left;
+		border-radius: 6px;
+		color: var(--text-secondary);
+		font-size: 13px;
+	}
+
+	.export-menu button:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
 	}
 </style>

@@ -9,15 +9,16 @@
 	import { createShape } from '$lib/objects/factory';
 	import { v4 as uuidv4 } from 'uuid';
 	import TextEditor from '$lib/components/TextEditor.svelte';
-	import type { TextObject } from '$lib/objects/types';
+	import type { EditableObj, TextObject } from '$lib/objects/types';
 	import { SHAPE_TYPES } from '$lib/tools/ShapeTool';
 	import type { ShapeType } from '$lib/objects/types';
+	import { stickyNoteColors } from '$lib/objects/renderers';
 
 	let { boardId }: { boardId: string } = $props();
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let activeTool = $state<ToolId>('select');
-	let editingText = $state<TextObject | null>(null);
+	let editingText = $state<EditableObj | null>(null);
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -244,7 +245,7 @@
 		return icons[shape];
 	}
 
-	function openTextEditor(obj: TextObject) {
+	function openTextEditor(obj: EditableObj) {
 		editingText = obj;
 	}
 
@@ -254,8 +255,8 @@
 		const wx = (e.clientX - c.x) / c.zoom;
 		const wy = (e.clientY - c.y) / c.zoom;
 		const hit = engine.selectionManager.hitTest({ x: wx, y: wy });
-		if (hit && hit.type === 'text') {
-			openTextEditor(hit as TextObject);
+		if (hit && (hit.type === 'text' || hit.type === 'sticky_note')) {
+			openTextEditor(hit as unknown as EditableObj);
 		}
 	}
 
@@ -483,6 +484,9 @@
 		// TextTool → open in-canvas editor after creating a text object
 		engine.textTool.onEditRequest = (obj) => openTextEditor(obj);
 
+		// StickyNoteTool → open editor after creating a note
+		engine.stickyTool.onEditRequest = (obj) => openTextEditor(obj as unknown as EditableObj);
+
 		const resize = () => {
 			canvas.width = window.innerWidth;
 			canvas.height = window.innerHeight;
@@ -556,6 +560,20 @@
 		</div>
 	{/if}
 
+	<!-- Sticky color palette -->
+	{#if activeTool === 'sticky'}
+		<div class="shape-palette">
+			{#each stickyNoteColors() as color, i}
+				<button
+					class:active={engine?.stickyTool.currentColor === color}
+					title={'Color ' + i}
+					style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {engine?.stickyTool.currentColor === color ? '#5b8cff' : 'transparent'};"
+					onclick={() => engine?.stickyTool.setColor(i)}
+				></button>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- In-canvas text editor -->
 	{#if editingText}
 		<TextEditor
@@ -568,8 +586,10 @@
 					obj.content = content;
 					const lines = content.split('\n');
 					const longest = Math.max(1, ...lines.map((l) => l.length));
-					obj.transform.width = Math.max(40, longest * obj.style.fontSize * 0.6 + obj.style.padding * 2);
-					obj.transform.height = Math.max(30, lines.length * obj.style.fontSize * obj.style.lineHeight + obj.style.padding * 2);
+					const pad = obj.style.padding ?? 4;
+					const lh = obj.style.lineHeight ?? 1.3;
+					obj.transform.width = Math.max(40, longest * obj.style.fontSize * 0.6 + pad * 2);
+					obj.transform.height = Math.max(30, lines.length * obj.style.fontSize * lh + pad * 2);
 					obj.updatedAt = Date.now();
 					engine.store.notifyMoved([obj.id]);
 					markDirty();

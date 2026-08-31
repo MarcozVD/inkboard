@@ -206,3 +206,22 @@ export interface GroupObject extends BaseObject {
 	type: 'group';
 	childIds: string[];
 }
+
+// ── Editable (text / sticky note — shared shape for the in-canvas editor) ──
+export interface EditableObj {
+	id: string;
+	content: string;
+	updatedAt: number;
+	transform: { x: number; y: number; width: number; height: number };
+	style: {
+		fontFamily: string;
+		fontSize: number;
+		fontWeight?: string;
+		fontStyle?: string;
+		textAlign?: string;
+		lineHeight?: number;
+		color: string;
+		backgroundColor?: string;
+		padding?: number;
+	};
+}

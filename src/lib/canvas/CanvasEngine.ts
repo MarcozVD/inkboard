@@ -7,6 +7,7 @@ import { EraserTool } from '$lib/tools/EraserTool';
 import { TextTool } from '$lib/tools/TextTool';
 import { ShapeTool } from '$lib/tools/ShapeTool';
 import { ImageTool } from '$lib/tools/ImageTool';
+import { StickyNoteTool } from '$lib/tools/StickyNoteTool';
 import type { BaseTool } from '$lib/tools/BaseTool';
 import type { CameraState } from '$lib/canvas/Camera';
 
@@ -25,6 +26,7 @@ export class CanvasEngine {
 	readonly textTool: TextTool;
 	readonly shapeTool: ShapeTool;
 	readonly imageTool: ImageTool;
+	readonly stickyTool: StickyNoteTool;
 
 	constructor(opts: { camera: () => CameraState; onDirty: () => void; onGestureEnd?: () => void }) {
 		this.cameraFn = opts.camera;
@@ -45,6 +47,7 @@ export class CanvasEngine {
 		this.textTool = new TextTool(ctx);
 		this.shapeTool = new ShapeTool(ctx);
 		this.imageTool = new ImageTool(ctx);
+		this.stickyTool = new StickyNoteTool(ctx);
 		this.tools.set('select', this.selectTool as unknown as BaseTool);
 		this.tools.set('pen', new PenTool(ctx));
 		this.tools.set('highlighter', new HighlighterTool(ctx));
@@ -52,6 +55,7 @@ export class CanvasEngine {
 		this.tools.set('text', this.textTool);
 		this.tools.set('shape', this.shapeTool);
 		this.tools.set('image', this.imageTool);
+		this.tools.set('sticky', this.stickyTool);
 	}
 
 	get activeTool(): ToolId {

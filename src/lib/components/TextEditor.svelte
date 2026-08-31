@@ -1,8 +1,9 @@
 <script lang="ts">
 	// TextEditor — HTML textarea overlay positioned over the canvas for in-canvas
 	// text editing (§6 decision: HTML overlay instead of canvas text editing).
+	// Works for both TextObject and StickyNoteObject (anything with content + style).
 	import { onMount } from 'svelte';
-	import type { TextObject } from '$lib/objects/types';
+	import type { EditableObj } from '$lib/objects/types';
 
 	let {
 		obj,
@@ -10,7 +11,7 @@
 		onCommit,
 		onCancel
 	}: {
-		obj: TextObject;
+		obj: EditableObj;
 		camera: { x: number; y: number; zoom: number };
 		onCommit: (content: string) => void;
 		onCancel: () => void;
@@ -23,6 +24,8 @@
 	const top = $derived(obj.transform.y * camera.zoom + camera.y);
 	const width = $derived(Math.max(obj.transform.width * camera.zoom, 120));
 	const height = $derived(Math.max(obj.transform.height * camera.zoom, 60));
+	// sticky notes use textColor; text objects use color
+	const fgColor = $derived((obj.style as { textColor?: string }).textColor ?? obj.style.color);
 
 	onMount(() => {
 		textarea?.focus();
@@ -38,7 +41,6 @@
 			e.preventDefault();
 			onCancel();
 		}
-		// commit on blur happens naturally; Enter inserts newline (multiline text)
 	}
 </script>
 
@@ -49,8 +51,10 @@
 	value={obj.content}
 	style="left: {left}px; top: {top}px; width: {width}px; height: {height}px;
 		font-family: {obj.style.fontFamily}; font-size: {obj.style.fontSize * camera.zoom}px;
-		font-weight: {obj.style.fontWeight}; font-style: {obj.style.fontStyle};
-		text-align: {obj.style.textAlign}; color: {obj.style.color}; line-height: 1.3;"
+		font-weight: {obj.style.fontWeight ?? 'normal'}; font-style: {obj.style.fontStyle ?? 'normal'};
+		text-align: {obj.style.textAlign ?? 'left'}; color: {fgColor};
+		background: {obj.style.backgroundColor ?? 'transparent'};
+		padding: {(obj.style.padding ?? 4) * camera.zoom}px; line-height: 1.3;"
 	class="text-editor"
 	onblur={commit}
 	onkeydown={(e) => {
@@ -69,11 +73,9 @@
 <style>
 	.text-editor {
 		position: fixed;
-		background: transparent;
 		border: 1px dashed rgba(91, 140, 255, 0.7);
 		outline: none;
 		resize: none;
-		padding: 0;
 		margin: 0;
 		overflow: hidden;
 		white-space: pre-wrap;

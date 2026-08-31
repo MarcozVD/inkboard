@@ -259,6 +259,49 @@
 		}
 	}
 
+	// ── Fase 8: clipboard paste + drag & drop images ──
+	function onPaste(e: ClipboardEvent) {
+		if (!engine) return;
+		const items = e.clipboardData?.items;
+		if (!items) return;
+		for (const item of items) {
+			if (item.type.startsWith('image/')) {
+				const file = item.getAsFile();
+				if (!file) continue;
+				e.preventDefault();
+				const reader = new FileReader();
+				reader.onload = () => {
+					const dataUrl = reader.result as string;
+					// center at current viewport
+					const w = canvasEl!.width;
+					const h = canvasEl!.height;
+					const c = camera;
+					const wx = (w / 2 - c.x) / c.zoom;
+					const wy = (h / 2 - c.y) / c.zoom;
+					engine!.imageTool.insertImage(dataUrl, file.name, wx, wy);
+				};
+				reader.readAsDataURL(file);
+			}
+		}
+	}
+
+	function onDrop(e: DragEvent) {
+		if (!engine) return;
+		e.preventDefault();
+		const files = e.dataTransfer?.files;
+		if (!files || files.length === 0) return;
+		const file = files[0];
+		if (!file.type.startsWith('image/')) return;
+		const c = camera;
+		const wx = (e.clientX - c.x) / c.zoom;
+		const wy = (e.clientY - c.y) / c.zoom;
+		const reader = new FileReader();
+		reader.onload = () => {
+			engine!.imageTool.insertImage(reader.result as string, file.name, wx, wy);
+		};
+		reader.readAsDataURL(file);
+	}
+
 	function onKeyDown(e: KeyboardEvent) {
 		if (e.code === 'Space' && !e.repeat) {
 			spaceDown = true;
@@ -456,11 +499,13 @@
 		window.addEventListener('resize', resize);
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
+		window.addEventListener('paste', onPaste);
 
 		return () => {
 			window.removeEventListener('resize', resize);
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
+			window.removeEventListener('paste', onPaste);
 			renderLoop?.stop();
 		};
 	});
@@ -476,6 +521,8 @@
 		onpointercancel={onPointerUp}
 		onwheel={onWheel}
 		ondblclick={onDblClick}
+		ondragover={(e) => e.preventDefault()}
+		ondrop={onDrop}
 		ontouchstart={onTouchStart}
 		ontouchmove={onTouchMove}
 		oncontextmenu={(e) => e.preventDefault()}

@@ -4,6 +4,8 @@ import { SelectionManager, type HandleId } from '$lib/canvas/SelectionManager';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
 import type { CameraState } from '$lib/canvas/Camera';
+import { UpdateTransformCommand } from '$lib/canvas/commands';
+import type { Transform } from '$lib/objects/types';
 
 type Mode = 'idle' | 'move' | 'resize' | 'rotate' | 'rect-select';
 
@@ -15,6 +17,8 @@ export interface SelectToolCallbacks {
 	onGestureEnd?: () => void;
 	/** render request */
 	onDirty?: () => void;
+	/** register an undo command for the finished transform gesture */
+	onCommit?: (cmd: import('$lib/canvas/HistoryManager').Command) => void;
 }
 
 export class SelectTool {
@@ -23,7 +27,7 @@ export class SelectTool {
 	private dragStartWorld: Vec2 = { x: 0, y: 0 };
 	private dragStartScreen: Vec2 = { x: 0, y: 0 };
 	private lastWorld: Vec2 = { x: 0, y: 0 };
-	private startTransforms = new Map<string, { x: number; y: number; width: number; height: number; rotation: number }>();
+	private startTransforms = new Map<string, { x: number; y: number; width: number; height: number; rotation: number; scaleX: number; scaleY: number }>();
 	private startBounds: Rect | null = null;
 	private activeHandle: HandleId | null = null;
 	private rectStart: Vec2 = { x: 0, y: 0 };
@@ -114,6 +118,7 @@ export class SelectTool {
 			this.cb.onSelectionChange?.([]);
 		}
 		if (this.mode !== 'idle' && this.mode !== 'rect-select' && this.moved) {
+			this.commitTransform();
 			this.cb.onGestureEnd?.();
 		}
 		this.mode = 'idle';
@@ -121,6 +126,21 @@ export class SelectTool {
 		this.startTransforms.clear();
 		this.startBounds = null;
 		this.cb.onDirty?.();
+	}
+
+	/** Push an undo command capturing before/after transforms (§15). */
+	private commitTransform(): void {
+		if (this.startTransforms.size === 0) return;
+		const before = new Map<string, Transform>();
+		const after = new Map<string, Transform>();
+		for (const [id, t] of this.startTransforms) {
+			const obj = this.store.get(id);
+			if (!obj) continue;
+			before.set(id, { ...t });
+			after.set(id, { ...obj.transform });
+		}
+		if (before.size === 0) return;
+		this.cb.onCommit?.(new UpdateTransformCommand(this.store, before, after));
 	}
 
 	// ── Coordinate helpers ──

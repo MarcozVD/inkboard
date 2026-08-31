@@ -10,11 +10,13 @@ import { ImageTool } from '$lib/tools/ImageTool';
 import { StickyNoteTool } from '$lib/tools/StickyNoteTool';
 import type { BaseTool } from '$lib/tools/BaseTool';
 import type { CameraState } from '$lib/canvas/Camera';
+import { HistoryManager } from '$lib/canvas/HistoryManager';
 
 export type ToolId = 'select' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'sticky' | 'shape' | 'image' | 'connector';
 
 export class CanvasEngine {
 	readonly store = new ObjectStore();
+	readonly history = new HistoryManager(200);
 	private cameraFn: () => CameraState;
 	private onDirty: () => void;
 	private onGestureEnd: () => void;
@@ -37,12 +39,14 @@ export class CanvasEngine {
 			store: this.store,
 			camera: this.cameraFn,
 			onDirty: this.onDirty,
-			onGestureEnd: this.onGestureEnd
+			onGestureEnd: this.onGestureEnd,
+			pushHistory: (cmd: import('$lib/canvas/HistoryManager').Command) => this.history.push(cmd)
 		};
 
 		this.selectTool = new SelectTool(this.store, this.cameraFn, {
 			onDirty: this.onDirty,
-			onGestureEnd: this.onGestureEnd
+			onGestureEnd: this.onGestureEnd,
+			onCommit: (cmd: import('$lib/canvas/HistoryManager').Command) => this.history.push(cmd)
 		});
 		this.textTool = new TextTool(ctx);
 		this.shapeTool = new ShapeTool(ctx);

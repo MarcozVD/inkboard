@@ -3,6 +3,7 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createShape } from '$lib/objects/factory';
 import type { ShapeType, ShapeStyle } from '$lib/objects/types';
+import { AddObjectCommand } from '$lib/canvas/commands';
 
 export interface ShapeConfig {
 	shape: ShapeType;
@@ -69,6 +70,9 @@ export class ShapeTool extends BaseTool {
 		if (obj && obj.transform.width < 4 && obj.transform.height < 4) {
 			// accidental click — discard the tiny shape
 			this.ctx.store.remove(this.draft);
+		} else if (obj) {
+			// register undo command (shape already applied to store)
+			this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, obj));
 		}
 		this.ctx.onGestureEnd?.();
 		this.ctx.onDirty();

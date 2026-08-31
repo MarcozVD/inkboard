@@ -351,7 +351,18 @@
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			if (sel.selected.length) {
 				e.preventDefault();
-				engine.store.removeMany(sel.selected);
+				const store = engine.store;
+				// undoable delete: capture objects before removing
+				const objs = sel.selected.map((id) => store.get(id)).filter(Boolean) as CanvasObject[];
+				if (objs.length) {
+					const ids = objs.map((o) => o.id);
+					store.removeMany(ids);
+					engine.history.push({
+						description: 'Delete',
+						undo: () => store.addMany(objs.map((o) => structuredClone(o))),
+						redo: () => store.removeMany(ids)
+					});
+				}
 				sel.clear();
 				markDirty();
 			}
@@ -379,6 +390,19 @@
 			engine.store.sendToBack(sel.selected);
 			markDirty();
 		}
+
+		// ── Fase 10: undo/redo shortcuts ──
+		if (mod && (e.key === 'z' || e.key === 'Z')) {
+			e.preventDefault();
+			if (e.shiftKey) engine.history.redo();
+			else engine.history.undo();
+			markDirty();
+		}
+		if (mod && (e.key === 'y' || e.key === 'Y')) {
+			e.preventDefault();
+			engine.history.redo();
+			markDirty();
+		}
 	}
 
 	function duplicateSelection() {
@@ -399,6 +423,14 @@
 		}
 		engine.store.addMany(clones);
 		sel.selectMany(clones.map((c) => c.id));
+		// undoable duplicate
+		const store = engine.store;
+		const ids = clones.map((c) => c.id);
+		engine.history.push({
+			description: 'Duplicate',
+			undo: () => store.removeMany(ids),
+			redo: () => store.addMany(clones.map((c) => structuredClone(c)))
+		});
 		markDirty();
 	}
 
@@ -534,6 +566,9 @@
 
 	<!-- Toolbar -->
 	<div class="toolbar">
+		<button title="Undo (Ctrl+Z)" onclick={() => { engine?.history.undo(); markDirty(); }} disabled={!engine?.history.canUndo}>↩</button>
+		<button title="Redo (Ctrl+Shift+Z)" onclick={() => { engine?.history.redo(); markDirty(); }} disabled={!engine?.history.canRedo}>↪</button>
+		<span class="toolbar-divider"></span>
 		{#each TOOLBAR_TOOLS as tool}
 			<button
 				class:active={activeTool === tool}
@@ -658,6 +693,19 @@
 	.toolbar button.active {
 		background: var(--accent);
 		color: #fff;
+	}
+
+	.toolbar-divider {
+		width: 1px;
+		height: 20px;
+		background: var(--border);
+		margin: 0 3px;
+		align-self: center;
+	}
+
+	button:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	.shape-palette {

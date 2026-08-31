@@ -1,6 +1,7 @@
 // Base tool interface — every canvas tool implements this (§5)
 import type { ObjectStore } from '$lib/canvas/ObjectStore';
 import type { CameraState } from '$lib/canvas/Camera';
+import type { Command } from '$lib/canvas/HistoryManager';
 
 export interface ToolPointerEvent {
 	screenX: number;
@@ -17,6 +18,8 @@ export interface ToolContext {
 	onDirty: () => void;
 	/** called after a gesture ends that should be a single undo step */
 	onGestureEnd?: () => void;
+	/** register an undo command for the finished gesture (already-applied state) */
+	pushHistory?: (cmd: Command) => void;
 }
 
 export abstract class BaseTool {

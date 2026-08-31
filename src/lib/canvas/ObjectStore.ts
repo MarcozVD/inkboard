@@ -198,6 +198,19 @@ export class ObjectStore {
 		}
 		if (modified.length) this.emit({ added: [], modified, removed: [] });
 	}
+
+	/**
+	 * Emit a change event without re-syncing spatial index.
+	 * Use when only non-geometric properties changed (e.g. z-order).
+	 */
+	notifyChange(ids: string[]): void {
+		for (const id of ids) {
+			const obj = this.objects.get(id);
+			if (obj) obj.updatedAt = Date.now();
+		}
+		if (ids.length) this.emit({ added: [], modified: ids, removed: [] });
+	}
+
 	toJSON(): CanvasObject[] {
 		return this.sortedByZ();
 	}

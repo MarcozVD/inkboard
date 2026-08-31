@@ -3,6 +3,7 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createText } from '$lib/objects/factory';
 import type { TextObject } from '$lib/objects/types';
+import { AddObjectCommand } from '$lib/canvas/commands';
 
 export class TextTool extends BaseTool {
 	/** Called when the tool created a text object that should open the editor. */
@@ -19,6 +20,7 @@ export class TextTool extends BaseTool {
 
 		const obj = createText(wx, wy, '', {});
 		this.ctx.store.add(obj);
+		this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, obj));
 		this.ctx.onDirty();
 		this.onEditRequest?.(obj);
 	}

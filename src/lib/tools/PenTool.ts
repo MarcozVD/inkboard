@@ -2,6 +2,7 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createStroke } from '$lib/objects/factory';
 import type { StrokeObject } from '$lib/objects/types';
+import { AddObjectCommand } from '$lib/canvas/commands';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface PenConfig {
@@ -69,6 +70,8 @@ export class PenTool extends BaseTool {
 		}
 		this.ctx.store.notifyMoved([this.active.id]);
 		this.ctx.onGestureEnd?.();
+		// register undo command (stroke already applied to store)
+		this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, this.active));
 		this.ctx.onDirty();
 		this.active = null;
 		this.lastPoint = null;

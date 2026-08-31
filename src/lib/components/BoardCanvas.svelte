@@ -8,14 +8,17 @@
 	import type { GridConfig, CanvasObject } from '$lib/objects/types';
 	import { createShape } from '$lib/objects/factory';
 	import { v4 as uuidv4 } from 'uuid';
+	import TextEditor from '$lib/components/TextEditor.svelte';
+	import type { TextObject } from '$lib/objects/types';
 
 	let { boardId }: { boardId: string } = $props();
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let activeTool = $state<ToolId>('select');
+	let editingText = $state<TextObject | null>(null);
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
-	let camera: CameraState = { ...DEFAULT_CAMERA };
+	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
 	let grid: GridConfig = { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 };
 
 	let renderLoop: RenderLoop | null = null;
@@ -215,6 +218,22 @@
 	function setTool(t: ToolId) {
 		engine?.setTool(t);
 		activeTool = t;
+		if (t !== 'select') editingText = null;
+	}
+
+	function openTextEditor(obj: TextObject) {
+		editingText = obj;
+	}
+
+	function onDblClick(e: MouseEvent) {
+		if (!engine || activeTool !== 'select') return;
+		const c = camera;
+		const wx = (e.clientX - c.x) / c.zoom;
+		const wy = (e.clientY - c.y) / c.zoom;
+		const hit = engine.selectionManager.hitTest({ x: wx, y: wy });
+		if (hit && hit.type === 'text') {
+			openTextEditor(hit as TextObject);
+		}
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
@@ -395,6 +414,9 @@
 			onDirty: markDirty
 		});
 
+		// TextTool → open in-canvas editor after creating a text object
+		engine.textTool.onEditRequest = (obj) => openTextEditor(obj);
+
 		const resize = () => {
 			canvas.width = window.innerWidth;
 			canvas.height = window.innerHeight;
@@ -430,6 +452,7 @@
 		onpointerup={onPointerUp}
 		onpointercancel={onPointerUp}
 		onwheel={onWheel}
+		ondblclick={onDblClick}
 		ontouchstart={onTouchStart}
 		ontouchmove={onTouchMove}
 		oncontextmenu={(e) => e.preventDefault()}
@@ -447,6 +470,37 @@
 			</button>
 		{/each}
 	</div>
+
+	<!-- In-canvas text editor -->
+	{#if editingText}
+		<TextEditor
+			obj={editingText}
+			camera={{ x: camera.x, y: camera.y, zoom: camera.zoom }}
+			onCommit={(content) => {
+				if (engine) {
+					const obj = editingText!;
+					// update content + resize box to fit
+					obj.content = content;
+					const lines = content.split('\n');
+					const longest = Math.max(1, ...lines.map((l) => l.length));
+					obj.transform.width = Math.max(40, longest * obj.style.fontSize * 0.6 + obj.style.padding * 2);
+					obj.transform.height = Math.max(30, lines.length * obj.style.fontSize * obj.style.lineHeight + obj.style.padding * 2);
+					obj.updatedAt = Date.now();
+					engine.store.notifyMoved([obj.id]);
+					markDirty();
+				}
+				editingText = null;
+			}}
+			onCancel={() => {
+				// if empty text was created, remove it
+				if (engine && editingText && editingText.content.trim() === '') {
+					engine.store.remove(editingText.id);
+					markDirty();
+				}
+				editingText = null;
+			}}
+		/>
+	{/if}
 </div>
 
 <style>

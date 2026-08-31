@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PenTool, simplifyStroke } from './PenTool';
 import { ObjectStore } from '$lib/canvas/ObjectStore';
 import { DEFAULT_CAMERA } from '$lib/canvas/Camera';
+import type { StrokeObject } from '$lib/objects/types';
 
 function makePen() {
 	const store = new ObjectStore();
@@ -9,56 +10,64 @@ function makePen() {
 	return { store, pen };
 }
 
+function stroke(x: number, y: number, p: number) {
+	return { screenX: x, screenY: y, pressure: p, shift: false, button: 0 };
+}
+
+function up() {
+	return { screenX: 0, screenY: 0, pressure: 0.5, shift: false, button: 0 };
+}
+
 describe('PenTool', () => {
 	it('creates a stroke object on pointerDown', () => {
 		const { store, pen } = makePen();
-		pen.pointerDown({ screenX: 100, screenY: 100, pressure: 0.5, shift: false, button: 0 });
+		pen.pointerDown(stroke(100, 100, 0.5));
 		expect(store.size()).toBe(1);
-		const stroke = store.getAll()[0];
-		expect(stroke.type).toBe('stroke');
+		const s = store.getAll()[0] as StrokeObject;
+		expect(s.type).toBe('stroke');
 		// zoom 1, no pan → world == screen
-		expect(stroke.points).toEqual([100, 100, 0.5]);
+		expect(s.points).toEqual([100, 100, 0.5]);
 	});
 
 	it('appends points on pointerMove and simplifies on up', () => {
 		const { store, pen } = makePen();
-		pen.pointerDown({ screenX: 0, screenY: 0, pressure: 0.5, shift: false, button: 0 });
+		pen.pointerDown(stroke(0, 0, 0.5));
 		for (let i = 1; i <= 50; i++) {
-			pen.pointerMove({ screenX: i, screenY: i, pressure: 0.5, shift: false, button: 0 });
+			pen.pointerMove(stroke(i, i, 0.5));
 		}
-		const stroke = store.getAll()[0];
-		expect(stroke.points.length).toBeGreaterThan(3 * 5);
-		pen.pointerUp({ button: 0, pressure: 0.5 });
+		const s = store.getAll()[0] as StrokeObject;
+		expect(s.points.length).toBeGreaterThan(3 * 5);
+		pen.pointerUp(up());
 	});
 
 	it('does not create extra objects on move/up', () => {
 		const { store, pen } = makePen();
-		pen.pointerDown({ screenX: 0, screenY: 0, pressure: 0.5, shift: false, button: 0 });
-		pen.pointerMove({ screenX: 10, screenY: 10, pressure: 0.5, shift: false, button: 0 });
-		pen.pointerUp({ button: 0, pressure: 0.5 });
+		pen.pointerDown(stroke(0, 0, 0.5));
+		pen.pointerMove(stroke(10, 10, 0.5));
+		pen.pointerUp(up());
 		expect(store.size()).toBe(1);
 	});
 
 	it('respects min distance (skips jittery same-point moves)', () => {
 		const { store, pen } = makePen();
-		pen.pointerDown({ screenX: 0, screenY: 0, pressure: 0.5, shift: false, button: 0 });
-		pen.pointerMove({ screenX: 0.5, screenY: 0.3, pressure: 0.5, shift: false, button: 0 });
-		const stroke = store.getAll()[0];
-		expect(stroke.points).toHaveLength(3); // only the down point
+		pen.pointerDown(stroke(0, 0, 0.5));
+		pen.pointerMove(stroke(0.5, 0.3, 0.5));
+		const s = store.getAll()[0] as StrokeObject;
+		expect(s.points).toHaveLength(3); // only the down point
 	});
 
 	it('normalizes zero pressure to 0.5 (mouse)', () => {
 		const { store, pen } = makePen();
-		pen.pointerDown({ screenX: 5, screenY: 5, pressure: 0, shift: false, button: 0 });
-		expect(store.getAll()[0].points[2]).toBe(0.5);
+		pen.pointerDown(stroke(5, 5, 0));
+		expect((store.getAll()[0] as StrokeObject).points[2]).toBe(0.5);
 	});
 
 	it('reset clears active stroke without leaking', () => {
 		const { store, pen } = makePen();
-		pen.pointerDown({ screenX: 0, screenY: 0, pressure: 0.5, shift: false, button: 0 });
+		pen.pointerDown(stroke(0, 0, 0.5));
 		pen.reset();
-		pen.pointerMove({ screenX: 20, screenY: 20, pressure: 0.5, shift: false, button: 0 });
-		expect(store.getAll()[0].points).toHaveLength(3); // unchanged
+		pen.pointerMove(stroke(20, 20, 0.5));
+		expect((store.getAll()[0] as StrokeObject).points).toHaveLength(3); // unchanged
 	});
 });
 

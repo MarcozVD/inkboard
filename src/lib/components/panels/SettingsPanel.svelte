@@ -11,7 +11,9 @@
 		background,
 		onBgChange,
 		theme,
-		onThemeChange
+		onThemeChange,
+		onExport,
+		onImport
 	}: {
 		open: boolean;
 		onClose: () => void;
@@ -21,6 +23,8 @@
 		onBgChange: (bg: string) => void;
 		theme: 'dark' | 'light' | 'system';
 		onThemeChange: (t: 'dark' | 'light' | 'system') => void;
+		onExport?: () => void;
+		onImport?: () => void;
 	} = $props();
 
 	let panelEl: HTMLDivElement | undefined = $state();
@@ -106,10 +110,10 @@
 				<section class="sp-section">
 					<h3 class="sp-sec-title">Data</h3>
 					<div class="sp-row">
-						<button class="sp-btn" onclick={() => { /* export */ }}>Export board…</button>
+						<button class="sp-btn" onclick={() => { onClose(); onExport?.(); }}>Export board…</button>
 					</div>
 					<div class="sp-row">
-						<button class="sp-btn" onclick={() => { /* import */ }}>Import file…</button>
+						<button class="sp-btn" onclick={() => { onClose(); onImport?.(); }}>Import file…</button>
 					</div>
 				</section>
 

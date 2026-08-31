@@ -8,6 +8,8 @@
 
 	let editing = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
+	// home (no board loaded) hides board-specific chrome
+	const isBoard = $derived(ui.boardName !== 'Inkboard' || ui.canUndo || ui.saveState !== 'idle');
 
 	$effect(() => {
 		if (editing && inputEl) {
@@ -54,6 +56,14 @@
 	<div class="center" data-tauri-drag-region></div>
 
 	<div class="right">
+		{#if isBoard}
+			<!-- collaboration affordance (FASE 8 — future realtime) -->
+			<div class="presence" aria-label="People on this board" title="Collaboration coming soon">
+				<span class="avatar">M</span>
+				<span class="avatar ghost">+</span>
+			</div>
+			<span class="divider"></span>
+		{/if}
 		<ToolButton icon="undo" label="Undo" shortcut="Ctrl+Z" testid="undo" disabled={!ui.canUndo} onclick={() => uiActions.undo?.()} />
 		<ToolButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" testid="redo" disabled={!ui.canRedo} onclick={() => uiActions.redo?.()} />
 		<span class="divider"></span>
@@ -168,6 +178,33 @@
 		height: 20px;
 		background: var(--color-border);
 		margin: 0 4px;
+	}
+
+	.presence {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin-right: 2px;
+	}
+
+	.avatar {
+		width: 26px;
+		height: 26px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 50%;
+		background: var(--color-surface-active);
+		border: 1px solid var(--color-border);
+		color: var(--color-text);
+		font-size: 11px;
+		font-weight: 600;
+	}
+
+	.avatar.ghost {
+		background: transparent;
+		border-style: dashed;
+		color: var(--color-text-muted);
 	}
 
 	.window-controls {

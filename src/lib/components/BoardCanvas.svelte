@@ -30,6 +30,7 @@
 	import CommandPalette, { type PaletteCmd } from '$lib/components/menus/CommandPalette.svelte';
 	import ContextToolbar, { type CtxAction } from '$lib/components/toolbar/ContextToolbar.svelte';
 	import SettingsPanel from '$lib/components/panels/SettingsPanel.svelte';
+	import Icon from '$lib/components/ui/Icon.svelte';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -45,6 +46,7 @@
 	let ctxBar = $state<{ x: number; y: number; actions: CtxAction[] } | null>(null);
 	let showSettings = $state(false);
 	let theme = $state<'dark' | 'light' | 'system'>('dark');
+	let objectCount = $state(0);
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -884,6 +886,7 @@
 		renderLoop.start();
 
 		engine.store.onChange(() => {
+			objectCount = engine!.store.getAll().length;
 			markDirty();
 			scheduleAutosave();
 		});
@@ -947,6 +950,13 @@
 		ontouchmove={onTouchMove}
 		oncontextmenu={onCanvasContextMenu}
 	></canvas>
+
+	{#if objectCount === 0 && !editingText}
+		<div class="canvas-hint" aria-hidden="true">
+			<span class="hint-mark"><Icon name="pen" size={20} /></span>
+			<p>Start creating — draw, write, or add a sticky note</p>
+		</div>
+	{/if}
 
 	<!-- Floating tool strip (DESIGN.md) -->
 	<ToolBar
@@ -1083,6 +1093,8 @@
 			theme = t;
 			document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
 		}}
+		onExport={() => { showExportMenu = true; }}
+		onImport={() => importFile()}
 	/>
 </div>
 
@@ -1100,6 +1112,38 @@
 		height: 100%;
 		cursor: default;
 		touch-action: none;
+	}
+
+	/* empty-state hint (DESIGN.md § Empty States) */
+	.canvas-hint {
+		position: absolute;
+		left: 50%;
+		top: 46%;
+		transform: translate(-50%, -50%);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 10px;
+		pointer-events: none;
+		color: var(--color-text-muted);
+		opacity: 0.55;
+		transition: opacity var(--dur-normal) var(--ease-out);
+	}
+
+	.hint-mark {
+		width: 48px;
+		height: 48px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid var(--color-border);
+		border-radius: 14px;
+		background: var(--color-surface);
+	}
+
+	.canvas-hint p {
+		margin: 0;
+		font-size: 13px;
 	}
 
 	button:disabled {

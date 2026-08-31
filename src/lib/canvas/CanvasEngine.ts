@@ -5,6 +5,7 @@ import { PenTool } from '$lib/tools/PenTool';
 import { HighlighterTool } from '$lib/tools/HighlighterTool';
 import { EraserTool } from '$lib/tools/EraserTool';
 import { TextTool } from '$lib/tools/TextTool';
+import { ShapeTool } from '$lib/tools/ShapeTool';
 import type { BaseTool } from '$lib/tools/BaseTool';
 import type { CameraState } from '$lib/canvas/Camera';
 
@@ -21,6 +22,7 @@ export class CanvasEngine {
 
 	readonly selectTool: SelectTool;
 	readonly textTool: TextTool;
+	readonly shapeTool: ShapeTool;
 
 	constructor(opts: { camera: () => CameraState; onDirty: () => void; onGestureEnd?: () => void }) {
 		this.cameraFn = opts.camera;
@@ -39,11 +41,13 @@ export class CanvasEngine {
 			onGestureEnd: this.onGestureEnd
 		});
 		this.textTool = new TextTool(ctx);
+		this.shapeTool = new ShapeTool(ctx);
 		this.tools.set('select', this.selectTool as unknown as BaseTool);
 		this.tools.set('pen', new PenTool(ctx));
 		this.tools.set('highlighter', new HighlighterTool(ctx));
 		this.tools.set('eraser', new EraserTool(ctx));
 		this.tools.set('text', this.textTool);
+		this.tools.set('shape', this.shapeTool);
 	}
 
 	get activeTool(): ToolId {

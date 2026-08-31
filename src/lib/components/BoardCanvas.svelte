@@ -10,6 +10,8 @@
 	import { v4 as uuidv4 } from 'uuid';
 	import TextEditor from '$lib/components/TextEditor.svelte';
 	import type { TextObject } from '$lib/objects/types';
+	import { SHAPE_TYPES } from '$lib/tools/ShapeTool';
+	import type { ShapeType } from '$lib/objects/types';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -22,7 +24,7 @@
 	let grid: GridConfig = { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 };
 
 	let renderLoop: RenderLoop | null = null;
-	let engine: CanvasEngine | null = null;
+	let engine: CanvasEngine | null = $state(null);
 
 	function markDirty() {
 		renderLoop?.markDirty();
@@ -219,6 +221,27 @@
 		engine?.setTool(t);
 		activeTool = t;
 		if (t !== 'select') editingText = null;
+	}
+
+	function setShape(shape: ShapeType) {
+		if (engine) {
+			engine.shapeTool.config.shape = shape;
+			setTool('shape');
+		}
+	}
+
+	function shapeIcon(shape: ShapeType): string {
+		const icons: Record<ShapeType, string> = {
+			rect: '▭',
+			ellipse: '⬭',
+			line: '╱',
+			arrow: '➡',
+			triangle: '△',
+			diamond: '◇',
+			star: '★',
+			polygon: '⬡'
+		};
+		return icons[shape];
 	}
 
 	function openTextEditor(obj: TextObject) {
@@ -471,6 +494,21 @@
 		{/each}
 	</div>
 
+	<!-- Shape palette (visible when shape tool is active) -->
+	{#if activeTool === 'shape'}
+		<div class="shape-palette">
+			{#each SHAPE_TYPES as shape}
+				<button
+					class:active={engine?.shapeTool.config.shape === shape}
+					title={shape}
+					onclick={() => setShape(shape)}
+				>
+					{shapeIcon(shape)}
+				</button>
+			{/each}
+		</div>
+	{/if}
+
 	<!-- In-canvas text editor -->
 	{#if editingText}
 		<TextEditor
@@ -551,6 +589,42 @@
 	}
 
 	.toolbar button.active {
+		background: var(--accent);
+		color: #fff;
+	}
+
+	.shape-palette {
+		position: absolute;
+		top: 62px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 2px;
+		padding: 4px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		z-index: 10;
+	}
+
+	.shape-palette button {
+		width: 32px;
+		height: 32px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 6px;
+		color: var(--text-secondary);
+		font-size: 14px;
+	}
+
+	.shape-palette button:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+	}
+
+	.shape-palette button.active {
 		background: var(--accent);
 		color: #fff;
 	}

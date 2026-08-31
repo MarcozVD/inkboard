@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { DEFAULT_CAMERA, pan, resetZoom, screenToWorld, zoomAt } from '$lib/canvas/Camera';
-import type { CameraState } from '$lib/canvas/Camera';
+	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
-	import type { GridConfig } from '$lib/objects/types';
+	import { ObjectStore } from '$lib/canvas/ObjectStore';
+	import { renderObject } from '$lib/objects/renderers';
+	import { screenToWorld as stw } from '$lib/canvas/Camera';
+	import type { GridConfig, CanvasObject } from '$lib/objects/types';
+	import { createShape } from '$lib/objects/factory';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -14,10 +18,23 @@ import type { CameraState } from '$lib/canvas/Camera';
 	let grid: GridConfig = { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 };
 	const gridEnabled = $state(true);
 
+	const store = new ObjectStore();
+
+	// image cache for data URLs (avoids re-decoding per frame)
+	const imageCache = new Map<string, HTMLImageElement>();
+	function getImage(src: string): HTMLImageElement | undefined {
+		let img = imageCache.get(src);
+		if (!img) {
+			img = new Image();
+			img.src = src;
+			imageCache.set(src, img);
+		}
+		return img;
+	}
+
 	// ── Pointer state ──
 	let isPanning = false;
 	let panStart = { x: 0, y: 0 };
-	let cameraStart = { x: 0, y: 0 };
 	let spaceDown = false;
 	let lastPointer = { x: 0, y: 0 };
 	let pinchDist = 0;
@@ -37,9 +54,8 @@ import type { CameraState } from '$lib/canvas/Camera';
 		const w = canvasEl!.width;
 		const h = canvasEl!.height;
 
-		// world coords of the viewport edges
-		const [wx0, wy0] = screenToWorld(0, 0, camera);
-		const [wx1, wy1] = screenToWorld(w, h, camera);
+		const [wx0, wy0] = stw(0, 0, camera);
+		const [wx1, wy1] = stw(w, h, camera);
 
 		const startX = Math.floor(wx0 / size) * size;
 		const startY = Math.floor(wy0 / size) * size;
@@ -80,7 +96,18 @@ import type { CameraState } from '$lib/canvas/Camera';
 
 		drawGrid(ctx);
 
-		// Fase 3+: draw objects here
+		// viewport culling (§19): only objects intersecting the screen rect
+		const [wx0, wy0] = stw(0, 0, camera);
+		const [wx1, wy1] = stw(w, h, camera);
+		const viewport = { x: wx0, y: wy0, width: wx1 - wx0, height: wy1 - wy0 };
+		const visible = store.queryViewport(viewport);
+
+		ctx.save();
+		ctx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.x, camera.y);
+		for (const obj of visible) {
+			renderObject(ctx, obj, { getImage });
+		}
+		ctx.restore();
 	}
 
 	// ── Input handling ──
@@ -90,7 +117,6 @@ import type { CameraState } from '$lib/canvas/Camera';
 		if (panMode) {
 			isPanning = true;
 			panStart = { x: e.clientX, y: e.clientY };
-			cameraStart = { x: camera.x, y: camera.y };
 			if (canvasEl) canvasEl.setPointerCapture(e.pointerId);
 		}
 	}
@@ -98,8 +124,6 @@ import type { CameraState } from '$lib/canvas/Camera';
 	function onPointerMove(e: PointerEvent) {
 		if (isPanning) {
 			camera = pan(camera, e.clientX - panStart.x, e.clientY - panStart.y);
-			// keep start anchored so movement is relative to the original grab point
-			cameraStart = { x: cameraStart.x, y: cameraStart.y };
 			panStart = { x: e.clientX, y: e.clientY };
 			renderLoop?.markDirty();
 		}
@@ -115,16 +139,12 @@ import type { CameraState } from '$lib/canvas/Camera';
 
 	function onWheel(e: WheelEvent) {
 		e.preventDefault();
-
-		// Trackpad pinch → ctrl+wheel
 		if (e.ctrlKey) {
 			const factor = Math.exp(-e.deltaY * 0.002);
 			camera = zoomAt(camera, e.clientX, e.clientY, factor);
 			renderLoop?.markDirty();
 			return;
 		}
-
-		// Plain wheel → pan (natural for whiteboards)
 		camera = pan(camera, -e.deltaX, -e.deltaY);
 		renderLoop?.markDirty();
 	}
@@ -179,6 +199,29 @@ import type { CameraState } from '$lib/canvas/Camera';
 		}
 	}
 
+	// ── Fase 3: demo objects (dev only) ──
+	function seedDemoObjects() {
+		const colors = ['#5b8cff', '#ff8c5b', '#5bff8c', '#ffd666', '#b08cff', '#ff8cbf'];
+		const objs: CanvasObject[] = [];
+		for (let i = 0; i < 200; i++) {
+			const x = (Math.random() - 0.5) * 4000;
+			const y = (Math.random() - 0.5) * 4000;
+			const w = 60 + Math.random() * 160;
+			const h = 60 + Math.random() * 160;
+			const shapes: Array<CanvasObject['type']> = ['shape'];
+			void shapes;
+			objs.push(
+				createShape(x, y, w, h, 'rect', {
+					fill: colors[i % colors.length] + '33',
+					stroke: colors[i % colors.length],
+					strokeWidth: 2
+				})
+			);
+		}
+		store.addMany(objs);
+		renderLoop?.markDirty();
+	}
+
 	onMount(() => {
 		if (!canvasEl) return;
 		const canvas = canvasEl;
@@ -193,6 +236,12 @@ import type { CameraState } from '$lib/canvas/Camera';
 		renderLoop = new RenderLoop(render);
 		renderLoop.start();
 
+		// re-render when store changes
+		store.onChange(() => renderLoop?.markDirty());
+
+		// demo: seed shapes so the board is not empty (Fase 3 criterion)
+		seedDemoObjects();
+
 		window.addEventListener('resize', resize);
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
@@ -206,7 +255,7 @@ import type { CameraState } from '$lib/canvas/Camera';
 	});
 </script>
 
-<div class="canvas-wrap" class:show-grid={gridEnabled}>
+<div class="canvas-wrap">
 	<canvas
 		bind:this={canvasEl}
 		class="board-canvas"

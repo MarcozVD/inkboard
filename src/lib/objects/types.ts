@@ -75,7 +75,8 @@ export interface BaseObject {
 	type: ObjectType;
 	transform: Transform;
 	style: BaseStyle;
-	zIndex: number;
+	/** Paint order; assigned by ObjectStore on add (optional at construction) */
+	zIndex?: number;
 	locked: boolean;
 	visible: boolean;
 	groupId?: string;

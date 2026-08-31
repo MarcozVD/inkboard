@@ -182,6 +182,22 @@ export class ObjectStore {
 
 	// ── Serialization helper (model only, see lib/io) ──
 
+	/**
+	 * Re-sync the spatial index + notify after direct in-place transform
+	 * mutations by tools (SelectTool move/resize/rotate). Rebuilds the index
+	 * for the touched ids from current bounds.
+	 */
+	notifyMoved(ids: string[]): void {
+		const modified: string[] = [];
+		for (const id of ids) {
+			const obj = this.objects.get(id);
+			if (!obj) continue;
+			this.spatial.remove(id, getObjectBounds(obj));
+			this.spatial.insert(id, getObjectBounds(obj));
+			modified.push(id);
+		}
+		if (modified.length) this.emit({ added: [], modified, removed: [] });
+	}
 	toJSON(): CanvasObject[] {
 		return this.sortedByZ();
 	}

@@ -4,10 +4,11 @@
 	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
 	import { ObjectStore } from '$lib/canvas/ObjectStore';
+	import { SelectTool } from '$lib/tools/SelectTool';
 	import { renderObject } from '$lib/objects/renderers';
-	import { screenToWorld as stw } from '$lib/canvas/Camera';
 	import type { GridConfig, CanvasObject } from '$lib/objects/types';
 	import { createShape } from '$lib/objects/factory';
+	import { v4 as uuidv4 } from 'uuid';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -16,9 +17,12 @@
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = { ...DEFAULT_CAMERA };
 	let grid: GridConfig = { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 };
-	const gridEnabled = $state(true);
 
 	const store = new ObjectStore();
+	const selectTool = new SelectTool(store, () => camera, {
+		onDirty: () => renderLoop?.markDirty(),
+		onGestureEnd: () => renderLoop?.markDirty()
+	});
 
 	// image cache for data URLs (avoids re-decoding per frame)
 	const imageCache = new Map<string, HTMLImageElement>();
@@ -36,7 +40,6 @@
 	let isPanning = false;
 	let panStart = { x: 0, y: 0 };
 	let spaceDown = false;
-	let lastPointer = { x: 0, y: 0 };
 	let pinchDist = 0;
 
 	let renderLoop: RenderLoop | null = null;
@@ -49,14 +52,12 @@
 	function drawGrid(ctx: CanvasRenderingContext2D) {
 		if (!grid.enabled) return;
 		const { size, color, opacity } = grid;
-		if (size * camera.zoom < 8) return; // too dense — skip
+		if (size * camera.zoom < 8) return;
 
 		const w = canvasEl!.width;
 		const h = canvasEl!.height;
-
-		const [wx0, wy0] = stw(0, 0, camera);
-		const [wx1, wy1] = stw(w, h, camera);
-
+		const [wx0, wy0] = screenToWorld(0, 0, camera);
+		const [wx1, wy1] = screenToWorld(w, h, camera);
 		const startX = Math.floor(wx0 / size) * size;
 		const startY = Math.floor(wy0 / size) * size;
 
@@ -64,7 +65,6 @@
 		ctx.strokeStyle = color;
 		ctx.globalAlpha = opacity;
 		ctx.lineWidth = 1;
-
 		ctx.beginPath();
 		for (let x = startX; x <= wx1; x += size) {
 			const [sx] = worldToScreenHelper(x, 0);
@@ -96,9 +96,9 @@
 
 		drawGrid(ctx);
 
-		// viewport culling (§19): only objects intersecting the screen rect
-		const [wx0, wy0] = stw(0, 0, camera);
-		const [wx1, wy1] = stw(w, h, camera);
+		// viewport culling (§19)
+		const [wx0, wy0] = screenToWorld(0, 0, camera);
+		const [wx1, wy1] = screenToWorld(w, h, camera);
 		const viewport = { x: wx0, y: wy0, width: wx1 - wx0, height: wy1 - wy0 };
 		const visible = store.queryViewport(viewport);
 
@@ -108,16 +108,78 @@
 			renderObject(ctx, obj, { getImage });
 		}
 		ctx.restore();
+
+		// selection overlay (screen space)
+		renderSelectionOverlay(ctx);
+	}
+
+	function renderSelectionOverlay(ctx: CanvasRenderingContext2D) {
+		const sel = selectTool.selectionManager;
+		if (sel.selected.length === 0) return;
+
+		const bounds = selectTool.getSelectionScreenBounds();
+		if (!bounds) return;
+
+		// world rect → screen rect
+		const [x0, y0] = worldToScreenHelper(bounds.x, bounds.y);
+		const [x1, y1] = worldToScreenHelper(bounds.x + bounds.width, bounds.y + bounds.height);
+		const sx = Math.min(x0, x1);
+		const sy = Math.min(y0, y1);
+		const sw = Math.abs(x1 - x0);
+		const sh = Math.abs(y1 - y0);
+
+		ctx.save();
+		ctx.strokeStyle = '#5b8cff';
+		ctx.lineWidth = 1.5;
+		ctx.setLineDash([4, 3]);
+		ctx.strokeRect(sx, sy, sw, sh);
+		ctx.setLineDash([]);
+
+		// handles
+		const handles = selectTool.selectionManager.getHandles(worldToScreenHelper);
+		for (const h of handles) {
+			ctx.fillStyle = '#ffffff';
+			ctx.strokeStyle = '#5b8cff';
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			if (h.id === 'rotate') {
+				// rotation: circle above
+				ctx.arc(h.position.x, h.position.y, 5, 0, Math.PI * 2);
+				// connector line to top edge
+				ctx.moveTo(sx + sw / 2, sy);
+				ctx.lineTo(h.position.x, h.position.y + 5);
+			} else {
+				ctx.rect(h.position.x - 4, h.position.y - 4, 8, 8);
+			}
+			ctx.fill();
+			ctx.stroke();
+		}
+		ctx.restore();
+
+		// rect-select marquee
+		const marquee = selectTool.getActiveRectSelect();
+		if (marquee) {
+			const [mx0, my0] = worldToScreenHelper(marquee.x, marquee.y);
+			const [mx1, my1] = worldToScreenHelper(marquee.x + marquee.width, marquee.y + marquee.height);
+			ctx.save();
+			ctx.fillStyle = 'rgba(91,140,255,0.12)';
+			ctx.strokeStyle = '#5b8cff';
+			ctx.lineWidth = 1;
+			ctx.fillRect(mx0, my0, mx1 - mx0, my1 - my0);
+			ctx.strokeRect(mx0, my0, mx1 - mx0, my1 - my0);
+			ctx.restore();
+		}
 	}
 
 	// ── Input handling ──
 	function onPointerDown(e: PointerEvent) {
-		lastPointer = { x: e.clientX, y: e.clientY };
 		const panMode = spaceDown || e.button === 1 || e.button === 2;
 		if (panMode) {
 			isPanning = true;
 			panStart = { x: e.clientX, y: e.clientY };
 			if (canvasEl) canvasEl.setPointerCapture(e.pointerId);
+		} else {
+			selectTool.pointerDown(e.clientX, e.clientY, { shift: e.shiftKey });
 		}
 	}
 
@@ -126,14 +188,17 @@
 			camera = pan(camera, e.clientX - panStart.x, e.clientY - panStart.y);
 			panStart = { x: e.clientX, y: e.clientY };
 			renderLoop?.markDirty();
+		} else {
+			selectTool.pointerMove(e.clientX, e.clientY, { shift: e.shiftKey });
 		}
-		lastPointer = { x: e.clientX, y: e.clientY };
 	}
 
 	function onPointerUp(e: PointerEvent) {
 		if (isPanning) {
 			isPanning = false;
 			if (canvasEl) canvasEl.releasePointerCapture(e.pointerId);
+		} else {
+			selectTool.pointerUp();
 		}
 	}
 
@@ -167,6 +232,65 @@
 			camera = resetZoom(camera, canvasEl!.width, canvasEl!.height);
 			renderLoop?.markDirty();
 		}
+
+		// ── Fase 4: selection shortcuts ──
+		const sel = selectTool.selectionManager;
+		const mod = e.ctrlKey || e.metaKey;
+
+		if (e.key === 'Delete' || e.key === 'Backspace') {
+			if (sel.selected.length) {
+				e.preventDefault();
+				store.removeMany(sel.selected);
+				sel.clear();
+				renderLoop?.markDirty();
+			}
+		}
+		if (mod && (e.key === 'd' || e.key === 'D')) {
+			e.preventDefault();
+			duplicateSelection();
+		}
+		if (mod && (e.key === 'a' || e.key === 'A')) {
+			e.preventDefault();
+			sel.selectMany(store.getAll().map((o) => o.id));
+			renderLoop?.markDirty();
+		}
+		if (e.key === 'Escape') {
+			sel.clear();
+			renderLoop?.markDirty();
+		}
+		if (e.key === ']') {
+			e.preventDefault();
+			store.bringToFront(sel.selected);
+			renderLoop?.markDirty();
+		}
+		if (e.key === '[') {
+			e.preventDefault();
+			store.sendToBack(sel.selected);
+			renderLoop?.markDirty();
+		}
+	}
+
+	function duplicateSelection() {
+		const sel = selectTool.selectionManager;
+		if (sel.selected.length === 0) return;
+		const clones: CanvasObject[] = [];
+		const idMap = new Map<string, string>();
+		for (const id of sel.selected) {
+			const obj = store.get(id);
+			if (!obj) continue;
+			const newId = uuidv4();
+			idMap.set(id, newId);
+			const clone = structuredClone(obj);
+			clone.id = newId;
+			clone.transform.x += 20;
+			clone.transform.y += 20;
+			clone.createdAt = Date.now();
+			clone.updatedAt = Date.now();
+			clones.push(clone);
+		}
+		store.addMany(clones);
+		sel.selectMany(clones.map((c) => c.id));
+		renderLoop?.markDirty();
 	}
 
 	function onKeyUp(e: KeyboardEvent) {
@@ -208,8 +332,6 @@
 			const y = (Math.random() - 0.5) * 4000;
 			const w = 60 + Math.random() * 160;
 			const h = 60 + Math.random() * 160;
-			const shapes: Array<CanvasObject['type']> = ['shape'];
-			void shapes;
 			objs.push(
 				createShape(x, y, w, h, 'rect', {
 					fill: colors[i % colors.length] + '33',
@@ -236,10 +358,7 @@
 		renderLoop = new RenderLoop(render);
 		renderLoop.start();
 
-		// re-render when store changes
 		store.onChange(() => renderLoop?.markDirty());
-
-		// demo: seed shapes so the board is not empty (Fase 3 criterion)
 		seedDemoObjects();
 
 		window.addEventListener('resize', resize);

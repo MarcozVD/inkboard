@@ -21,6 +21,11 @@
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { createText } from '$lib/objects/factory';
 	import type { Board } from '$lib/objects/types';
+	import { ui, uiActions } from '$lib/stores/ui.svelte';
+	import ToolBar, { type ToolItem } from '$lib/components/toolbar/ToolBar.svelte';
+	import ZoomControls from '$lib/components/board/ZoomControls.svelte';
+	import CreatePanel, { type CreateItem } from '$lib/components/panels/CreatePanel.svelte';
+	import { goto } from '$app/navigation';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -30,6 +35,7 @@
 	let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
 	let boardName = $state('Untitled');
 	let showExportMenu = $state(false);
+	let showCreatePanel = $state(false);
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -43,6 +49,14 @@
 		renderLoop?.markDirty();
 	}
 
+	// Shell state sync — TopBar reads ui.*; refresh on every history-affecting change
+	function syncShell() {
+		ui.boardName = boardName;
+		ui.saveState = saveState;
+		ui.canUndo = engine?.history.canUndo ?? false;
+		ui.canRedo = engine?.history.canRedo ?? false;
+	}
+
 	// ── Fase 11: autosave with debounce (§16) ──
 	function scheduleAutosave() {
 		if (autosaveTimer) clearTimeout(autosaveTimer);
@@ -50,6 +64,7 @@
 			autosaveTimer = null;
 			if (!engine) return;
 			saveState = 'saving';
+			syncShell();
 			const board: Board = {
 				id: boardId,
 				workspaceId: 'default',
@@ -71,6 +86,7 @@
 				console.error('autosave failed', err);
 				saveState = 'idle';
 			}
+			syncShell();
 		}, 2000);
 	}
 
@@ -265,6 +281,56 @@
 		engine?.setTool(t);
 		activeTool = t;
 		if (t !== 'select') editingText = null;
+		showCreatePanel = false;
+	}
+
+	function handleCreate(id: string) {
+		showCreatePanel = false;
+		if (id === 'sticky') setTool('sticky');
+		else if (id === 'text') setTool('text');
+		else if (id === 'shape') setTool('shape');
+		else if (id === 'image') setTool('image');
+	}
+
+	// ── Zoom handlers (FASE 2 — DESIGN.md zoom controls) ──
+	function zoomIn() {
+		if (canvasEl) camera = zoomAt(camera, canvasEl.width / 2, canvasEl.height / 2, 1.25);
+		markDirty();
+	}
+	function zoomOut() {
+		if (canvasEl) camera = zoomAt(camera, canvasEl.width / 2, canvasEl.height / 2, 0.8);
+		markDirty();
+	}
+	function zoomReset() {
+		if (canvasEl) camera = resetZoom(camera, canvasEl.width, canvasEl.height);
+		markDirty();
+	}
+	function zoomFit() {
+		// fit all objects (or reset if none)
+		const objs = engine?.store.toJSON() ?? [];
+		if (objs.length === 0 || !canvasEl) {
+			zoomReset();
+			return;
+		}
+		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+		for (const o of objs) {
+			const t = o.transform;
+			minX = Math.min(minX, t.x, t.x + (t.width ?? 0));
+			minY = Math.min(minY, t.y, t.y + (t.height ?? 0));
+			maxX = Math.max(maxX, t.x, t.x + (t.width ?? 0));
+			maxY = Math.max(maxY, t.y, t.y + (t.height ?? 0));
+		}
+		if (!isFinite(minX)) { zoomReset(); return; }
+		const w = maxX - minX, h = maxY - minY;
+		const cw = canvasEl.width, ch = canvasEl.height;
+		const zoom = Math.min(cw / (w + 80), ch / (h + 80), 4);
+		camera = {
+			...camera,
+			zoom: Math.max(0.05, zoom),
+			x: cw / 2 - (minX + w / 2) * Math.max(0.05, zoom),
+			y: ch / 2 - (minY + h / 2) * Math.max(0.05, zoom)
+		};
+		markDirty();
 	}
 
 	function setShape(shape: ShapeType) {
@@ -395,7 +461,6 @@
 			if (sel.selected.length) {
 				e.preventDefault();
 				const store = engine.store;
-				// undoable delete: capture objects before removing
 				const objs = sel.selected.map((id) => store.get(id)).filter(Boolean) as CanvasObject[];
 				if (objs.length) {
 					const ids = objs.map((o) => o.id);
@@ -407,6 +472,7 @@
 					});
 				}
 				sel.clear();
+				syncShell();
 				markDirty();
 			}
 		}
@@ -426,11 +492,13 @@
 		if (e.key === ']') {
 			e.preventDefault();
 			engine.store.bringToFront(sel.selected);
+			syncShell();
 			markDirty();
 		}
 		if (e.key === '[') {
 			e.preventDefault();
 			engine.store.sendToBack(sel.selected);
+			syncShell();
 			markDirty();
 		}
 
@@ -439,11 +507,13 @@
 			e.preventDefault();
 			if (e.shiftKey) engine.history.redo();
 			else engine.history.undo();
+			syncShell();
 			markDirty();
 		}
 		if (mod && (e.key === 'y' || e.key === 'Y')) {
 			e.preventDefault();
 			engine.history.redo();
+			syncShell();
 			markDirty();
 		}
 	}
@@ -474,6 +544,7 @@
 			undo: () => store.removeMany(ids),
 			redo: () => store.addMany(clones.map((c) => structuredClone(c)))
 		});
+		syncShell();
 		markDirty();
 	}
 
@@ -656,31 +727,37 @@
 		}
 	}
 
-	// ── Toolbar icons (inline emoji for MVP; SVG later) ──
-	const TOOLBAR_TOOLS: ToolId[] = ['select', 'pen', 'highlighter', 'eraser', 'text', 'sticky', 'shape', 'image'];
-
-	function iconFor(tool: ToolId): string {
-		const icons: Record<ToolId, string> = {
-			select: '↖',
-			pen: '✏️',
-			highlighter: '🖍️',
-			eraser: '🧽',
-			text: 'T',
-			sticky: '📝',
-			shape: '⬛',
-			image: '🖼️',
-			connector: '➡'
-		};
-		return icons[tool];
-	}
+	// ── Toolbar definition (DESIGN.md — floating vertical tool strip) ──
+	const TOOLBAR_TOOLS: ToolItem[] = [
+		{ id: 'select', icon: 'select', label: 'Select', shortcut: 'V' },
+		{ id: 'pen', icon: 'pen', label: 'Pen', shortcut: 'P' },
+		{ id: 'highlighter', icon: 'highlighter', label: 'Highlighter', shortcut: 'H' },
+		{ id: 'eraser', icon: 'eraser', label: 'Eraser', shortcut: 'E' },
+		{ id: 'text', icon: 'text', label: 'Text', shortcut: 'T' },
+		{ id: 'sticky', icon: 'sticky', label: 'Sticky Note', shortcut: 'S' },
+		{ id: 'shape', icon: 'shapes', label: 'Shapes', shortcut: 'R' },
+		{ id: 'image', icon: 'image', label: 'Image' },
+		{ id: 'connector', icon: 'connector', label: 'Connector' }
+	];
+	const CREATE_ITEMS: CreateItem[] = [
+		{ id: 'sticky', icon: 'sticky', label: 'Sticky note' },
+		{ id: 'text', icon: 'text', label: 'Text' },
+		{ id: 'shape', icon: 'shapes', label: 'Shape' },
+		{ id: 'image', icon: 'image', label: 'Image' }
+	];
 
 	onMount(() => {
 		if (!canvasEl) return;
 		const canvas = canvasEl;
 
+		// Shell state sync (TopBar reads ui.*; must refresh on every history change)
 		engine = new CanvasEngine({
 			camera: () => camera,
-			onDirty: markDirty
+			onDirty: markDirty,
+			onGestureEnd: () => {
+				markDirty();
+				syncShell();
+			}
 		});
 
 		// TextTool → open in-canvas editor after creating a text object
@@ -703,6 +780,18 @@
 			markDirty();
 			scheduleAutosave();
 		});
+
+		// ── Wire shell (TopBar) actions to the engine via the UI store ──
+		syncShell();
+		uiActions.undo = () => { engine?.history.undo(); syncShell(); markDirty(); };
+		uiActions.redo = () => { engine?.history.redo(); syncShell(); markDirty(); };
+		uiActions.rename = (name: string) => { boardName = name || 'Untitled'; scheduleAutosave(); syncShell(); };
+		uiActions.openSettings = () => console.log('settings (FASE 4)');
+		uiActions.share = () => console.log('share (future)');
+		uiActions.back = () => goto('/');
+
+		// keep shell state in sync after every store change
+		engine.store.onChange(syncShell);
 
 		// load existing board (or empty canvas for a fresh one)
 		loadBoard(boardId)
@@ -752,61 +841,49 @@
 		oncontextmenu={(e) => e.preventDefault()}
 	></canvas>
 
-	<!-- Toolbar -->
-	<div class="toolbar">
-		<button data-testid="undo" title="Undo (Ctrl+Z)" onclick={() => { engine?.history.undo(); markDirty(); }} disabled={!engine?.history.canUndo}>↩</button>
-		<button data-testid="redo" title="Redo (Ctrl+Shift+Z)" onclick={() => { engine?.history.redo(); markDirty(); }} disabled={!engine?.history.canRedo}>↪</button>
-		<span class="toolbar-divider"></span>
-		<span class="save-indicator" class:saved={saveState === 'saved'} class:saving={saveState === 'saving'} data-testid="save-indicator">
-			{saveState === 'saving' ? '●' : saveState === 'saved' ? '✓' : ''}
-		</span>
-		<span class="toolbar-divider"></span>
-		<button
-			data-testid="export"
-			title="Export"
-			class:active={showExportMenu}
-			onclick={() => (showExportMenu = !showExportMenu)}
-		>⭳</button>
-		{#each TOOLBAR_TOOLS as tool}
-			<button
-				data-testid="tool-{tool}"
-				class:active={activeTool === tool}
-				title={tool}
-				onclick={() => setTool(tool)}
-			>
-				{iconFor(tool)}
-			</button>
-		{/each}
-	</div>
+	<!-- Floating tool strip (DESIGN.md) -->
+	<ToolBar
+		tools={TOOLBAR_TOOLS}
+		activeTool={activeTool}
+		onSelectTool={(t) => setTool(t as ToolId)}
+		onCreate={() => (showCreatePanel = !showCreatePanel)}
+		onExport={() => (showExportMenu = !showExportMenu)}
+		exportActive={showExportMenu}
+	>
+		<!-- Contextual popover for the active tool -->
+		{#if activeTool === 'shape'}
+			<div class="shape-palette">
+				{#each SHAPE_TYPES as shape}
+					<button
+						class:active={engine?.shapeTool.config.shape === shape}
+						title={shape}
+						onclick={() => setShape(shape)}
+					>
+						{shapeIcon(shape)}
+					</button>
+				{/each}
+			</div>
+		{:else if activeTool === 'sticky'}
+			<div class="shape-palette">
+				{#each stickyNoteColors() as color, i}
+					<button
+						class:active={engine?.stickyTool.currentColor === color}
+						title={'Color ' + i}
+						style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {engine?.stickyTool.currentColor === color ? '#ffffff' : 'transparent'};"
+						onclick={() => engine?.stickyTool.setColor(i)}
+					></button>
+				{/each}
+			</div>
+		{/if}
+	</ToolBar>
 
-	<!-- Shape palette (visible when shape tool is active) -->
-	{#if activeTool === 'shape'}
-		<div class="shape-palette">
-			{#each SHAPE_TYPES as shape}
-				<button
-					class:active={engine?.shapeTool.config.shape === shape}
-					title={shape}
-					onclick={() => setShape(shape)}
-				>
-					{shapeIcon(shape)}
-				</button>
-			{/each}
-		</div>
-	{/if}
-
-	<!-- Sticky color palette -->
-	{#if activeTool === 'sticky'}
-		<div class="shape-palette">
-			{#each stickyNoteColors() as color, i}
-				<button
-					class:active={engine?.stickyTool.currentColor === color}
-					title={'Color ' + i}
-					style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {engine?.stickyTool.currentColor === color ? '#ffffff' : 'transparent'};"
-					onclick={() => engine?.stickyTool.setColor(i)}
-				></button>
-			{/each}
-		</div>
-	{/if}
+	<!-- Create panel -->
+	<CreatePanel
+		open={showCreatePanel}
+		items={CREATE_ITEMS}
+		onSelect={handleCreate}
+		onClose={() => (showCreatePanel = false)}
+	/>
 
 	<!-- Export/import menu -->
 	{#if showExportMenu}
@@ -818,6 +895,15 @@
 			<button data-testid="import-file" onclick={() => importFile()}>Import file…</button>
 		</div>
 	{/if}
+
+	<!-- Zoom controls (DESIGN.md — bottom-right) -->
+	<ZoomControls
+		zoom={camera.zoom}
+		onZoomIn={zoomIn}
+		onZoomOut={zoomOut}
+		onReset={zoomReset}
+		onFit={zoomFit}
+	/>
 
 	<!-- In-canvas text editor -->
 	{#if editingText}
@@ -869,93 +955,22 @@
 		touch-action: none;
 	}
 
-	.toolbar {
-		position: absolute;
-		top: 12px;
-		left: 50%;
-		transform: translateX(-50%);
-		display: flex;
-		gap: 2px;
-		padding: 4px;
-		background: var(--bg-panel);
-		border: 1px solid var(--border);
-		border-radius: 10px;
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-		z-index: 10;
-	}
-
-	.toolbar button {
-		width: 34px;
-		height: 34px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 7px;
-		color: var(--text-secondary);
-		font-size: 16px;
-	}
-
-	.toolbar button:hover {
-		background: var(--bg-hover);
-		color: var(--text-primary);
-	}
-
-	.toolbar button.active {
-		background: var(--accent);
-		color: #fff;
-	}
-
-	.toolbar-divider {
-		width: 1px;
-		height: 20px;
-		background: var(--border);
-		margin: 0 3px;
-		align-self: center;
-	}
-
 	button:disabled {
 		opacity: 0.35;
 		cursor: default;
 	}
 
-	.save-indicator {
-		width: 18px;
-		height: 18px;
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		align-self: center;
-		font-size: 12px;
-		color: var(--text-secondary);
-	}
-
-	.save-indicator.saving {
-		color: var(--accent);
-		animation: pulse 1s infinite;
-	}
-
-	.save-indicator.saved {
-		color: #ffffff;
-	}
-
-	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.3; }
-	}
-
+	/* contextual popover for the active tool (inside ToolBar) */
 	.shape-palette {
-		position: absolute;
-		top: 62px;
-		left: 50%;
-		transform: translateX(-50%);
 		display: flex;
+		flex-direction: column;
 		gap: 2px;
 		padding: 4px;
-		background: var(--bg-panel);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-		z-index: 10;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-float);
+		align-self: center;
 	}
 
 	.shape-palette button {
@@ -964,54 +979,67 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 6px;
-		color: var(--text-secondary);
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
 		font-size: 14px;
 	}
 
 	.shape-palette button:hover {
-		background: var(--bg-hover);
-		color: var(--text-primary);
+		background: var(--color-surface-hover);
+		color: var(--color-text);
 	}
 
 	.shape-palette button.active {
-		background: var(--accent);
-		color: #fff;
+		background: var(--color-surface-active);
+		color: var(--color-accent);
 	}
 
+	/* export/import menu — anchored under the floating toolbar */
 	.export-menu {
 		position: absolute;
-		top: 62px;
-		right: 12px;
+		left: 64px;
+		top: calc(var(--topbar-h) + 8px + 190px);
 		display: flex;
 		flex-direction: column;
 		gap: 2px;
 		padding: 4px;
-		background: var(--bg-panel);
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-		z-index: 10;
-		min-width: 90px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-float);
+		z-index: 25;
+		min-width: 130px;
+		animation: menu-in var(--dur-micro) var(--ease-out);
+	}
+
+	@keyframes menu-in {
+		from {
+			opacity: 0;
+			transform: translateY(-3px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	.export-menu button {
 		width: 100%;
 		padding: 6px 12px;
 		text-align: left;
-		border-radius: 6px;
-		color: var(--text-secondary);
+		border-radius: var(--radius-md);
+		color: var(--color-text-muted);
 		font-size: 13px;
 	}
 
 	.export-menu button:hover {
-		background: var(--bg-hover);
-		color: var(--text-primary);
+		background: var(--color-surface-hover);
+		color: var(--color-text);
 	}
 
 	.export-menu-divider {
 		height: 1px;
-		background: var(--border);
+		background: var(--color-border);
 		margin: 3px 0;
 	}
 </style>

@@ -1,19 +1,64 @@
-/* Inkboard global styles — monochrome theme built around the app icon
-   (white pause glyph on black). The accent IS the icon's white (#ffffff). */
+/* Inkboard global styles — "The Monochrome Workshop".
+   Design system per DESIGN.md. Accent = the icon's white. */
 :root {
 	color-scheme: dark;
-	--bg-app: #0f1013;
-	--bg-panel: #16181d;
-	--bg-hover: #23262c;
-	--bg-active: #30343b;
-	--border: #2a2d34;
-	--text-primary: #ffffff;
-	--text-secondary: #9a9ca8;
-	--accent: #ffffff;
-	--danger: #e5534b;
-	--radius: 6px;
-	--font-ui:
-		'Segoe UI', system-ui, -apple-system, sans-serif;
+
+	/* ── Colors ── */
+	--color-bg: #0f1013;
+	--color-surface: #16181d;
+	--color-surface-hover: #23262c;
+	--color-surface-active: #30343b;
+	--color-border: #2a2d34;
+	--color-text: #ffffff;
+	--color-text-muted: #9a9ca8;
+	--color-accent: #ffffff;
+	--color-danger: #e5534b;
+	--color-selection: rgba(255, 255, 255, 0.9);
+	--color-selection-fill: rgba(255, 255, 255, 0.12);
+
+	/* ── Legacy aliases (components still reference these) ── */
+	--bg-app: var(--color-bg);
+	--bg-panel: var(--color-surface);
+	--bg-hover: var(--color-surface-hover);
+	--bg-active: var(--color-surface-active);
+	--border: var(--color-border);
+	--text-primary: var(--color-text);
+	--text-secondary: var(--color-text-muted);
+	--accent: var(--color-accent);
+	--danger: var(--color-danger);
+
+	/* ── Typography ── */
+	--font-ui: 'Segoe UI', system-ui, -apple-system, sans-serif;
+	--font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+	--text-size-body: 14px;
+	--text-size-label: 12px;
+	--text-size-caption: 11px;
+
+	/* ── Spacing ── */
+	--space-xs: 4px;
+	--space-sm: 8px;
+	--space-md: 12px;
+	--space-lg: 16px;
+	--space-xl: 24px;
+
+	/* ── Radius ── */
+	--radius-sm: 4px;
+	--radius-md: 6px;
+	--radius-lg: 8px;
+
+	/* ── Elevation ── */
+	--shadow-float: 0 4px 12px rgba(0, 0, 0, 0.4);
+
+	/* ── Motion ── */
+	--ease-out: cubic-bezier(0.33, 1, 0.68, 1);
+	--dur-micro: 120ms;
+	--dur-normal: 180ms;
+	--dur-complex: 240ms;
+
+	/* ── Layout ── */
+	--topbar-h: 48px;
+	--toolbar-w: 48px;
+	--control-size: 32px;
 }
 
 *,
@@ -29,9 +74,9 @@ body {
 	height: 100%;
 	overflow: hidden;
 	font-family: var(--font-ui);
-	font-size: 14px;
-	color: var(--text-primary);
-	background: var(--bg-app);
+	font-size: var(--text-size-body);
+	color: var(--color-text);
+	background: var(--color-bg);
 	user-select: none;
 	-webkit-user-select: none;
 }
@@ -56,9 +101,19 @@ textarea {
 	height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-	background: var(--border);
+	background: var(--color-border);
 	border-radius: 4px;
 }
 ::-webkit-scrollbar-track {
 	background: transparent;
+}
+
+/* reduce motion */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		transition-duration: 0.01ms !important;
+	}
 }

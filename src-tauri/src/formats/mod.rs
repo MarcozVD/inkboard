@@ -1,2 +1,6 @@
 //! Import/export formats (Fase 13/14).
-//! Scaffold placeholder — internal format + MS Whiteboard importer land later.
+
+pub mod ms_whiteboard;
+
+#[cfg(test)]
+mod ms_whiteboard_test;

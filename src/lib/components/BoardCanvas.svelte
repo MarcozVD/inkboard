@@ -17,6 +17,9 @@
 	import { boardToSvg } from '$lib/io/SvgExporter';
 	import { boardToPngDataUrl } from '$lib/io/PngExporter';
 	import { serializeBoard } from '$lib/io/InternalFormat';
+	import { invoke } from '@tauri-apps/api/core';
+	import { open as openDialog } from '@tauri-apps/plugin-dialog';
+	import { createText } from '$lib/objects/factory';
 	import type { Board } from '$lib/objects/types';
 
 	let { boardId }: { boardId: string } = $props();
@@ -531,6 +534,98 @@
 		}
 	}
 
+	async function importFile() {
+		if (!engine) return;
+		showExportMenu = false;
+
+		// pick a file — Tauri dialog if available, else hidden input
+		let path: string | null = null;
+		let file: File | null = null;
+		if (typeof openDialog === 'function') {
+			try {
+				path = (await openDialog({ multiple: false })) as string | null;
+			} catch {
+				path = null;
+			}
+		}
+		if (!path) {
+			// browser fallback
+			file = await pickFileFallback();
+			if (!file) return;
+		}
+
+		const world = { x: 0, y: 0 };
+
+		if (path) {
+			// Tauri path: ask Rust to detect + inspect
+			try {
+				const info = await invoke<{
+					format: string;
+					title?: string | null;
+					texts?: string[];
+					name?: string;
+				}>('inspect_import', { path });
+				if (info.format === 'image' && file === null) {
+					// image via Tauri path — read as data URL
+					const bytes = await invoke<number[]>('read_file_bytes', { path });
+					const dataUrl = bytesToDataUrl(bytes, info.name ?? 'image');
+					engine.imageTool.insertImage(dataUrl, info.name ?? 'image', world.x, world.y);
+				} else if (info.format === 'ms_whiteboard_zip') {
+					insertMsWhiteboardTexts(info.title, info.texts ?? []);
+				} else if (info.format === 'json') {
+					// handled by caller later — for now, report unsupported in this path
+					console.warn('json import via path not wired yet');
+				}
+			} catch (err) {
+				console.error('import failed', err);
+			}
+		} else if (file) {
+			if (file.type.startsWith('image/')) {
+				const reader = new FileReader();
+				reader.onload = () => {
+					engine!.imageTool.insertImage(reader.result as string, file.name, world.x, world.y);
+				};
+				reader.readAsDataURL(file);
+			} else {
+				const text = await file.text();
+				insertMsWhiteboardTexts(null, text.split('\n').filter(Boolean));
+			}
+		}
+		markDirty();
+	}
+
+	function insertMsWhiteboardTexts(title: string | null | undefined, texts: string[]) {
+		if (!engine) return;
+		const lines = [...(title ? [title] : []), ...texts];
+		lines.forEach((line, i) => {
+			const obj = createText(40 + (i % 4) * 30, 40 + i * 60, line, { fontSize: 18 });
+			engine!.store.add(obj);
+		});
+	}
+
+	function pickFileFallback(): Promise<File | null> {
+		return new Promise((resolve) => {
+			const input = document.createElement('input');
+			input.type = 'file';
+			input.accept = 'image/png,image/jpeg,image/webp,image/svg+xml,application/zip,application/json';
+			input.onchange = () => resolve(input.files?.[0] ?? null);
+			input.oncancel = () => resolve(null);
+			input.click();
+		});
+	}
+
+	function bytesToDataUrl(bytes: number[], name: string): string {
+		const mime = name.toLowerCase().endsWith('.svg')
+			? 'image/svg+xml'
+			: name.toLowerCase().endsWith('.jpg') || name.toLowerCase().endsWith('.jpeg')
+				? 'image/jpeg'
+				: name.toLowerCase().endsWith('.webp')
+					? 'image/webp'
+					: 'image/png';
+		const b64 = btoa(String.fromCharCode(...bytes));
+		return `data:${mime};base64,${b64}`;
+	}
+
 	function onKeyUp(e: KeyboardEvent) {
 		if (e.code === 'Space') {
 			spaceDown = false;
@@ -735,12 +830,14 @@
 		</div>
 	{/if}
 
-	<!-- Export menu -->
+	<!-- Export/import menu -->
 	{#if showExportMenu}
 		<div class="export-menu">
-			<button onclick={() => exportBoard('png')}>PNG</button>
-			<button onclick={() => exportBoard('svg')}>SVG</button>
-			<button onclick={() => exportBoard('json')}>JSON</button>
+			<button onclick={() => exportBoard('png')}>Export PNG</button>
+			<button onclick={() => exportBoard('svg')}>Export SVG</button>
+			<button onclick={() => exportBoard('json')}>Export JSON</button>
+			<div class="export-menu-divider"></div>
+			<button onclick={() => importFile()}>Import file…</button>
 		</div>
 	{/if}
 
@@ -932,5 +1029,11 @@
 	.export-menu button:hover {
 		background: var(--bg-hover);
 		color: var(--text-primary);
+	}
+
+	.export-menu-divider {
+		height: 1px;
+		background: var(--border);
+		margin: 3px 0;
 	}
 </style>

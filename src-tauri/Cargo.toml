@@ -32,3 +32,6 @@ log = "0.4"
 rusqlite = { version = "0.31", features = ["bundled"] }
 zstd = "0.13"
 sha2 = "0.10"
+
+# Fase 13 — Importación
+zip = "2.1"

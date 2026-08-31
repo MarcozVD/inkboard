@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { DEFAULT_CAMERA, pan, resetZoom, screenToWorld, zoomAt } from '$lib/canvas/Camera';
+	import { DEFAULT_CAMERA, pan, resetZoom, screenToWorld, worldToScreen, zoomAt } from '$lib/canvas/Camera';
 	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
 	import { CanvasEngine, type ToolId } from '$lib/canvas/CanvasEngine';
@@ -26,6 +26,9 @@
 	import ZoomControls from '$lib/components/board/ZoomControls.svelte';
 	import CreatePanel, { type CreateItem } from '$lib/components/panels/CreatePanel.svelte';
 	import { goto } from '$app/navigation';
+	import ContextMenu, { type MenuItem } from '$lib/components/menus/ContextMenu.svelte';
+	import CommandPalette, { type PaletteCmd } from '$lib/components/menus/CommandPalette.svelte';
+	import ContextToolbar, { type CtxAction } from '$lib/components/toolbar/ContextToolbar.svelte';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -36,6 +39,9 @@
 	let boardName = $state('Untitled');
 	let showExportMenu = $state(false);
 	let showCreatePanel = $state(false);
+	let ctxMenu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
+	let showPalette = $state(false);
+	let ctxBar = $state<{ x: number; y: number; actions: CtxAction[] } | null>(null);
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -262,6 +268,7 @@
 			if (canvasEl) canvasEl.releasePointerCapture(e.pointerId);
 		} else {
 			engine.pointerUp({ button: e.button, pressure: e.pressure });
+			updateCtxBar();
 		}
 	}
 
@@ -331,6 +338,37 @@
 			y: ch / 2 - (minY + h / 2) * Math.max(0.05, zoom)
 		};
 		markDirty();
+	}
+
+	// ── Context toolbar (FASE 3 — DESIGN.md § Context Toolbar) ──
+	function updateCtxBar() {
+		if (!engine || !canvasEl) { ctxBar = null; return; }
+		const eng = engine;
+		const sel = eng.selectionManager;
+		const bounds = sel.getSelectionBounds();
+		if (!bounds || sel.selected.length === 0) { ctxBar = null; return; }
+		// position above the selection, in screen space
+		const [sx, sy] = worldToScreen(bounds.x + bounds.width / 2, bounds.y, camera);
+		const actions: CtxAction[] = [
+			{ id: 'duplicate', icon: 'duplicate', label: 'Duplicate', onClick: () => duplicateSelection() },
+			{ id: 'front', icon: 'layer-front', label: 'Bring to front', onClick: () => { eng.store.bringToFront(sel.selected); syncShell(); markDirty(); } },
+			{ id: 'back', icon: 'layer-back', label: 'Send to back', onClick: () => { eng.store.sendToBack(sel.selected); syncShell(); markDirty(); } },
+			{ id: 'delete', icon: 'trash', label: 'Delete', onClick: () => {
+				const ids = sel.selected;
+				const store = eng.store;
+				const objs = ids.map((id) => store.get(id)).filter(Boolean) as CanvasObject[];
+				store.removeMany(ids);
+				eng.history.push({
+					description: 'Delete',
+					undo: () => store.addMany(objs.map((o) => structuredClone(o))),
+					redo: () => store.removeMany(ids)
+				});
+				sel.clear();
+				ctxBar = null;
+				syncShell(); markDirty();
+			}}
+		];
+		ctxBar = { x: sx, y: sy, actions };
 	}
 
 	function setShape(shape: ShapeType) {
@@ -457,6 +495,11 @@
 			}
 		}
 
+		if (mod && (e.key === 'k' || e.key === 'K')) {
+			e.preventDefault();
+			showPalette = true;
+			return;
+		}
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			if (sel.selected.length) {
 				e.preventDefault();
@@ -483,10 +526,12 @@
 		if (mod && (e.key === 'a' || e.key === 'A')) {
 			e.preventDefault();
 			sel.selectMany(engine.store.getAll().map((o) => o.id));
+			updateCtxBar();
 			markDirty();
 		}
 		if (e.key === 'Escape') {
 			sel.clear();
+			ctxBar = null;
 			markDirty();
 		}
 		if (e.key === ']') {
@@ -547,6 +592,64 @@
 		syncShell();
 		markDirty();
 	}
+
+	// ── Fase 3: right-click context menu ──
+	function onCanvasContextMenu(e: MouseEvent) {
+		e.preventDefault();
+		if (!engine) return;
+		const wx = (e.clientX - camera.x) / camera.zoom;
+		const wy = (e.clientY - camera.y) / camera.zoom;
+		const obj = engine.selectionManager.hitTest({ x: wx, y: wy });
+		if (obj) {
+			const sel = engine.selectionManager;
+			const objId = obj.id;
+			ctxMenu = {
+				x: e.clientX, y: e.clientY,
+				items: [
+					{ label: 'Copy', icon: 'copy', action: () => { /* clipboard */ } },
+					{ label: 'Duplicate', icon: 'duplicate', action: () => { sel.selectMany([objId]); duplicateSelection(); } },
+					{ label: 'Delete', icon: 'trash', danger: true, action: () => {
+						sel.selectMany([objId]);
+						const store = engine!.store;
+						store.remove(objId);
+						engine!.history.push({ description: 'Delete', undo: () => store.add(structuredClone(obj)), redo: () => store.remove(objId) });
+						syncShell(); markDirty();
+					}}
+				]
+			};
+		} else {
+			ctxMenu = {
+				x: e.clientX, y: e.clientY,
+				items: [
+					{ label: 'New sticky note', icon: 'sticky', action: () => setTool('sticky') },
+					{ label: 'New text', icon: 'text', action: () => setTool('text') },
+					{ separator: true },
+					{ label: 'Select all', action: () => { engine!.selectionManager.selectMany(engine!.store.getAll().map((o) => o.id)); markDirty(); } },
+					{ label: 'Zoom to fit', icon: 'fit', action: () => zoomFit() }
+				]
+			};
+		}
+	}
+
+	// ── Fase 3: command palette (Ctrl+K) ──
+	const paletteCommands: PaletteCmd[] = [
+		{ id: 'select', label: 'Select tool', hint: 'V', icon: 'select', action: () => setTool('select'), group: 'Tools' },
+		{ id: 'pen', label: 'Pen tool', hint: 'P', icon: 'pen', action: () => setTool('pen'), group: 'Tools' },
+		{ id: 'highlighter', label: 'Highlighter', hint: 'H', icon: 'highlighter', action: () => setTool('highlighter'), group: 'Tools' },
+		{ id: 'eraser', label: 'Eraser', hint: 'E', icon: 'eraser', action: () => setTool('eraser'), group: 'Tools' },
+		{ id: 'text', label: 'Text tool', hint: 'T', icon: 'text', action: () => setTool('text'), group: 'Tools' },
+		{ id: 'sticky', label: 'Sticky note', hint: 'S', icon: 'sticky', action: () => setTool('sticky'), group: 'Tools' },
+		{ id: 'shape', label: 'Shapes', hint: 'R', icon: 'shapes', action: () => setTool('shape'), group: 'Tools' },
+		{ id: 'image', label: 'Image', icon: 'image', action: () => setTool('image'), group: 'Tools' },
+		{ id: 'undo', label: 'Undo', hint: 'Ctrl+Z', icon: 'undo', action: () => { uiActions.undo?.(); }, group: 'Actions' },
+		{ id: 'redo', label: 'Redo', hint: 'Ctrl+Shift+Z', icon: 'redo', action: () => { uiActions.redo?.(); }, group: 'Actions' },
+		{ id: 'export-png', label: 'Export as PNG', icon: 'export', action: () => exportBoard('png'), group: 'Export' },
+		{ id: 'export-svg', label: 'Export as SVG', icon: 'export', action: () => exportBoard('svg'), group: 'Export' },
+		{ id: 'export-json', label: 'Export as JSON', icon: 'export', action: () => exportBoard('json'), group: 'Export' },
+		{ id: 'zoom-fit', label: 'Zoom to fit', icon: 'fit', action: () => zoomFit(), group: 'View' },
+		{ id: 'zoom-reset', label: 'Reset zoom', hint: 'Ctrl+0', action: () => zoomReset(), group: 'View' },
+		{ id: 'settings', label: 'Settings', icon: 'settings', action: () => uiActions.openSettings?.(), group: 'App' },
+	];
 
 	// ── Fase 14: export (browser download — works in Tauri webview too) ──
 	function downloadFile(filename: string, content: string, mime: string) {
@@ -756,6 +859,7 @@
 			onDirty: markDirty,
 			onGestureEnd: () => {
 				markDirty();
+				updateCtxBar();
 				syncShell();
 			}
 		});
@@ -838,7 +942,7 @@
 		ondrop={onDrop}
 		ontouchstart={onTouchStart}
 		ontouchmove={onTouchMove}
-		oncontextmenu={(e) => e.preventDefault()}
+		oncontextmenu={onCanvasContextMenu}
 	></canvas>
 
 	<!-- Floating tool strip (DESIGN.md) -->
@@ -937,6 +1041,31 @@
 			}}
 		/>
 	{/if}
+
+	{#if ctxBar}
+		<ContextToolbar
+			x={ctxBar.x}
+			y={ctxBar.y}
+			actions={ctxBar.actions}
+		/>
+	{/if}
+
+	<!-- Context menu (right-click) -->
+	{#if ctxMenu}
+		<ContextMenu
+			x={ctxMenu.x}
+			y={ctxMenu.y}
+			items={ctxMenu.items}
+			onClose={() => (ctxMenu = null)}
+		/>
+	{/if}
+
+	<!-- Command palette (Ctrl+K) -->
+	<CommandPalette
+		open={showPalette}
+		commands={paletteCommands}
+		onClose={() => (showPalette = false)}
+	/>
 </div>
 
 <style>

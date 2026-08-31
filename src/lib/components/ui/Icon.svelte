@@ -34,7 +34,9 @@
 		| 'sun'
 		| 'export'
 		| 'import'
-		| 'search';
+		| 'search'
+		| 'layer-front'
+		| 'layer-back';
 
 	let {
 		name,
@@ -156,5 +158,13 @@
 	{:else if name === 'search'}
 		<circle cx="11" cy="11" r="7" />
 		<path d="M21 21l-4.5-4.5" />
+	{:else if name === 'layer-front'}
+		<path d="M12 3l8 4.5-8 4.5-8-4.5z" />
+		<path d="M4 12.5l8 4.5 8-4.5" />
+		<path d="M4 17l8 4.5 8-4.5" />
+	{:else if name === 'layer-back'}
+		<path d="M12 21l-8-4.5 8-4.5 8 4.5z" />
+		<path d="M4 12.5l8-4.5 8 4.5" />
+		<path d="M4 7l8-4.5L20 7" />
 	{/if}
 </svg>

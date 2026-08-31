@@ -26,3 +26,5 @@ vite.config.ts.timestamp-*
 # IDE
 .idea
 *.swp
+# test-results
+test-results/

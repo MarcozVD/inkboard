@@ -33,7 +33,7 @@
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
-	let grid: GridConfig = { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 };
+	let grid: GridConfig = { enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 };
 
 	let renderLoop: RenderLoop | null = null;
 	let engine: CanvasEngine | null = $state(null);
@@ -60,7 +60,7 @@
 				updatedAt: Date.now(),
 				camera,
 				objects: engine.store.toJSON(),
-				background: { type: 'solid', color: '#1e1f24' },
+				background: { type: 'solid', color: '#0f1013' },
 				grid,
 				metadata: {}
 			};
@@ -139,7 +139,7 @@
 		const w = canvasEl.width;
 		const h = canvasEl.height;
 
-		ctx.fillStyle = '#1e1f24';
+		ctx.fillStyle = '#0f1013';
 		ctx.fillRect(0, 0, w, h);
 
 		drawGrid(ctx);
@@ -176,7 +176,7 @@
 		const sh = Math.abs(y1 - y0);
 
 		ctx.save();
-		ctx.strokeStyle = '#5b8cff';
+		ctx.strokeStyle = 'rgba(255,255,255,0.9)';
 		ctx.lineWidth = 1.5;
 		ctx.setLineDash([4, 3]);
 		ctx.strokeRect(sx, sy, sw, sh);
@@ -185,7 +185,7 @@
 		const handles = sel.getHandles(worldToScreenHelper);
 		for (const h of handles) {
 			ctx.fillStyle = '#ffffff';
-			ctx.strokeStyle = '#5b8cff';
+			ctx.strokeStyle = 'rgba(255,255,255,0.6)';
 			ctx.lineWidth = 1.5;
 			ctx.beginPath();
 			if (h.id === 'rotate') {
@@ -206,8 +206,8 @@
 			const [mx0, my0] = worldToScreenHelper(marquee.x, marquee.y);
 			const [mx1, my1] = worldToScreenHelper(marquee.x + marquee.width, marquee.y + marquee.height);
 			ctx.save();
-			ctx.fillStyle = 'rgba(91,140,255,0.12)';
-			ctx.strokeStyle = '#5b8cff';
+			ctx.fillStyle = 'rgba(255,255,255,0.12)';
+			ctx.strokeStyle = 'rgba(255,255,255,0.7)';
 			ctx.lineWidth = 1;
 			ctx.fillRect(mx0, my0, mx1 - mx0, my1 - my0);
 			ctx.strokeRect(mx0, my0, mx1 - mx0, my1 - my0);
@@ -523,7 +523,7 @@
 					updatedAt: Date.now(),
 					camera,
 					objects,
-					background: { type: 'solid', color: '#1e1f24' },
+					background: { type: 'solid', color: '#0f1013' },
 					grid,
 					metadata: {}
 				};
@@ -801,7 +801,7 @@
 				<button
 					class:active={engine?.stickyTool.currentColor === color}
 					title={'Color ' + i}
-					style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {engine?.stickyTool.currentColor === color ? '#5b8cff' : 'transparent'};"
+					style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {engine?.stickyTool.currentColor === color ? '#ffffff' : 'transparent'};"
 					onclick={() => engine?.stickyTool.setColor(i)}
 				></button>
 			{/each}
@@ -935,7 +935,7 @@
 	}
 
 	.save-indicator.saved {
-		color: #5bff8c;
+		color: #ffffff;
 	}
 
 	@keyframes pulse {

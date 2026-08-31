@@ -95,8 +95,8 @@ export function freshBoard(id: string, name = 'Untitled'): Board {
 		updatedAt: Date.now(),
 		camera: { x: 0, y: 0, zoom: 1, minZoom: 0.05, maxZoom: 32 },
 		objects: [],
-		background: { type: 'solid', color: '#1e1f24' },
-		grid: { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 },
+		background: { type: 'solid', color: '#0f1013' },
+		grid: { enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 },
 		metadata: {}
 	};
 }

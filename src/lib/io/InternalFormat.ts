@@ -52,8 +52,8 @@ export function deserializeBoard(json: string): Board {
 		updatedAt: b.updatedAt ?? Date.now(),
 		camera,
 		objects: (b.objects as CanvasObject[]).map(normalizeObject),
-		background: b.background ?? { type: 'solid', color: '#1e1f24' },
-		grid: b.grid ?? { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 },
+		background: b.background ?? { type: 'solid', color: '#0f1013' },
+		grid: b.grid ?? { enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 },
 		metadata: b.metadata ?? {}
 	};
 }

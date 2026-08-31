@@ -57,7 +57,7 @@ export async function boardToPngDataUrl(
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('PNG export: canvas 2d context unavailable');
 
-	ctx.fillStyle = opts.background ?? '#1e1f24';
+	ctx.fillStyle = opts.background ?? '#0f1013';
 	ctx.fillRect(0, 0, width, height);
 
 	// world → export-space: translate by -min + pad, then scale

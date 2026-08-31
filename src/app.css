@@ -1,14 +1,15 @@
-/* Inkboard global styles — dark-first, neutral canvas app shell */
+/* Inkboard global styles — monochrome theme built around the app icon
+   (white pause glyph on black). The accent IS the icon's white (#ffffff). */
 :root {
 	color-scheme: dark;
-	--bg-app: #1e1f24;
-	--bg-panel: #26272e;
-	--bg-hover: #2f313a;
-	--bg-active: #3a3d48;
-	--border: #3a3d48;
-	--text-primary: #e8e9ec;
+	--bg-app: #0f1013;
+	--bg-panel: #16181d;
+	--bg-hover: #23262c;
+	--bg-active: #30343b;
+	--border: #2a2d34;
+	--text-primary: #ffffff;
 	--text-secondary: #9a9ca8;
-	--accent: #5b8cff;
+	--accent: #ffffff;
 	--danger: #e5534b;
 	--radius: 6px;
 	--font-ui:

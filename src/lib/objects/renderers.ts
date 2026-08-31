@@ -1,4 +1,5 @@
 // Object renderers — Canvas 2D drawing for every object type (§3).
+import { getStroke } from 'perfect-freehand';
 import type {
 	CanvasObject,
 	ShapeObject,
@@ -21,6 +22,18 @@ export function renderObject(
 	opts: { getImage?: (src: string) => HTMLImageElement | undefined } = {}
 ): void {
 	if (!obj.visible) return;
+
+	// Geometric types (stroke, connector) store world-space coords directly in
+	// their points/points, so they must NOT receive the local transform.
+	if (obj.type === 'stroke' || obj.type === 'connector') {
+		ctx.save();
+		ctx.globalAlpha = obj.style.opacity ?? 1;
+		if (obj.type === 'stroke') renderStroke(ctx, obj);
+		else renderConnector(ctx, obj);
+		ctx.restore();
+		return;
+	}
+
 	ctx.save();
 	ctx.globalAlpha = obj.style.opacity ?? 1;
 
@@ -31,9 +44,6 @@ export function renderObject(
 	ctx.scale(t.scaleX ?? 1, t.scaleY ?? 1);
 
 	switch (obj.type) {
-		case 'stroke':
-			renderStroke(ctx, obj);
-			break;
 		case 'shape':
 			renderShape(ctx, obj);
 			break;
@@ -46,9 +56,6 @@ export function renderObject(
 		case 'image':
 			renderImage(ctx, obj, opts.getImage);
 			break;
-		case 'connector':
-			renderConnector(ctx, obj);
-			break;
 		case 'group':
 			break; // groups render via their children in the store
 	}
@@ -60,23 +67,47 @@ export function renderObject(
 function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject) {
 	const pts = s.points;
 	if (pts.length < 4) return;
-	ctx.save();
-	ctx.strokeStyle = s.style.color;
-	ctx.lineWidth = s.style.width;
-	ctx.lineCap = s.style.lineCap || 'round';
-	ctx.lineJoin = s.style.lineJoin || 'round';
-	if (s.style.isHighlighter) {
-		ctx.globalAlpha = (s.style.opacity ?? 1) * 0.4;
-	}
-	if (s.style.compositeOperation) ctx.globalCompositeOperation = s.style.compositeOperation;
 
-	ctx.beginPath();
-	ctx.moveTo(pts[0], pts[1]);
-	for (let i = 3; i < pts.length; i += 3) {
-		ctx.lineTo(pts[i], pts[i + 1]);
+	const style = s.style;
+	ctx.save();
+	ctx.strokeStyle = style.color;
+	ctx.fillStyle = style.color;
+	if (style.isHighlighter) {
+		ctx.globalAlpha = (style.opacity ?? 1) * 0.4;
 	}
-	ctx.stroke();
+	if (style.compositeOperation) ctx.globalCompositeOperation = style.compositeOperation;
+
+	if (s.smoothedPoints && s.smoothedPoints.length >= 4) {
+		// pre-computed outline (set by tools after gesture) — cheap path
+		drawOutline(ctx, s.smoothedPoints);
+	} else {
+		// live outline via perfect-freehand (pressure-aware, smooth)
+		const input: number[][] = [];
+		for (let i = 0; i < pts.length; i += 3) {
+			input.push([pts[i], pts[i + 1], pts[i + 2]]);
+		}
+		const outline = getStroke(input, {
+			size: style.width,
+			thinning: style.isHighlighter ? 0.35 : 0.65,
+			smoothing: 0.5,
+			simulatePressure: false,
+			start: { taper: style.isHighlighter ? 0 : 40, cap: true },
+			end: { taper: style.isHighlighter ? 0 : 40, cap: true }
+		});
+		drawOutline(ctx, outline.flat());
+	}
 	ctx.restore();
+}
+
+function drawOutline(ctx: CanvasRenderingContext2D, flatOutline: number[]) {
+	if (flatOutline.length < 6) return;
+	ctx.beginPath();
+	ctx.moveTo(flatOutline[0], flatOutline[1]);
+	for (let i = 2; i < flatOutline.length; i += 2) {
+		ctx.lineTo(flatOutline[i], flatOutline[i + 1]);
+	}
+	ctx.closePath();
+	ctx.fill();
 }
 
 // ── Shapes ──

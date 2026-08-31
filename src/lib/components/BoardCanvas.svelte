@@ -3,8 +3,7 @@
 	import { DEFAULT_CAMERA, pan, resetZoom, screenToWorld, zoomAt } from '$lib/canvas/Camera';
 	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
-	import { ObjectStore } from '$lib/canvas/ObjectStore';
-	import { SelectTool } from '$lib/tools/SelectTool';
+	import { CanvasEngine, type ToolId } from '$lib/canvas/CanvasEngine';
 	import { renderObject } from '$lib/objects/renderers';
 	import type { GridConfig, CanvasObject } from '$lib/objects/types';
 	import { createShape } from '$lib/objects/factory';
@@ -13,16 +12,18 @@
 	let { boardId }: { boardId: string } = $props();
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
+	let activeTool = $state<ToolId>('select');
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = { ...DEFAULT_CAMERA };
 	let grid: GridConfig = { enabled: true, size: 32, color: '#3a3d48', opacity: 0.6 };
 
-	const store = new ObjectStore();
-	const selectTool = new SelectTool(store, () => camera, {
-		onDirty: () => renderLoop?.markDirty(),
-		onGestureEnd: () => renderLoop?.markDirty()
-	});
+	let renderLoop: RenderLoop | null = null;
+	let engine: CanvasEngine | null = null;
+
+	function markDirty() {
+		renderLoop?.markDirty();
+	}
 
 	// image cache for data URLs (avoids re-decoding per frame)
 	const imageCache = new Map<string, HTMLImageElement>();
@@ -41,8 +42,6 @@
 	let panStart = { x: 0, y: 0 };
 	let spaceDown = false;
 	let pinchDist = 0;
-
-	let renderLoop: RenderLoop | null = null;
 
 	function getCtx(): CanvasRenderingContext2D | null {
 		return canvasEl?.getContext('2d') ?? null;
@@ -87,7 +86,7 @@
 	// ── Render ──
 	function render() {
 		const ctx = getCtx();
-		if (!ctx || !canvasEl) return;
+		if (!ctx || !canvasEl || !engine) return;
 		const w = canvasEl.width;
 		const h = canvasEl.height;
 
@@ -100,7 +99,7 @@
 		const [wx0, wy0] = screenToWorld(0, 0, camera);
 		const [wx1, wy1] = screenToWorld(w, h, camera);
 		const viewport = { x: wx0, y: wy0, width: wx1 - wx0, height: wy1 - wy0 };
-		const visible = store.queryViewport(viewport);
+		const visible = engine.store.queryViewport(viewport);
 
 		ctx.save();
 		ctx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.x, camera.y);
@@ -109,18 +108,17 @@
 		}
 		ctx.restore();
 
-		// selection overlay (screen space)
 		renderSelectionOverlay(ctx);
 	}
 
 	function renderSelectionOverlay(ctx: CanvasRenderingContext2D) {
-		const sel = selectTool.selectionManager;
+		if (!engine) return;
+		const sel = engine.selectionManager;
 		if (sel.selected.length === 0) return;
 
-		const bounds = selectTool.getSelectionScreenBounds();
+		const bounds = sel.getSelectionBounds();
 		if (!bounds) return;
 
-		// world rect → screen rect
 		const [x0, y0] = worldToScreenHelper(bounds.x, bounds.y);
 		const [x1, y1] = worldToScreenHelper(bounds.x + bounds.width, bounds.y + bounds.height);
 		const sx = Math.min(x0, x1);
@@ -135,17 +133,14 @@
 		ctx.strokeRect(sx, sy, sw, sh);
 		ctx.setLineDash([]);
 
-		// handles
-		const handles = selectTool.selectionManager.getHandles(worldToScreenHelper);
+		const handles = sel.getHandles(worldToScreenHelper);
 		for (const h of handles) {
 			ctx.fillStyle = '#ffffff';
 			ctx.strokeStyle = '#5b8cff';
 			ctx.lineWidth = 1.5;
 			ctx.beginPath();
 			if (h.id === 'rotate') {
-				// rotation: circle above
 				ctx.arc(h.position.x, h.position.y, 5, 0, Math.PI * 2);
-				// connector line to top edge
 				ctx.moveTo(sx + sw / 2, sy);
 				ctx.lineTo(h.position.x, h.position.y + 5);
 			} else {
@@ -156,8 +151,8 @@
 		}
 		ctx.restore();
 
-		// rect-select marquee
-		const marquee = selectTool.getActiveRectSelect();
+		// rect-select marquee (via selectTool)
+		const marquee = (engine.selectTool as unknown as { getActiveRectSelect?: () => { x: number; y: number; width: number; height: number } | null }).getActiveRectSelect?.();
 		if (marquee) {
 			const [mx0, my0] = worldToScreenHelper(marquee.x, marquee.y);
 			const [mx1, my1] = worldToScreenHelper(marquee.x + marquee.width, marquee.y + marquee.height);
@@ -173,32 +168,35 @@
 
 	// ── Input handling ──
 	function onPointerDown(e: PointerEvent) {
+		if (!engine) return;
 		const panMode = spaceDown || e.button === 1 || e.button === 2;
 		if (panMode) {
 			isPanning = true;
 			panStart = { x: e.clientX, y: e.clientY };
 			if (canvasEl) canvasEl.setPointerCapture(e.pointerId);
 		} else {
-			selectTool.pointerDown(e.clientX, e.clientY, { shift: e.shiftKey });
+			engine.pointerDown(e.clientX, e.clientY, { shift: e.shiftKey, button: e.button, pressure: e.pressure });
 		}
 	}
 
 	function onPointerMove(e: PointerEvent) {
+		if (!engine) return;
 		if (isPanning) {
 			camera = pan(camera, e.clientX - panStart.x, e.clientY - panStart.y);
 			panStart = { x: e.clientX, y: e.clientY };
-			renderLoop?.markDirty();
+			markDirty();
 		} else {
-			selectTool.pointerMove(e.clientX, e.clientY, { shift: e.shiftKey });
+			engine.pointerMove(e.clientX, e.clientY, { shift: e.shiftKey, pressure: e.pressure });
 		}
 	}
 
 	function onPointerUp(e: PointerEvent) {
+		if (!engine) return;
 		if (isPanning) {
 			isPanning = false;
 			if (canvasEl) canvasEl.releasePointerCapture(e.pointerId);
 		} else {
-			selectTool.pointerUp();
+			engine.pointerUp({ button: e.button, pressure: e.pressure });
 		}
 	}
 
@@ -207,11 +205,16 @@
 		if (e.ctrlKey) {
 			const factor = Math.exp(-e.deltaY * 0.002);
 			camera = zoomAt(camera, e.clientX, e.clientY, factor);
-			renderLoop?.markDirty();
+			markDirty();
 			return;
 		}
 		camera = pan(camera, -e.deltaX, -e.deltaY);
-		renderLoop?.markDirty();
+		markDirty();
+	}
+
+	function setTool(t: ToolId) {
+		engine?.setTool(t);
+		activeTool = t;
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
@@ -221,28 +224,50 @@
 		}
 		if (e.key === '+' || e.key === '=') {
 			camera = zoomAt(camera, canvasEl!.width / 2, canvasEl!.height / 2, 1.25);
-			renderLoop?.markDirty();
+			markDirty();
 		}
 		if (e.key === '-') {
 			camera = zoomAt(camera, canvasEl!.width / 2, canvasEl!.height / 2, 0.8);
-			renderLoop?.markDirty();
+			markDirty();
 		}
 		if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
 			camera = resetZoom(camera, canvasEl!.width, canvasEl!.height);
-			renderLoop?.markDirty();
+			markDirty();
 		}
 
-		// ── Fase 4: selection shortcuts ──
-		const sel = selectTool.selectionManager;
+		if (!engine) return;
+		const sel = engine.selectionManager;
 		const mod = e.ctrlKey || e.metaKey;
+
+		// tool shortcuts (V/P/H/E, T/N/R/O/L/A/I)
+		if (!mod) {
+			const toolKey: Record<string, ToolId> = {
+				v: 'select',
+				p: 'pen',
+				h: 'highlighter',
+				e: 'eraser',
+				t: 'text',
+				n: 'sticky',
+				r: 'shape',
+				o: 'shape',
+				l: 'shape',
+				a: 'shape',
+				i: 'image'
+			};
+			const t = toolKey[e.key.toLowerCase()];
+			if (t) {
+				setTool(t);
+				return;
+			}
+		}
 
 		if (e.key === 'Delete' || e.key === 'Backspace') {
 			if (sel.selected.length) {
 				e.preventDefault();
-				store.removeMany(sel.selected);
+				engine.store.removeMany(sel.selected);
 				sel.clear();
-				renderLoop?.markDirty();
+				markDirty();
 			}
 		}
 		if (mod && (e.key === 'd' || e.key === 'D')) {
@@ -251,46 +276,44 @@
 		}
 		if (mod && (e.key === 'a' || e.key === 'A')) {
 			e.preventDefault();
-			sel.selectMany(store.getAll().map((o) => o.id));
-			renderLoop?.markDirty();
+			sel.selectMany(engine.store.getAll().map((o) => o.id));
+			markDirty();
 		}
 		if (e.key === 'Escape') {
 			sel.clear();
-			renderLoop?.markDirty();
+			markDirty();
 		}
 		if (e.key === ']') {
 			e.preventDefault();
-			store.bringToFront(sel.selected);
-			renderLoop?.markDirty();
+			engine.store.bringToFront(sel.selected);
+			markDirty();
 		}
 		if (e.key === '[') {
 			e.preventDefault();
-			store.sendToBack(sel.selected);
-			renderLoop?.markDirty();
+			engine.store.sendToBack(sel.selected);
+			markDirty();
 		}
 	}
 
 	function duplicateSelection() {
-		const sel = selectTool.selectionManager;
+		if (!engine) return;
+		const sel = engine.selectionManager;
 		if (sel.selected.length === 0) return;
 		const clones: CanvasObject[] = [];
-		const idMap = new Map<string, string>();
 		for (const id of sel.selected) {
-			const obj = store.get(id);
+			const obj = engine.store.get(id);
 			if (!obj) continue;
-			const newId = uuidv4();
-			idMap.set(id, newId);
 			const clone = structuredClone(obj);
-			clone.id = newId;
+			clone.id = uuidv4();
 			clone.transform.x += 20;
 			clone.transform.y += 20;
 			clone.createdAt = Date.now();
 			clone.updatedAt = Date.now();
 			clones.push(clone);
 		}
-		store.addMany(clones);
+		engine.store.addMany(clones);
 		sel.selectMany(clones.map((c) => c.id));
-		renderLoop?.markDirty();
+		markDirty();
 	}
 
 	function onKeyUp(e: KeyboardEvent) {
@@ -317,14 +340,33 @@
 			if (pinchDist > 0) {
 				const factor = dist / pinchDist;
 				camera = zoomAt(camera, midX, midY, factor);
-				renderLoop?.markDirty();
+				markDirty();
 			}
 			pinchDist = dist;
 		}
 	}
 
+	// ── Toolbar icons (inline emoji for MVP; SVG later) ──
+	const TOOLBAR_TOOLS: ToolId[] = ['select', 'pen', 'highlighter', 'eraser', 'text', 'sticky', 'shape', 'image'];
+
+	function iconFor(tool: ToolId): string {
+		const icons: Record<ToolId, string> = {
+			select: '↖',
+			pen: '✏️',
+			highlighter: '🖍️',
+			eraser: '🧽',
+			text: 'T',
+			sticky: '📝',
+			shape: '⬛',
+			image: '🖼️',
+			connector: '➡'
+		};
+		return icons[tool];
+	}
+
 	// ── Fase 3: demo objects (dev only) ──
 	function seedDemoObjects() {
+		if (!engine) return;
 		const colors = ['#5b8cff', '#ff8c5b', '#5bff8c', '#ffd666', '#b08cff', '#ff8cbf'];
 		const objs: CanvasObject[] = [];
 		for (let i = 0; i < 200; i++) {
@@ -340,25 +382,30 @@
 				})
 			);
 		}
-		store.addMany(objs);
-		renderLoop?.markDirty();
+		engine.store.addMany(objs);
+		markDirty();
 	}
 
 	onMount(() => {
 		if (!canvasEl) return;
 		const canvas = canvasEl;
 
+		engine = new CanvasEngine({
+			camera: () => camera,
+			onDirty: markDirty
+		});
+
 		const resize = () => {
 			canvas.width = window.innerWidth;
 			canvas.height = window.innerHeight;
-			renderLoop?.markDirty();
+			markDirty();
 		};
 		resize();
 
 		renderLoop = new RenderLoop(render);
 		renderLoop.start();
 
-		store.onChange(() => renderLoop?.markDirty());
+		engine.store.onChange(() => markDirty());
 		seedDemoObjects();
 
 		window.addEventListener('resize', resize);
@@ -387,6 +434,19 @@
 		ontouchmove={onTouchMove}
 		oncontextmenu={(e) => e.preventDefault()}
 	></canvas>
+
+	<!-- Toolbar -->
+	<div class="toolbar">
+		{#each TOOLBAR_TOOLS as tool}
+			<button
+				class:active={activeTool === tool}
+				title={tool}
+				onclick={() => setTool(tool)}
+			>
+				{iconFor(tool)}
+			</button>
+		{/each}
+	</div>
 </div>
 
 <style>
@@ -403,5 +463,41 @@
 		height: 100%;
 		cursor: default;
 		touch-action: none;
+	}
+
+	.toolbar {
+		position: absolute;
+		top: 12px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: flex;
+		gap: 2px;
+		padding: 4px;
+		background: var(--bg-panel);
+		border: 1px solid var(--border);
+		border-radius: 10px;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+		z-index: 10;
+	}
+
+	.toolbar button {
+		width: 34px;
+		height: 34px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 7px;
+		color: var(--text-secondary);
+		font-size: 16px;
+	}
+
+	.toolbar button:hover {
+		background: var(--bg-hover);
+		color: var(--text-primary);
+	}
+
+	.toolbar button.active {
+		background: var(--accent);
+		color: #fff;
 	}
 </style>

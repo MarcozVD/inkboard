@@ -29,6 +29,7 @@
 	import ContextMenu, { type MenuItem } from '$lib/components/menus/ContextMenu.svelte';
 	import CommandPalette, { type PaletteCmd } from '$lib/components/menus/CommandPalette.svelte';
 	import ContextToolbar, { type CtxAction } from '$lib/components/toolbar/ContextToolbar.svelte';
+	import SettingsPanel from '$lib/components/panels/SettingsPanel.svelte';
 
 	let { boardId }: { boardId: string } = $props();
 
@@ -42,10 +43,12 @@
 	let ctxMenu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 	let showPalette = $state(false);
 	let ctxBar = $state<{ x: number; y: number; actions: CtxAction[] } | null>(null);
+	let showSettings = $state(false);
+	let theme = $state<'dark' | 'light' | 'system'>('dark');
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
-	let grid: GridConfig = { enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 };
+	let grid: GridConfig = $state({ enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 });
 
 	let renderLoop: RenderLoop | null = null;
 	let engine: CanvasEngine | null = $state(null);
@@ -890,7 +893,7 @@
 		uiActions.undo = () => { engine?.history.undo(); syncShell(); markDirty(); };
 		uiActions.redo = () => { engine?.history.redo(); syncShell(); markDirty(); };
 		uiActions.rename = (name: string) => { boardName = name || 'Untitled'; scheduleAutosave(); syncShell(); };
-		uiActions.openSettings = () => console.log('settings (FASE 4)');
+		uiActions.openSettings = () => { showSettings = true; };
 		uiActions.share = () => console.log('share (future)');
 		uiActions.back = () => goto('/');
 
@@ -1065,6 +1068,21 @@
 		open={showPalette}
 		commands={paletteCommands}
 		onClose={() => (showPalette = false)}
+	/>
+
+	<!-- Settings panel -->
+	<SettingsPanel
+		open={showSettings}
+		onClose={() => (showSettings = false)}
+		grid={grid}
+		onGridChange={(g) => { grid = g; markDirty(); }}
+		background={'#0f1013'}
+		onBgChange={() => {}}
+		{theme}
+		onThemeChange={(t) => {
+			theme = t;
+			document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+		}}
 	/>
 </div>
 

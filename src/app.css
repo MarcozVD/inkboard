@@ -117,3 +117,18 @@ textarea {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* Light theme (opt-in via Settings) — designed, not inverted (DESIGN.md § 37) */
+:root[data-theme='light'] {
+	--color-bg: #f5f5f7;
+	--color-surface: #ffffff;
+	--color-surface-hover: #ececf0;
+	--color-surface-active: #dcdce2;
+	--color-border: #d8d8de;
+	--color-text: #1c1c20;
+	--color-text-muted: #6b6b73;
+	--color-accent: #000000;
+	--color-selection: rgba(0, 0, 0, 0.9);
+	--color-selection-fill: rgba(0, 0, 0, 0.08);
+	--shadow-float: 0 4px 12px rgba(0, 0, 0, 0.12);
+}

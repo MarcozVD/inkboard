@@ -28,6 +28,7 @@ uuid = { version = "1", features = ["v4"] }
 anyhow = "1"
 log = "0.4"
 
-# --- Dependencias por fase (añadir cuando se implemente la fase) ---
-# Fase 11 — Persistencia: rusqlite { version = "0.31", features = ["bundled"] }, zstd = "0.13", sha2 = "0.10", tokio = { version = "1", features = ["full"] }
-# Fase 13/14 — Import/Export: image = { version = "0.25", features = ["png", "jpeg", "webp"] }, resvg = "0.43", usvg = "0.43", printpdf = "0.7", zip = "2.1"
+# Fase 11 — Persistencia
+rusqlite = { version = "0.31", features = ["bundled"] }
+zstd = "0.13"
+sha2 = "0.10"

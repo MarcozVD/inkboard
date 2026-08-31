@@ -13,12 +13,16 @@
 	import { SHAPE_TYPES } from '$lib/tools/ShapeTool';
 	import type { ShapeType } from '$lib/objects/types';
 	import { stickyNoteColors } from '$lib/objects/renderers';
+	import { loadBoard, saveBoard } from '$lib/io/persistence';
+	import type { Board } from '$lib/objects/types';
 
 	let { boardId }: { boardId: string } = $props();
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let activeTool = $state<ToolId>('select');
 	let editingText = $state<EditableObj | null>(null);
+	let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
+	let boardName = $state('Untitled');
 
 	// ── Engine state (lives outside Svelte reactivity — §6) ──
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -26,9 +30,41 @@
 
 	let renderLoop: RenderLoop | null = null;
 	let engine: CanvasEngine | null = $state(null);
+	let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function markDirty() {
 		renderLoop?.markDirty();
+	}
+
+	// ── Fase 11: autosave with debounce (§16) ──
+	function scheduleAutosave() {
+		if (autosaveTimer) clearTimeout(autosaveTimer);
+		autosaveTimer = setTimeout(async () => {
+			autosaveTimer = null;
+			if (!engine) return;
+			saveState = 'saving';
+			const board: Board = {
+				id: boardId,
+				workspaceId: 'default',
+				name: boardName,
+				version: 1,
+				schemaVersion: '1.0.0',
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+				camera,
+				objects: engine.store.toJSON(),
+				background: { type: 'solid', color: '#1e1f24' },
+				grid,
+				metadata: {}
+			};
+			try {
+				await saveBoard(board);
+				saveState = 'saved';
+			} catch (err) {
+				console.error('autosave failed', err);
+				saveState = 'idle';
+			}
+		}, 2000);
 	}
 
 	// image cache for data URLs (avoids re-decoding per frame)
@@ -529,8 +565,27 @@
 		renderLoop = new RenderLoop(render);
 		renderLoop.start();
 
-		engine.store.onChange(() => markDirty());
-		seedDemoObjects();
+		engine.store.onChange(() => {
+			markDirty();
+			scheduleAutosave();
+		});
+
+		// load existing board (or seed demo for a fresh one)
+		loadBoard(boardId)
+			.then((board: Board) => {
+				boardName = board.name;
+				camera = board.camera;
+				grid = board.grid ?? grid;
+				if (board.objects.length > 0) {
+					engine!.store.clear();
+					engine!.store.addMany(board.objects);
+					engine!.history.clear();
+				} else {
+					seedDemoObjects();
+				}
+				markDirty();
+			})
+			.catch(() => seedDemoObjects());
 
 		window.addEventListener('resize', resize);
 		window.addEventListener('keydown', onKeyDown);
@@ -543,6 +598,7 @@
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('paste', onPaste);
 			renderLoop?.stop();
+			if (autosaveTimer) clearTimeout(autosaveTimer);
 		};
 	});
 </script>
@@ -569,6 +625,9 @@
 		<button title="Undo (Ctrl+Z)" onclick={() => { engine?.history.undo(); markDirty(); }} disabled={!engine?.history.canUndo}>↩</button>
 		<button title="Redo (Ctrl+Shift+Z)" onclick={() => { engine?.history.redo(); markDirty(); }} disabled={!engine?.history.canRedo}>↪</button>
 		<span class="toolbar-divider"></span>
+		<span class="save-indicator" class:saved={saveState === 'saved'} class:saving={saveState === 'saving'}>
+			{saveState === 'saving' ? '●' : saveState === 'saved' ? '✓' : ''}
+		</span>
 		{#each TOOLBAR_TOOLS as tool}
 			<button
 				class:active={activeTool === tool}
@@ -706,6 +765,31 @@
 	button:disabled {
 		opacity: 0.35;
 		cursor: default;
+	}
+
+	.save-indicator {
+		width: 18px;
+		height: 18px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		align-self: center;
+		font-size: 12px;
+		color: var(--text-secondary);
+	}
+
+	.save-indicator.saving {
+		color: var(--accent);
+		animation: pulse 1s infinite;
+	}
+
+	.save-indicator.saved {
+		color: #5bff8c;
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.3; }
 	}
 
 	.shape-palette {

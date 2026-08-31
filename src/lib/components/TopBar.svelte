@@ -32,12 +32,17 @@
 	}
 
 	$effect(() => {
-		// keep state in sync if window is resized externally
+		// only in Tauri; no-op in plain browser (dev server / E2E)
+		if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) return;
+		let unlisten: (() => void) | undefined;
 		getCurrentWindow()
 			.onResized(async () => {
 				isMaximized = await getCurrentWindow().isMaximized();
 			})
-			.then((unlisten) => () => unlisten());
+			.then((fn) => {
+				unlisten = fn;
+			});
+		return () => unlisten?.();
 	});
 </script>
 

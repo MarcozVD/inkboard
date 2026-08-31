@@ -55,7 +55,7 @@
 		<section class="board-list">
 			<div class="list-header">
 				<h2>Boards</h2>
-				<button class="btn-primary" onclick={createBoard}>+ New Board</button>
+				<button class="btn-primary" data-testid="new-board" onclick={createBoard}>+ New Board</button>
 			</div>
 
 			{#if loading}
@@ -65,10 +65,10 @@
 					<p>No boards yet. Create your first board to get started.</p>
 				</div>
 			{:else}
-				<ul>
+				<ul data-testid="board-list">
 					{#each boards as board}
 						<li>
-							<button class="board-item" onclick={() => goto(`/board/${board.id}`)}>
+							<button class="board-item" data-testid="board-{board.id}" onclick={() => goto(`/board/${board.id}`)}>
 								<span class="board-name">{board.name}</span>
 								<span class="board-date">{formatDate(board.updatedAt)}</span>
 							</button>

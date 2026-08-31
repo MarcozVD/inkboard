@@ -128,6 +128,15 @@ export class SelectTool {
 		this.cb.onDirty?.();
 	}
 
+	/** Called when the tool is deselected mid-gesture — drop any transient state. */
+	reset(): void {
+		this.mode = 'idle';
+		this.activeHandle = null;
+		this.startTransforms.clear();
+		this.startBounds = null;
+		this.moved = false;
+	}
+
 	/** Push an undo command capturing before/after transforms (§15). */
 	private commitTransform(): void {
 		if (this.startTransforms.size === 0) return;

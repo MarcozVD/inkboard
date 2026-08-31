@@ -674,28 +674,6 @@
 		return icons[tool];
 	}
 
-	// ── Fase 3: demo objects (dev only) ──
-	function seedDemoObjects() {
-		if (!engine) return;
-		const colors = ['#5b8cff', '#ff8c5b', '#5bff8c', '#ffd666', '#b08cff', '#ff8cbf'];
-		const objs: CanvasObject[] = [];
-		for (let i = 0; i < 200; i++) {
-			const x = (Math.random() - 0.5) * 4000;
-			const y = (Math.random() - 0.5) * 4000;
-			const w = 60 + Math.random() * 160;
-			const h = 60 + Math.random() * 160;
-			objs.push(
-				createShape(x, y, w, h, 'rect', {
-					fill: colors[i % colors.length] + '33',
-					stroke: colors[i % colors.length],
-					strokeWidth: 2
-				})
-			);
-		}
-		engine.store.addMany(objs);
-		markDirty();
-	}
-
 	onMount(() => {
 		if (!canvasEl) return;
 		const canvas = canvasEl;
@@ -726,7 +704,7 @@
 			scheduleAutosave();
 		});
 
-		// load existing board (or seed demo for a fresh one)
+		// load existing board (or empty canvas for a fresh one)
 		loadBoard(boardId)
 			.then((board: Board) => {
 				boardName = board.name;
@@ -736,12 +714,10 @@
 					engine!.store.clear();
 					engine!.store.addMany(board.objects);
 					engine!.history.clear();
-				} else {
-					seedDemoObjects();
 				}
 				markDirty();
 			})
-			.catch(() => seedDemoObjects());
+			.catch(() => markDirty());
 
 		window.addEventListener('resize', resize);
 		window.addEventListener('keydown', onKeyDown);
@@ -778,20 +754,22 @@
 
 	<!-- Toolbar -->
 	<div class="toolbar">
-		<button title="Undo (Ctrl+Z)" onclick={() => { engine?.history.undo(); markDirty(); }} disabled={!engine?.history.canUndo}>↩</button>
-		<button title="Redo (Ctrl+Shift+Z)" onclick={() => { engine?.history.redo(); markDirty(); }} disabled={!engine?.history.canRedo}>↪</button>
+		<button data-testid="undo" title="Undo (Ctrl+Z)" onclick={() => { engine?.history.undo(); markDirty(); }} disabled={!engine?.history.canUndo}>↩</button>
+		<button data-testid="redo" title="Redo (Ctrl+Shift+Z)" onclick={() => { engine?.history.redo(); markDirty(); }} disabled={!engine?.history.canRedo}>↪</button>
 		<span class="toolbar-divider"></span>
-		<span class="save-indicator" class:saved={saveState === 'saved'} class:saving={saveState === 'saving'}>
+		<span class="save-indicator" class:saved={saveState === 'saved'} class:saving={saveState === 'saving'} data-testid="save-indicator">
 			{saveState === 'saving' ? '●' : saveState === 'saved' ? '✓' : ''}
 		</span>
 		<span class="toolbar-divider"></span>
 		<button
+			data-testid="export"
 			title="Export"
 			class:active={showExportMenu}
 			onclick={() => (showExportMenu = !showExportMenu)}
 		>⭳</button>
 		{#each TOOLBAR_TOOLS as tool}
 			<button
+				data-testid="tool-{tool}"
 				class:active={activeTool === tool}
 				title={tool}
 				onclick={() => setTool(tool)}
@@ -833,11 +811,11 @@
 	<!-- Export/import menu -->
 	{#if showExportMenu}
 		<div class="export-menu">
-			<button onclick={() => exportBoard('png')}>Export PNG</button>
-			<button onclick={() => exportBoard('svg')}>Export SVG</button>
-			<button onclick={() => exportBoard('json')}>Export JSON</button>
+			<button data-testid="export-png" onclick={() => exportBoard('png')}>Export PNG</button>
+			<button data-testid="export-svg" onclick={() => exportBoard('svg')}>Export SVG</button>
+			<button data-testid="export-json" onclick={() => exportBoard('json')}>Export JSON</button>
 			<div class="export-menu-divider"></div>
-			<button onclick={() => importFile()}>Import file…</button>
+			<button data-testid="import-file" onclick={() => importFile()}>Import file…</button>
 		</div>
 	{/if}
 

@@ -60,8 +60,8 @@
 - **Seguridad:** `csp: null`. `inspect_import` y `read_file_bytes` leen cualquier ruta que mande el webview. El ZIP se descomprime entero antes de comprobar su tamaño (zip bomb).
 - **Tema:** el canvas usa colores oscuros fijos (`#0f1013`, grid, selección blanca). `system` no sigue al sistema operativo y el tema no se guarda.
 - **Sin UI de estilo:** no se puede cambiar el color ni el grosor del pen, ni el fill o el stroke de las formas (`engine.setPenConfig` existe, pero nada lo llama).
-- **Código muerto:** `src/lib/components/TopBar.svelte` (nadie lo importa) y `src-tauri/src/geometry/` (vacío).
-- **Calidad:** sin CI, sin ESLint y sin E2E de las funciones básicas de edición.
+- **Código muerto:** `src-tauri/src/geometry/` (vacío). `src/lib/components/TopBar.svelte` se borró en M0-17 (nadie lo importaba).
+- **Calidad:** con CI desde M0-16 y E2E de las funciones básicas de edición; sin ESLint ni `prettier --check` (M1-12).
 - **Documentación:** `README.md` y `PRODUCT.md` dan por funcionales la selección/transformación y el texto. Hay que corregirlo al cerrar M0.
 
 ### 0.4 Parcial o no implementado
@@ -1474,10 +1474,10 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-13 ✅ | **B14** · Resetear `ui` y `uiActions` al desmontar el board. La TopBar decide el modo board/home por la ruta (`page.route.id`). | `stores/ui.svelte.ts`, `app/TopBar.svelte`, `BoardCanvas.svelte` | E2E: en Home no aparecen undo/redo ni avatares | S |
 | M0-14 ✅ | **B15** · `count_objects` lee `board.objects`, con test Rust. | `src-tauri/src/db/mod.rs` | `cargo test` cubre el conteo | S |
 | M0-15 ✅\* | **B16** · `read_file_bytes` devuelve `tauri::ipc::Response` (bytes crudos → `ArrayBuffer`) y el front construye un `Blob` que lee con `FileReader`. | `commands/import.rs`, `BoardCanvas.svelte` | Manual: importar un PNG de 10 MB por el diálogo nativo | S |
-| M0-16 | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
-| M0-17 | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
+| M0-16 ✅* | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
+| M0-17 ✅ | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
 
-\* M0-09 y M0-15 están implementadas (los permisos de ventana están en `capabilities/default.json` y `read_file_bytes` ya devuelve bytes crudos), pero su aceptación es manual y sigue sin verificarse en `pnpm tauri dev`: trátalas como abiertas hasta comprobar minimizar/maximizar/cerrar y hasta importar un PNG de 10 MB por el diálogo nativo.
+\* M0-09, M0-15 y M0-16 están implementadas (los permisos de ventana están en `capabilities/default.json`, `read_file_bytes` ya devuelve bytes crudos y el workflow existe en `.github/workflows/ci.yml`), pero su aceptación no está verificada todavía: M0-09 y M0-15 necesitan `pnpm tauri dev` (minimizar/maximizar/cerrar, y importar un PNG de 10 MB por el diálogo nativo) y M0-16 necesita su primera ejecución en GitHub, que ocurrirá con el primer push. Trátalas como abiertas hasta cerrar esas comprobaciones.
 
 **Gate M0**
 - [ ] E2E de M0-01 en verde en CI.

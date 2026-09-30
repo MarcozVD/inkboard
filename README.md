@@ -74,10 +74,12 @@ pnpm tauri build      # Desktop distributable
 
 ```bash
 pnpm test                           # Unit (Vitest) — 97/97
-pnpm exec playwright test           # E2E on :1420 — 36/36
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 36/36
 pnpm check                          # Svelte / TS check
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 11/11
 ```
+
+**CI** (M0-16): `.github/workflows/ci.yml` runs `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Not yet executed on GitHub — the first run happens with the first push.
 
 ## Design System
 

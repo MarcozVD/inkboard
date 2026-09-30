@@ -21,6 +21,8 @@
 	} = $props();
 
 	let textarea: HTMLTextAreaElement | null = null;
+	// Enter commits and blurs; blur would commit again. One terminal transition only.
+	let settled = false;
 
 	// compute screen position from world transform + camera + canvas offset
 	const left = $derived(obj.transform.x * camera.zoom + camera.x + offset.x);
@@ -36,13 +38,21 @@
 	});
 
 	function commit() {
+		if (settled) return;
+		settled = true;
 		onCommit(textarea?.value ?? '');
+	}
+
+	function cancel() {
+		if (settled) return;
+		settled = true;
+		onCancel();
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
-			onCancel();
+			cancel();
 		}
 	}
 </script>
@@ -68,7 +78,7 @@
 		}
 		if (e.key === 'Escape') {
 			e.preventDefault();
-			onCancel();
+			cancel();
 		}
 	}}
 ></textarea>

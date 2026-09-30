@@ -4,12 +4,18 @@
 	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
 	import { CanvasEngine, type ToolId } from '$lib/canvas/CanvasEngine';
+	import {
+		dropLastAddCommand,
+		RemoveObjectCommand,
+		UpdateContentCommand,
+		type ContentSnapshot
+	} from '$lib/canvas/commands';
 	import { renderObject } from '$lib/objects/renderers';
 	import type { GridConfig, CanvasObject } from '$lib/objects/types';
 	import { createShape } from '$lib/objects/factory';
 	import { v4 as uuidv4 } from 'uuid';
 	import TextEditor from '$lib/components/TextEditor.svelte';
-	import type { EditableObj, TextObject } from '$lib/objects/types';
+	import type { EditableObj, StickyNoteObject, TextObject } from '$lib/objects/types';
 	import { SHAPE_TYPES } from '$lib/tools/ShapeTool';
 	import type { ShapeType } from '$lib/objects/types';
 	import { stickyNoteColors } from '$lib/objects/renderers';
@@ -36,7 +42,7 @@
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let activeTool = $state<ToolId>('select');
-	let editingText = $state<EditableObj | null>(null);
+	let editingTextId = $state<string | null>(null);
 	let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
 	let boardName = $state('Untitled');
 	let showExportMenu = $state(false);
@@ -55,6 +61,14 @@
 	let renderLoop: RenderLoop | null = null;
 	let engine: CanvasEngine | null = $state(null);
 	let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// In-canvas editing (B03): state is only the id; commits read the real store
+	// object (a $state proxy of the object would not persist to the ObjectStore).
+	const editingObj = $derived.by(() => {
+		const eng = engine;
+		if (!eng || !editingTextId) return null;
+		return (eng.store.get(editingTextId) as unknown as EditableObj) ?? null;
+	});
 
 	// ── Canvas size / viewport offset (B02) ──
 	// CSS px of the canvas box inside the viewport; camera coordinates live in this space.
@@ -272,6 +286,9 @@
 	// ── Input handling ──
 	function onPointerDown(e: PointerEvent) {
 		if (!engine) return;
+		// keep focus on the in-canvas text editor (B03): the default mousedown
+		// action would blur the freshly mounted textarea and commit an empty value
+		e.preventDefault();
 		const p = toCanvasPoint(e);
 		const panMode = spaceDown || e.button === 1 || e.button === 2;
 		if (panMode) {
@@ -322,7 +339,7 @@
 	function setTool(t: ToolId) {
 		engine?.setTool(t);
 		activeTool = t;
-		if (t !== 'select') editingText = null;
+		if (t !== 'select') editingTextId = null;
 		showCreatePanel = false;
 	}
 
@@ -428,7 +445,75 @@
 	}
 
 	function openTextEditor(obj: EditableObj) {
-		editingText = obj;
+		editingTextId = obj.id;
+	}
+
+	function isEditableObj(obj: CanvasObject | undefined): obj is TextObject | StickyNoteObject {
+		return !!obj && (obj.type === 'text' || obj.type === 'sticky_note');
+	}
+
+	function editableSnapshot(obj: TextObject | StickyNoteObject): ContentSnapshot {
+		return { content: obj.content, transform: { ...obj.transform } };
+	}
+
+	/** Fit the box to the committed content (single source of truth). */
+	function fitBoxToContent(obj: TextObject | StickyNoteObject, content: string): { width: number; height: number } {
+		const lines = content.split('\n');
+		const longest = Math.max(1, ...lines.map((l) => l.length));
+		const pad = obj.style.padding ?? 4;
+		const lh = obj.type === 'text' ? obj.style.lineHeight : 1.3;
+		return {
+			width: Math.max(40, longest * obj.style.fontSize * 0.6 + pad * 2),
+			height: Math.max(30, lines.length * obj.style.fontSize * lh + pad * 2)
+		};
+	}
+
+	/** Idempotent commit: writes to the real store object (§B03). */
+	function commitTextEdit(content: string) {
+		const id = editingTextId;
+		editingTextId = null;
+		if (!engine || !id) return;
+		const obj = engine.store.get(id);
+		if (!isEditableObj(obj)) return;
+
+		if (content.trim() === '') {
+			// empty confirm: delete the object; if it was just created, delete its
+			// creation step from history too (otherwise undo would resurrect it)
+			engine.store.remove(id);
+			if (!dropLastAddCommand(engine.history, id)) {
+				engine.history.push(new RemoveObjectCommand(engine.store, obj));
+			}
+			syncShell();
+			markDirty();
+			return;
+		}
+
+		const before = editableSnapshot(obj);
+		if (before.content === content) return;
+
+		const box = fitBoxToContent(obj, content);
+		engine.store.update(id, {
+			content,
+			transform: { ...obj.transform, width: box.width, height: box.height }
+		} as Partial<CanvasObject>);
+		const after = editableSnapshot(obj);
+		engine.history.push(new UpdateContentCommand(engine.store, id, before, after));
+		syncShell();
+		markDirty();
+	}
+
+	/** Esc: abort the edit. A freshly created (still empty) object is discarded. */
+	function cancelTextEdit() {
+		const id = editingTextId;
+		editingTextId = null;
+		if (!engine || !id) return;
+		const obj = engine.store.get(id);
+		if (isEditableObj(obj) && obj.content.trim() === '') {
+			engine.store.remove(id);
+			dropLastAddCommand(engine.history, id);
+			syncShell();
+		}
+		markDirty();
 	}
 
 	function onDblClick(e: MouseEvent) {
@@ -488,6 +573,8 @@
 	}
 
 	function onKeyDown(e: KeyboardEvent) {
+		// while the in-canvas editor is open, keys belong to the textarea (B03)
+		if (editingTextId) return;
 		if (e.code === 'Space' && !e.repeat) {
 			spaceDown = true;
 			if (canvasEl) canvasEl.style.cursor = 'grab';
@@ -984,7 +1071,7 @@
 		oncontextmenu={onCanvasContextMenu}
 	></canvas>
 
-	{#if objectCount === 0 && !editingText}
+	{#if objectCount === 0 && !editingObj}
 		<div class="canvas-hint" aria-hidden="true">
 			<span class="hint-mark"><Icon name="pen" size={20} /></span>
 			<p>Start creating — draw, write, or add a sticky note</p>
@@ -1056,36 +1143,13 @@
 	/>
 
 	<!-- In-canvas text editor -->
-	{#if editingText}
+	{#if editingObj}
 		<TextEditor
-			obj={editingText}
+			obj={editingObj}
 			camera={{ x: camera.x, y: camera.y, zoom: camera.zoom }}
 			offset={{ x: canvasRect.left, y: canvasRect.top }}
-			onCommit={(content) => {
-				if (engine) {
-					const obj = editingText!;
-					// update content + resize box to fit
-					obj.content = content;
-					const lines = content.split('\n');
-					const longest = Math.max(1, ...lines.map((l) => l.length));
-					const pad = obj.style.padding ?? 4;
-					const lh = obj.style.lineHeight ?? 1.3;
-					obj.transform.width = Math.max(40, longest * obj.style.fontSize * 0.6 + pad * 2);
-					obj.transform.height = Math.max(30, lines.length * obj.style.fontSize * lh + pad * 2);
-					obj.updatedAt = Date.now();
-					engine.store.notifyMoved([obj.id]);
-					markDirty();
-				}
-				editingText = null;
-			}}
-			onCancel={() => {
-				// if empty text was created, remove it
-				if (engine && editingText && editingText.content.trim() === '') {
-					engine.store.remove(editingText.id);
-					markDirty();
-				}
-				editingText = null;
-			}}
+			onCommit={(content) => commitTextEdit(content)}
+			onCancel={() => cancelTextEdit()}
 		/>
 	{/if}
 

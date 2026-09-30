@@ -24,7 +24,7 @@
 
 ## Estado del producto (v0.1.0 · M0 en curso)
 
-Usable a medias: dibujo, formas, imágenes, **selección/transform (B01 corregido)**, undo/redo parcial, multi-tablero, persistencia SQLite (Tauri) o localStorage, export PNG/SVG/JSON, import imágenes + ZIP MS Whiteboard (solo texto). **Texto y sticky se crean pero no se pueden editar/guardar bien (B03).** Salir del board &lt;2s pierde cambios (B05). Atajos siguen compitiendo con inputs (B04/B09). Offset del canvas (B02) pendiente. Ver `README.md` → Current status y `implementation_plan.md` §0.2.
+Usable localmente para dibujo, formas, imágenes, selección/transform, **texto y sticky editables in-canvas (B03 corregido)**, undo/redo parcial, multi-tablero, persistencia SQLite (Tauri) o localStorage, export PNG/SVG/JSON, import imágenes + ZIP MS Whiteboard (solo texto). Pendiente: salir del board &lt;2s pierde cambios (B05); atajos compiten con inputs (B04/B09). Ver `README.md` → Current status y `implementation_plan.md` §0.2.
 
 ## How the product should feel
 

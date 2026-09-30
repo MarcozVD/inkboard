@@ -2,6 +2,7 @@
 import type { Command, HistoryManager } from './HistoryManager';
 import type { ObjectStore } from './ObjectStore';
 import type { CanvasObject, TextObject, StickyNoteObject, Transform } from '$lib/objects/types';
+import { applyGeometry, type GeometrySnapshot } from '$lib/objects/geometry';
 
 function clone(obj: CanvasObject): CanvasObject {
 	return structuredClone(obj);
@@ -63,12 +64,13 @@ export class RemoveObjectCommand implements Command {
 	}
 }
 
-/** Change transforms of multiple objects (move/resize/rotate). Deltas via before/after maps. */
+/** Change the geometry of multiple objects (move/resize/rotate).
+ * Snapshots cover strokes/connectors points too, not only `transform` (B11). */
 export class UpdateTransformCommand implements Command {
 	constructor(
 		private store: ObjectStore,
-		private before: Map<string, Transform>,
-		private after: Map<string, Transform>
+		private before: Map<string, GeometrySnapshot>,
+		private after: Map<string, GeometrySnapshot>
 	) {}
 
 	description = 'Transform';
@@ -81,12 +83,12 @@ export class UpdateTransformCommand implements Command {
 		this.apply(this.after);
 	}
 
-	private apply(map: Map<string, Transform>): void {
+	private apply(map: Map<string, GeometrySnapshot>): void {
 		const ids: string[] = [];
-		for (const [id, t] of map) {
+		for (const [id, snap] of map) {
 			const obj = this.store.get(id);
 			if (!obj) continue;
-			obj.transform = { ...t };
+			applyGeometry(obj, snap);
 			obj.updatedAt = Date.now();
 			ids.push(id);
 		}

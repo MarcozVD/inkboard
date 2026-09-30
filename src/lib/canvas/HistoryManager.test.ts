@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { HistoryManager } from './HistoryManager';
 import { AddObjectCommand, RemoveObjectCommand, UpdateTransformCommand } from './commands';
 import { ObjectStore } from './ObjectStore';
-import { createShape, createText } from '$lib/objects/factory';
+import { createShape, createStroke, createText } from '$lib/objects/factory';
+import { captureGeometry, translateObject } from '$lib/objects/geometry';
 
 describe('HistoryManager', () => {
 	it('executes a command and pushes onto undo stack', () => {
@@ -107,8 +108,8 @@ describe('UpdateTransformCommand', () => {
 		const store = new ObjectStore();
 		const obj = createShape(0, 0, 100, 100, 'rect');
 		store.add(obj);
-		const before = new Map([[obj.id, { x: 0, y: 0, width: 100, height: 100, rotation: 0, scaleX: 1, scaleY: 1 }]]);
-		const after = new Map([[obj.id, { x: 50, y: 50, width: 60, height: 60, rotation: 0.5, scaleX: 1, scaleY: 1 }]]);
+		const before = new Map([[obj.id, { transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, scaleX: 1, scaleY: 1 } }]]);
+		const after = new Map([[obj.id, { transform: { x: 50, y: 50, width: 60, height: 60, rotation: 0.5, scaleX: 1, scaleY: 1 } }]]);
 		const cmd = new UpdateTransformCommand(store, before, after);
 		cmd.redo();
 		expect(obj.transform.x).toBe(50);
@@ -116,5 +117,22 @@ describe('UpdateTransformCommand', () => {
 		cmd.undo();
 		expect(obj.transform.x).toBe(0);
 		expect(obj.transform.width).toBe(100);
+	});
+
+	it('restores stroke points on undo/redo (B11)', () => {
+		const store = new ObjectStore();
+		const stroke = createStroke([0, 0, 1, 10, 10, 1]);
+		store.add(stroke);
+		const before = new Map([[stroke.id, captureGeometry(stroke)]]);
+		translateObject(stroke, 50, 50);
+		const after = new Map([[stroke.id, captureGeometry(stroke)]]);
+
+		const cmd = new UpdateTransformCommand(store, before, after);
+		cmd.undo();
+		expect(stroke.points[0]).toBe(0);
+		expect(stroke.points[1]).toBe(0);
+		cmd.redo();
+		expect(stroke.points[0]).toBe(50);
+		expect(stroke.points[1]).toBe(50);
 	});
 });

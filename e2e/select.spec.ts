@@ -270,3 +270,74 @@ test.describe('B07 — z-order', () => {
 	});
 });
 
+test.describe('B11 — stroke transforms', () => {
+	test('a stroke can be moved', async ({ page }) => {
+		const id = await createBoard(page);
+		await selectTool(page, 'pen');
+		await dragMouse(page, { x: 300, y: 250 }, { x: 500, y: 350 }, 12);
+		await waitForObjectCount(page, id, 1);
+
+		await selectTool(page, 'select');
+		await dragMouse(page, { x: 400, y: 300 }, { x: 450, y: 330 });
+
+		await expect
+			.poll(
+				async () => {
+					const stroke = (await storedObjects(page, id)).find((o) => o.type === 'stroke');
+					return stroke?.points ? Math.round(stroke.points[0]) : NaN;
+				},
+				{ timeout: TIMEOUT }
+			)
+			.toBe(350);
+		await expect
+			.poll(
+				async () => {
+					const stroke = (await storedObjects(page, id)).find((o) => o.type === 'stroke');
+					return stroke?.points ? Math.round(stroke.points[1]) : NaN;
+				},
+				{ timeout: TIMEOUT }
+			)
+			.toBe(280);
+	});
+});
+
+test.describe('B12 — rotation convention', () => {
+	test('a corner of a 45°-rotated rect selects it; the AABB corner does not', async ({ page }) => {
+		const id = await createBoard(page);
+		const box = await canvasBox(page);
+		await drawShape(page, 'rect', { x: 300, y: 200 }, { x: 500, y: 400 });
+		await waitForObjectCount(page, id, 1);
+
+		// select, then rotate 45° around the box center (400,300) via the rotate handle
+		await selectTool(page, 'select');
+		await page.mouse.click(box.x + 400, box.y + 300);
+		await dispatchPointer(page, 'pointerdown', { x: 400, y: 160 }, 1);
+		await dispatchPointer(page, 'pointermove', { x: 499, y: 201 }, 1);
+		await dispatchPointer(page, 'pointerup', { x: 499, y: 201 }, 0);
+		await expect
+			.poll(
+				async () => {
+					const shape = shapeAt(await storedObjects(page, id));
+					return shape ? Math.abs(shape.transform.rotation - Math.PI / 4) < 0.05 : false;
+				},
+				{ timeout: TIMEOUT }
+			)
+			.toBe(true);
+
+		await page.keyboard.press('Escape');
+		await expect(page.locator('.ctx-toolbar')).toHaveCount(0);
+
+		// the old AABB corner is outside the rotated rect → no selection
+		await page.mouse.click(box.x + 595, box.y + 395);
+		await expect(page.locator('.ctx-toolbar')).toHaveCount(0);
+
+		// the rotated corner selects it
+		await page.mouse.click(box.x + 538, box.y + 298);
+		await expect(page.locator('.ctx-toolbar')).toHaveCount(1);
+
+		await page.keyboard.press('Delete');
+		await expect
+			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
+			.toBe(0);
+	});
+});

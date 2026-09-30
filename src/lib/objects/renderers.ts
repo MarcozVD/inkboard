@@ -38,10 +38,14 @@ export function renderObject(
 	ctx.globalAlpha = obj.style.opacity ?? 1;
 
 	const t = obj.transform;
-	// transform: translate to origin, rotate, scale, then draw in local space
-	ctx.translate(t.x, t.y);
+	// origin at the box center, rotate/scale, then draw local (0..w, 0..h).
+	// Rotation convention (§M0-10, B12): around the center of the box.
+	const cx = t.x + t.width / 2;
+	const cy = t.y + t.height / 2;
+	ctx.translate(cx, cy);
 	ctx.rotate(t.rotation ?? 0);
 	ctx.scale(t.scaleX ?? 1, t.scaleY ?? 1);
+	ctx.translate(-t.width / 2, -t.height / 2);
 
 	switch (obj.type) {
 		case 'shape':

@@ -4,7 +4,14 @@ import { SelectionManager, type HandleId } from '$lib/canvas/SelectionManager';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
 import { UpdateTransformCommand } from '$lib/canvas/commands';
-import type { Transform } from '$lib/objects/types';
+import {
+	applyGeometry,
+	captureGeometry,
+	rotateObject,
+	scaleObject,
+	translateObject,
+	type GeometrySnapshot
+} from '$lib/objects/geometry';
 
 type Mode = 'idle' | 'move' | 'resize' | 'rotate' | 'rect-select';
 
@@ -20,7 +27,7 @@ export class SelectTool extends BaseTool {
 	private dragStartWorld: Vec2 = { x: 0, y: 0 };
 	private dragStartScreen: Vec2 = { x: 0, y: 0 };
 	private lastWorld: Vec2 = { x: 0, y: 0 };
-	private startTransforms = new Map<string, { x: number; y: number; width: number; height: number; rotation: number; scaleX: number; scaleY: number }>();
+	private startGeometries = new Map<string, GeometrySnapshot>();
 	private startBounds: Rect | null = null;
 	private activeHandle: HandleId | null = null;
 	private rectStart: Vec2 = { x: 0, y: 0 };
@@ -119,7 +126,7 @@ export class SelectTool extends BaseTool {
 		}
 		this.mode = 'idle';
 		this.activeHandle = null;
-		this.startTransforms.clear();
+		this.startGeometries.clear();
 		this.startBounds = null;
 		this.ctx.onDirty();
 	}
@@ -128,21 +135,21 @@ export class SelectTool extends BaseTool {
 	reset(): void {
 		this.mode = 'idle';
 		this.activeHandle = null;
-		this.startTransforms.clear();
+		this.startGeometries.clear();
 		this.startBounds = null;
 		this.moved = false;
 	}
 
-	/** Push an undo command capturing before/after transforms (§15). */
+	/** Push an undo command capturing before/after geometry (§15). */
 	private commitTransform(): void {
-		if (this.startTransforms.size === 0) return;
-		const before = new Map<string, Transform>();
-		const after = new Map<string, Transform>();
-		for (const [id, t] of this.startTransforms) {
+		if (this.startGeometries.size === 0) return;
+		const before = new Map<string, GeometrySnapshot>();
+		const after = new Map<string, GeometrySnapshot>();
+		for (const [id, snap] of this.startGeometries) {
 			const obj = this.ctx.store.get(id);
 			if (!obj) continue;
-			before.set(id, { ...t });
-			after.set(id, { ...obj.transform });
+			before.set(id, snap);
+			after.set(id, captureGeometry(obj));
 		}
 		if (before.size === 0) return;
 		this.ctx.pushHistory?.(new UpdateTransformCommand(this.ctx.store, before, after));
@@ -161,11 +168,11 @@ export class SelectTool extends BaseTool {
 	};
 
 	private captureStart(): void {
-		this.startTransforms.clear();
+		this.startGeometries.clear();
 		for (const id of this.sel.selected) {
 			const obj = this.ctx.store.get(id);
 			if (obj) {
-				this.startTransforms.set(id, { ...obj.transform });
+				this.startGeometries.set(id, captureGeometry(obj));
 			}
 		}
 		this.startBounds = this.sel.getSelectionBounds();
@@ -180,8 +187,7 @@ export class SelectTool extends BaseTool {
 		for (const id of this.sel.selected) {
 			const obj = this.ctx.store.get(id);
 			if (!obj || obj.locked) continue;
-			obj.transform.x += dx;
-			obj.transform.y += dy;
+			translateObject(obj, dx, dy);
 			obj.updatedAt = Date.now();
 		}
 		this.ctx.store.notifyMoved(this.sel.selected);
@@ -221,15 +227,15 @@ export class SelectTool extends BaseTool {
 
 		const scaleX = sb.width > 0 ? newW / sb.width : 1;
 		const scaleY = sb.height > 0 ? newH / sb.height : 1;
+		// scale around the start bounds top-left, then align to the dragged box
+		const origin: Vec2 = { x: sb.x, y: sb.y };
 		for (const selId of this.sel.selected) {
 			const obj = this.ctx.store.get(selId);
-			if (!obj || obj.locked) continue;
-			const st = this.startTransforms.get(selId)!;
-			// rescale relative to the start bounds top-left corner
-			obj.transform.x = newLeft + (st.x - sb.x) * scaleX;
-			obj.transform.y = newTop + (st.y - sb.y) * scaleY;
-			obj.transform.width = st.width * scaleX;
-			obj.transform.height = st.height * scaleY;
+			const snap = this.startGeometries.get(selId);
+			if (!obj || !snap || obj.locked) continue;
+			applyGeometry(obj, snap);
+			scaleObject(obj, origin, scaleX, scaleY);
+			translateObject(obj, newLeft - sb.x, newTop - sb.y);
 			obj.updatedAt = Date.now();
 		}
 		this.ctx.store.notifyMoved(this.sel.selected);
@@ -243,17 +249,10 @@ export class SelectTool extends BaseTool {
 		const delta = angle - startAngle;
 		for (const selId of this.sel.selected) {
 			const obj = this.ctx.store.get(selId);
-			if (!obj || obj.locked) continue;
-			const st = this.startTransforms.get(selId)!;
-			// rotate around selection center
-			const local = { x: st.x + st.width / 2 - c.x, y: st.y + st.height / 2 - c.y };
-			const cos = Math.cos(delta);
-			const sin = Math.sin(delta);
-			const nx = local.x * cos - local.y * sin + c.x;
-			const ny = local.x * sin + local.y * cos + c.y;
-			obj.transform.x = nx - st.width / 2;
-			obj.transform.y = ny - st.height / 2;
-			obj.transform.rotation = st.rotation + delta;
+			const snap = this.startGeometries.get(selId);
+			if (!obj || !snap || obj.locked) continue;
+			applyGeometry(obj, snap);
+			rotateObject(obj, c, delta);
 			obj.updatedAt = Date.now();
 		}
 		this.ctx.store.notifyMoved(this.sel.selected);

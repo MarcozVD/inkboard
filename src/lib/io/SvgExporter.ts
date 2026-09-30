@@ -1,5 +1,6 @@
 // SvgExporter — serialize board objects to an SVG string (§18).
 import type { CanvasObject } from '$lib/objects/types';
+import { getObjectBounds } from '$lib/objects/bounds';
 
 function esc(s: string): string {
 	return s
@@ -9,26 +10,32 @@ function esc(s: string): string {
 		.replace(/"/g, '&quot;');
 }
 
+/** SVG rotate() around the box center — same convention as the canvas (§M0-10). */
+function rotationAttr(o: CanvasObject): string {
+	const r = o.transform.rotation ?? 0;
+	if (!r) return '';
+	const cx = o.transform.x + o.transform.width / 2;
+	const cy = o.transform.y + o.transform.height / 2;
+	const deg = (r * 180) / Math.PI;
+	return ` transform="rotate(${deg.toFixed(3)} ${cx.toFixed(2)} ${cy.toFixed(2)})"`;
+}
+
 /** Export a full board (objects in world coords) to an SVG string. */
 export function boardToSvg(
 	objects: CanvasObject[],
 	opts: { width?: number; height?: number; background?: string } = {}
 ): string {
-	// compute bounds over all objects
+	// compute bounds over all objects (rotated AABBs, stroke widths included)
 	let minX = Infinity;
 	let minY = Infinity;
 	let maxX = -Infinity;
 	let maxY = -Infinity;
 	for (const o of objects) {
-		const t = o.transform;
-		const x1 = t.x;
-		const y1 = t.y;
-		const x2 = t.x + (t.width ?? 0);
-		const y2 = t.y + (t.height ?? 0);
-		minX = Math.min(minX, x1, x2);
-		minY = Math.min(minY, y1, y2);
-		maxX = Math.max(maxX, x1, x2);
-		maxY = Math.max(maxY, y1, y2);
+		const b = getObjectBounds(o);
+		minX = Math.min(minX, b.x);
+		minY = Math.min(minY, b.y);
+		maxX = Math.max(maxX, b.x + b.width);
+		maxY = Math.max(maxY, b.y + b.height);
 	}
 	if (!isFinite(minX)) {
 		minX = 0;
@@ -66,27 +73,28 @@ function objectToSvg(o: CanvasObject): string {
 			const w = t.width;
 			const h = t.height;
 			const s = o.style;
+			const rot = rotationAttr(o);
 			const common = `x="${t.x}" y="${t.y}" width="${w}" height="${h}" ` +
 				`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" ` +
 				`opacity="${opacity}" ${s.strokeDash?.length ? `stroke-dasharray="${s.strokeDash.join(' ')}"` : ''}`;
 			switch (o.shape) {
 				case 'rect':
-					return `<rect ${common} rx="${s.cornerRadius ?? 0}"/>`;
+					return `<rect ${common} rx="${s.cornerRadius ?? 0}"${rot}/>`;
 				case 'ellipse':
 					return `<ellipse cx="${t.x + w / 2}" cy="${t.y + h / 2}" rx="${w / 2}" ry="${h / 2}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"/>`;
+						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
 				case 'line':
 				case 'arrow':
 					return `<line x1="${t.x}" y1="${t.y}" x2="${t.x + w}" y2="${t.y + h}" ` +
-						`stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"/>`;
+						`stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
 				case 'triangle':
 					return `<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h} ${t.x},${t.y + h}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"/>`;
+						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
 				case 'diamond':
 					return `<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h / 2} ${t.x + w / 2},${t.y + h} ${t.x},${t.y + h / 2}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"/>`;
+						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
 				default:
-					return `<rect ${common}/>`;
+					return `<rect ${common}${rot}/>`;
 			}
 		}
 		case 'text': {
@@ -96,10 +104,10 @@ function objectToSvg(o: CanvasObject): string {
 				.map((line, i) => `<text x="${t.x}" y="${t.y + o.style.fontSize + i * lh}" ` +
 					`font-size="${o.style.fontSize}" fill="${o.style.color}" opacity="${opacity}">${esc(line)}</text>`)
 				.join('\n');
-			return body;
+			return `<g${rotationAttr(o)}>${body}</g>`;
 		}
 		case 'sticky_note': {
-			return `<g opacity="${opacity}">
+			return `<g opacity="${opacity}"${rotationAttr(o)}>
 				<rect x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" rx="4" fill="${o.style.backgroundColor}"/>
 				${o.content.split('\n').map((line, i) =>
 					`<text x="${t.x + (o.style.padding ?? 12)}" y="${t.y + (o.style.padding ?? 12) + o.style.fontSize + i * o.style.fontSize * 1.3}" ` +
@@ -129,7 +137,7 @@ function objectToSvg(o: CanvasObject): string {
 				`fill="none" stroke-linecap="round" opacity="${opacity}"/>`;
 		}
 		case 'image': {
-			return `<image href="${o.src}" x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" opacity="${opacity}"/>`;
+			return `<image href="${o.src}" x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" opacity="${opacity}"${rotationAttr(o)}/>`;
 		}
 		case 'group':
 			return '';

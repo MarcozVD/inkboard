@@ -69,19 +69,24 @@ export function distSqToSegment(p: Vec2, a: Vec2, b: Vec2): number {
 }
 
 /**
- * Transform a world-space point into an object's local space (undo translate,
- * rotate, scale). Useful for rotated hit-testing.
+ * Transform a world-space point into an object's local space (0..width, 0..height).
+ * Rotation convention (§M0-10): around the center of the box.
  */
-export function worldToLocal(p: Vec2, t: { x: number; y: number; rotation?: number; scaleX?: number; scaleY?: number }): Vec2 {
+export function worldToLocal(
+	p: Vec2,
+	t: { x: number; y: number; width: number; height: number; rotation?: number; scaleX?: number; scaleY?: number }
+): Vec2 {
+	const cx = t.x + t.width / 2;
+	const cy = t.y + t.height / 2;
 	const cos = Math.cos(-(t.rotation ?? 0));
 	const sin = Math.sin(-(t.rotation ?? 0));
-	const dx = p.x - t.x;
-	const dy = p.y - t.y;
+	const dx = p.x - cx;
+	const dy = p.y - cy;
 	const rx = dx * cos - dy * sin;
 	const ry = dx * sin + dy * cos;
 	return {
-		x: rx / (t.scaleX ?? 1),
-		y: ry / (t.scaleY ?? 1)
+		x: rx / (t.scaleX ?? 1) + t.width / 2,
+		y: ry / (t.scaleY ?? 1) + t.height / 2
 	};
 }
 

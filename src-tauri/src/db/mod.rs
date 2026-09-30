@@ -165,9 +165,13 @@ impl AppDb {
 }
 
 fn count_objects(json: &str) -> i64 {
-    // fast, forgiving count: number of "id":" occurrences in the objects array
+    // boards are serialized as { schemaVersion, version, board: { objects: [...] } }
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
-        if let Some(objs) = v.get("objects").and_then(|o| o.as_array()) {
+        if let Some(objs) = v
+            .get("board")
+            .and_then(|b| b.get("objects"))
+            .and_then(|o| o.as_array())
+        {
             return objs.len() as i64;
         }
     }
@@ -183,4 +187,47 @@ fn chrono_now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn count_objects_reads_board_objects() {
+        let json = r#"{
+            "schemaVersion": "1.0.0",
+            "version": 1,
+            "board": { "id": "b1", "objects": [{ "id": "a" }, { "id": "b" }] }
+        }"#;
+        assert_eq!(count_objects(json), 2);
+    }
+
+    #[test]
+    fn count_objects_is_zero_for_missing_board_objects() {
+        assert_eq!(count_objects("{}"), 0);
+        assert_eq!(count_objects("not json"), 0);
+        // top-level "objects" is not the serialized shape anymore (B15)
+        assert_eq!(count_objects(r#"{"objects":[{"id":"a"}]}"#), 0);
+        assert_eq!(count_objects(r#"{"board":{"objects":[]}}"#), 0);
+    }
+
+    #[test]
+    fn save_board_persists_the_object_count() {
+        let db = AppDb::new(std::path::Path::new(":memory:")).expect("in-memory db");
+        db.ensure_default_workspace().expect("workspace");
+        let json = r#"{
+            "schemaVersion": "1.0.0",
+            "version": 1,
+            "board": {
+                "id": "b1",
+                "name": "Test",
+                "objects": [{ "id": "a" }, { "id": "b" }, { "id": "c" }]
+            }
+        }"#;
+        db.save_board("b1", "Test", json).expect("save");
+        let list = db.list_boards().expect("list");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].object_count, 3);
+    }
 }

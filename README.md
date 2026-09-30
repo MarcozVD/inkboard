@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.0 → M0 in progress):** Selection works again (M0-02). Text/sticky editing, canvas pointer offset, flush-on-exit, and shortcut-vs-input bugs remain — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.1.0 → M0 in progress):** Selection (M0-02) and canvas pointer sizing/DPR (M0-03) fixed. Text/sticky editing, flush-on-exit, and shortcut-vs-input bugs remain — see [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -27,15 +27,15 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Area | State |
 |------|--------|
 | Selection / transform | **Works** after M0-02 (B01 fixed) |
+| Canvas sizing / pointer coords | **Works** after M0-03 (B02 fixed) |
 | Text / sticky editing | **Broken** — editor closes empty / content not saved (B03) |
-| Pointer vs canvas offset | **Broken** — stroke ~32px below cursor; DPR issues (B02) |
 | Leave board &lt;2s | **Broken** — changes lost; no flush on unmount (B05) |
 | Shortcuts while typing in inputs | **Broken** — keys still switch tools / delete (B04); sticky shortcut `S` wrong (B09) |
 | Connectors / groups | Stub only |
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01 / M0-02 done; M0-03… pending).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-03 done; M0-04… pending).
 
 ## Tech Stack
 

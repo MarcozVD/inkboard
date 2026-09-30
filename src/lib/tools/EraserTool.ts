@@ -12,7 +12,7 @@ export class EraserTool extends BaseTool {
 	pointerDown(e: ToolPointerEvent): void {
 		const world = this.screenToWorld(e.screenX, e.screenY);
 		const hit = this.sel.hitTest(world);
-		if (hit) {
+		if (hit && !hit.locked) {
 			this.ctx.store.remove(hit.id);
 			this.removed.push(hit);
 			this.ctx.onDirty();
@@ -24,7 +24,7 @@ export class EraserTool extends BaseTool {
 		if (!this.erasing) return;
 		const world = this.screenToWorld(e.screenX, e.screenY);
 		const hit = this.sel.hitTest(world);
-		if (hit) {
+		if (hit && !hit.locked) {
 			this.ctx.store.remove(hit.id);
 			this.removed.push(hit);
 			this.ctx.onDirty();
@@ -33,15 +33,15 @@ export class EraserTool extends BaseTool {
 
 	pointerUp(_e: ToolPointerEvent): void {
 		if (this.removed.length > 0) {
-			// composite: one command restoring all erased objects
-			const first = this.removed[0];
+			// composite: one command restoring all objects erased in this gesture.
+			// capture the removed list now — `this.removed` is reset right after
+			const removed = this.removed;
 			const store = this.ctx.store;
 			this.ctx.pushHistory?.({
 				description: 'Erase',
-				undo: () => store.addMany(this.removed.map((o) => structuredClone(o))),
-				redo: () => this.removed.forEach((o) => store.remove(o.id))
+				undo: () => store.addMany(removed.map((o) => structuredClone(o))),
+				redo: () => removed.forEach((o) => store.remove(o.id))
 			});
-			void first;
 		}
 		this.erasing = false;
 		this.removed = [];

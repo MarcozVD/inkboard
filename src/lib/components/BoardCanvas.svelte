@@ -25,6 +25,7 @@
 	import { boardToPngDataUrl } from '$lib/io/PngExporter';
 	import { serializeBoard } from '$lib/io/InternalFormat';
 	import { invoke } from '@tauri-apps/api/core';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { createText } from '$lib/objects/factory';
 	import type { Board } from '$lib/objects/types';
@@ -64,6 +65,9 @@
 	let renderLoop: RenderLoop | null = null;
 	let engine: CanvasEngine | null = $state(null);
 	let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+	let hasPendingSave = false;
+	// preserved from the loaded board (B17)
+	let boardCreatedAt = Date.now();
 
 	// In-canvas editing (B03): state is only the id; commits read the real store
 	// object (a $state proxy of the object would not persist to the ObjectStore).
@@ -108,36 +112,60 @@
 		ui.canRedo = engine?.history.canRedo ?? false;
 	}
 
-	// ── Fase 11: autosave with debounce (§16) ──
-	function scheduleAutosave() {
-		if (autosaveTimer) clearTimeout(autosaveTimer);
-		autosaveTimer = setTimeout(async () => {
+	// ── Fase 11: autosave with debounce (§16) + flush (B05, B17) ──
+	function buildBoard(): Board {
+		return {
+			id: boardId,
+			workspaceId: 'default',
+			name: boardName,
+			version: 1,
+			schemaVersion: '1.0.0',
+			createdAt: boardCreatedAt,
+			updatedAt: Date.now(),
+			camera,
+			objects: engine?.store.toJSON() ?? [],
+			background: { type: 'solid', color: '#0f1013' },
+			grid,
+			metadata: {}
+		};
+	}
+
+	/** Persist the current board immediately. */
+	async function saveNow() {
+		if (!engine) return;
+		hasPendingSave = false;
+		saveState = 'saving';
+		syncShell();
+		try {
+			await saveBoard(buildBoard());
+			saveState = 'saved';
+		} catch (err) {
+			console.error('autosave failed', err);
+			hasPendingSave = true;
+			saveState = 'idle';
+		}
+		syncShell();
+	}
+
+	/**
+	 * Save now, cancelling the debounce. Used on unmount, pagehide,
+	 * visibilitychange, before goto('/') and on window close (B05).
+	 */
+	function flushSave(): Promise<void> {
+		if (autosaveTimer) {
+			clearTimeout(autosaveTimer);
 			autosaveTimer = null;
-			if (!engine) return;
-			saveState = 'saving';
-			syncShell();
-			const board: Board = {
-				id: boardId,
-				workspaceId: 'default',
-				name: boardName,
-				version: 1,
-				schemaVersion: '1.0.0',
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				camera,
-				objects: engine.store.toJSON(),
-				background: { type: 'solid', color: '#0f1013' },
-				grid,
-				metadata: {}
-			};
-			try {
-				await saveBoard(board);
-				saveState = 'saved';
-			} catch (err) {
-				console.error('autosave failed', err);
-				saveState = 'idle';
-			}
-			syncShell();
+		}
+		if (!hasPendingSave) return Promise.resolve();
+		return saveNow();
+	}
+
+	function scheduleAutosave() {
+		hasPendingSave = true;
+		if (autosaveTimer) clearTimeout(autosaveTimer);
+		autosaveTimer = setTimeout(() => {
+			autosaveTimer = null;
+			void saveNow();
 		}, 2000);
 	}
 
@@ -816,7 +844,7 @@
 					name: boardName,
 					version: 1,
 					schemaVersion: '1.0.0',
-					createdAt: Date.now(),
+					createdAt: boardCreatedAt,
 					updatedAt: Date.now(),
 					camera,
 					objects,
@@ -1015,7 +1043,7 @@
 		uiActions.rename = (name: string) => { boardName = name || 'Untitled'; scheduleAutosave(); syncShell(); };
 		uiActions.openSettings = () => { showSettings = true; };
 		uiActions.share = () => console.log('share (future)');
-		uiActions.back = () => goto('/');
+		uiActions.back = async () => { await flushSave(); goto('/'); };
 
 		// keep shell state in sync after every store change
 		engine.store.onChange(syncShell);
@@ -1024,6 +1052,7 @@
 		loadBoard(boardId)
 			.then((board: Board) => {
 				boardName = board.name;
+				boardCreatedAt = board.createdAt ?? Date.now();
 				camera = board.camera;
 				grid = board.grid ?? grid;
 				if (board.objects.length > 0) {
@@ -1035,19 +1064,45 @@
 			})
 			.catch(() => markDirty());
 
+		// ── Flush on exit paths (B05) ──
+		const onPageHide = () => { void flushSave(); };
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'hidden') void flushSave();
+		};
+		// force a save every 30 s of continuous editing (the 2 s debounce may never fire)
+		const forceSaveInterval = setInterval(() => {
+			if (hasPendingSave) void saveNow();
+		}, 30_000);
+
+		let unlistenClose: (() => void) | null = null;
+		if ('__TAURI_INTERNALS__' in window) {
+			getCurrentWindow()
+				.onCloseRequested(async () => {
+					await flushSave();
+				})
+				.then((unlisten) => { unlistenClose = unlisten; })
+				.catch(() => {});
+		}
+
 		window.addEventListener('resize', syncCanvasSize);
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
 		window.addEventListener('paste', onPaste);
+		window.addEventListener('pagehide', onPageHide);
+		document.addEventListener('visibilitychange', onVisibilityChange);
 
 		return () => {
+			void flushSave();
+			clearInterval(forceSaveInterval);
+			unlistenClose?.();
 			resizeObserver.disconnect();
 			window.removeEventListener('resize', syncCanvasSize);
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('paste', onPaste);
+			window.removeEventListener('pagehide', onPageHide);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
 			renderLoop?.stop();
-			if (autosaveTimer) clearTimeout(autosaveTimer);
 		};
 	});
 </script>

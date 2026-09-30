@@ -26,6 +26,8 @@ export interface StoredBoard {
 	name: string;
 	objects: StoredObject[];
 	camera: { x: number; y: number; zoom: number };
+	createdAt?: number;
+	updatedAt?: number;
 }
 
 export interface Point {

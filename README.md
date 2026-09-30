@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing, keyboard shortcuts, autosave flush, eraser undo, z-order and object transform fixed (M0-02…M0-08, M0-10). Window controls need a manual check in `tauri dev` (B08) — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing, shortcuts, autosave flush, eraser and import undo, z-order, object transform, shell reset and the Rust `object_count` fixed (M0-02…M0-15). Window controls and native-dialog import (M0-09, M0-15) still need a manual check in `tauri dev` — see [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -12,12 +12,12 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Drawing** — pen (pressure via Pointer Events + perfect-freehand), highlighter, eraser
 - **Shapes** — rect, ellipse, line, arrow, triangle, diamond, star, polygon
 - **Sticky notes / text** — in-canvas editing with undoable `UpdateContentCommand` (M0-04)
-- **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG)
+- **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG); insert is a single undo step (M0-12)
 - **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10)
-- **Undo/redo** — Command Pattern, 200 steps (eraser undo fixed in M0-07 — B06)
+- **Undo/redo** — Command Pattern, 200 steps (eraser undo in M0-07, image insert and import in M0-12)
 - **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (flushed on unmount, on `pagehide`/hidden, before returning Home and on window close — M0-06)
 - **Export** — PNG, SVG, JSON (client-side)
-- **Import** — images; MS Whiteboard ZIP (text extraction only)
+- **Import** — images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)
 - **UI** — floating ToolBar, ContextToolbar, ContextMenu, Command palette (`Ctrl+K`), Create panel, Settings
 - **Multi-board** — home picker with search, favorites, grid view
 - **Desktop** — custom titlebar, window controls (capabilities granted in M0-09; minimize/maximize/close still to be confirmed in `tauri dev` — B08)
@@ -34,11 +34,14 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Eraser undo | **Works** after M0-07 (B06 fixed); locked objects are skipped |
 | Z-order (bring/send to front/back) | **Works** after M0-08 (B07 fixed) — painted by `zIndex`, undoable via `ReorderCommand`; `]`/`[` one step, `Ctrl+]`/`Ctrl+[` all the way |
 | Window controls (titlebar) | **Likely fixed** in M0-09 (B08) — capabilities granted, still to be confirmed in `tauri dev` |
-| Connectors / groups | Stub only |
+| Native-dialog image import | **Likely fixed** in M0-15 (B16) — raw bytes instead of a JSON array; still to be confirmed in `tauri dev` |
+| Board list in Home | No leftover board chrome after leaving a board (M0-13, B14) |
+| `object_count` in SQLite | **Works** after M0-14 (B15 fixed) |
+| Connectors / groups | Stub only — the Connector button stays hidden until M1-09 (M0-11) |
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-08, M0-10 done; M0-09 done pending its manual check; M0-11… pending).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-15 done; M0-09 and M0-15 done pending their manual checks; M0-16, M0-17… pending).
 
 ## Tech Stack
 
@@ -70,9 +73,10 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 94/94
-pnpm exec playwright test           # E2E on :1420 — 34/34
+pnpm test                           # Unit (Vitest) — 97/97
+pnpm exec playwright test           # E2E on :1420 — 36/36
 pnpm check                          # Svelte / TS check
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 11/11
 ```
 
 ## Design System

@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing and keyboard shortcuts fixed (M0-02…M0-05). Flush-on-exit bug remains — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing, keyboard shortcuts, autosave flush and eraser undo fixed (M0-02…M0-07). Window controls need a manual check in `tauri dev` (B08) — see [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -14,13 +14,13 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Sticky notes / text** — in-canvas editing with undoable `UpdateContentCommand` (M0-04)
 - **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG)
 - **Selection** — select, marquee, move, resize, rotate (fixed in M0-02; stroke transform still latent B11)
-- **Undo/redo** — Command Pattern, 200 steps (eraser undo still broken — B06)
-- **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (lost if leave board &lt;2s — B05)
+- **Undo/redo** — Command Pattern, 200 steps (eraser undo fixed in M0-07 — B06)
+- **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (flushed on unmount, on `pagehide`/hidden, before returning Home and on window close — M0-06)
 - **Export** — PNG, SVG, JSON (client-side)
 - **Import** — images; MS Whiteboard ZIP (text extraction only)
 - **UI** — floating ToolBar, ContextToolbar, ContextMenu, Command palette (`Ctrl+K`), Create panel, Settings
 - **Multi-board** — home picker with search, favorites, grid view
-- **Desktop** — custom titlebar, window controls (minimize/maximize/close need capabilities — B08)
+- **Desktop** — custom titlebar, window controls (capabilities granted in M0-09; minimize/maximize/close still to be confirmed in `tauri dev` — B08)
 
 ## Current status
 
@@ -29,13 +29,15 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Selection / transform | **Works** after M0-02 (B01 fixed) |
 | Canvas sizing / pointer coords | **Works** after M0-03 (B02 fixed) |
 | Text / sticky editing | **Works** after M0-04 (B03 fixed) |
-| Leave board &lt;2s | **Broken** — changes lost; no flush on unmount (B05) |
+| Leave board &lt;2s | **Works** after M0-06 — flush on unmount, on `pagehide`/hidden, before returning Home and on window close (B05) |
 | Shortcuts while typing in inputs | **Works** after M0-05 (B04, B09 fixed) — one table in `src/lib/input/shortcuts.ts` feeds the keydown, tooltips and palette |
+| Eraser undo | **Works** after M0-07 (B06 fixed); locked objects are skipped |
+| Window controls (titlebar) | **Likely fixed** in M0-09 (B08) — capabilities granted, still to be confirmed in `tauri dev` |
 | Connectors / groups | Stub only |
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-05 done; M0-06… pending).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-07 done; M0-09 done pending its manual check; M0-08, M0-10… pending).
 
 ## Tech Stack
 
@@ -67,8 +69,8 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 73/73
-pnpm exec playwright test           # E2E on :1420 — some fails expected until M0-03…M0-07
+pnpm test                           # Unit (Vitest) — 75/75
+pnpm exec playwright test           # E2E on :1420 — 31/31
 pnpm check                          # Svelte / TS check
 ```
 

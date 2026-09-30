@@ -62,12 +62,14 @@ export class CanvasEngine {
 		return this._activeTool;
 	}
 
-	setTool(tool: ToolId): void {
+	/** Activate a tool. Returns false when the tool is not implemented (B10). */
+	setTool(tool: ToolId): boolean {
 		const next = this.tools.get(tool);
-		if (!next) return; // tool not implemented yet
+		if (!next) return false; // tool not implemented yet
 		this.tools.get(this._activeTool)?.reset();
 		this._activeTool = tool;
 		this.onDirty();
+		return true;
 	}
 
 	get tool(): BaseTool {

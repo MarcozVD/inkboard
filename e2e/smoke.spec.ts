@@ -1,7 +1,10 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { storedObjects, waitForObjectCount } from './helpers';
 
 const STORAGE_KEY = 'inkboard:boards';
+const PNG_1X1 =
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 async function createBoard(page: Page): Promise<string> {
 	await page.goto('/');
@@ -27,6 +30,22 @@ test.describe('home', () => {
 		expect(id).toMatch(/^[0-9a-f-]{36}$/);
 		await expect(page.locator('canvas.board-canvas')).toBeVisible();
 		await expect(page.getByTestId('tool-select')).toBeVisible();
+	});
+
+	test('B14 — home hides board chrome; a board shows it', async ({ page }) => {
+		await page.goto('/');
+		await expect(page.getByTestId('new-board')).toBeVisible();
+		await expect(page.getByTestId('undo')).toHaveCount(0);
+		await expect(page.getByTestId('redo')).toHaveCount(0);
+		await expect(page.locator('.presence')).toHaveCount(0);
+
+		await createBoard(page);
+		await expect(page.getByTestId('undo')).toBeVisible();
+		await expect(page.getByTestId('redo')).toBeVisible();
+		await expect(page.locator('.presence')).toHaveCount(1);
+
+		// B10 — connector button hidden until M1-09
+		await expect(page.getByTestId('tool-connector')).toHaveCount(0);
 	});
 });
 
@@ -105,6 +124,36 @@ test.describe('board canvas', () => {
 		await expect(page.getByTestId('export-png')).toBeVisible();
 		await expect(page.getByTestId('export-svg')).toBeVisible();
 		await expect(page.getByTestId('export-json')).toBeVisible();
+	});
+});
+
+test.describe('B13 — insert undo', () => {
+	test('an inserted image can be undone and redone', async ({ page }) => {
+		const id = await createBoard(page);
+
+		const chooserPromise = page.waitForEvent('filechooser');
+		await page.getByTestId('export').click();
+		await page.getByTestId('import-file').click();
+		const chooser = await chooserPromise;
+		await chooser.setFiles({
+			name: 'dot.png',
+			mimeType: 'image/png',
+			buffer: Buffer.from(PNG_1X1, 'base64')
+		});
+
+		await waitForObjectCount(page, id, 1);
+
+		// move focus away from the hidden file input before using shortcuts
+		await page.locator('canvas.board-canvas').click({ position: { x: 600, y: 400 } });
+		await page.keyboard.press('Control+z');
+		await expect
+			.poll(async () => (await storedObjects(page, id)).length, { timeout: 8000 })
+			.toBe(0);
+
+		await page.keyboard.press('Control+Shift+z');
+		await expect
+			.poll(async () => (await storedObjects(page, id)).length, { timeout: 8000 })
+			.toBe(1);
 	});
 });
 

@@ -16,3 +16,17 @@ export const uiActions = $state({
 	share: undefined as (() => void) | undefined,
 	back: undefined as (() => void) | undefined
 });
+
+/** Reset shell state when the board unmounts (B14) — Home must not inherit it. */
+export function resetUi(): void {
+	ui.boardName = 'Inkboard';
+	ui.saveState = 'idle';
+	ui.canUndo = false;
+	ui.canRedo = false;
+	uiActions.undo = undefined;
+	uiActions.redo = undefined;
+	uiActions.rename = undefined;
+	uiActions.openSettings = undefined;
+	uiActions.share = undefined;
+	uiActions.back = undefined;
+}

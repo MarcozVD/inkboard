@@ -30,7 +30,7 @@
 	import { open as openDialog } from '@tauri-apps/plugin-dialog';
 	import { createText } from '$lib/objects/factory';
 	import type { Board } from '$lib/objects/types';
-	import { ui, uiActions } from '$lib/stores/ui.svelte';
+	import { ui, uiActions, resetUi } from '$lib/stores/ui.svelte';
 	import ToolBar, { type ToolItem } from '$lib/components/toolbar/ToolBar.svelte';
 	import ZoomControls from '$lib/components/board/ZoomControls.svelte';
 	import CreatePanel, { type CreateItem } from '$lib/components/panels/CreatePanel.svelte';
@@ -65,6 +65,7 @@
 
 	let renderLoop: RenderLoop | null = null;
 	let engine: CanvasEngine | null = $state(null);
+	let destroyed = false;
 	let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 	let hasPendingSave = false;
 	// preserved from the loaded board (B17)
@@ -107,6 +108,7 @@
 
 	// Shell state sync — TopBar reads ui.*; refresh on every history-affecting change
 	function syncShell() {
+		if (destroyed) return; // B14: no writes to the ui store after unmount
 		ui.boardName = boardName;
 		ui.saveState = saveState;
 		ui.canUndo = engine?.history.canUndo ?? false;
@@ -369,7 +371,9 @@
 	}
 
 	function setTool(t: ToolId) {
-		engine?.setTool(t);
+		// B10: UI only follows when the engine actually accepted the tool
+		const accepted = engine?.setTool(t) ?? false;
+		if (!accepted) return;
 		activeTool = t;
 		if (t !== 'select') editingTextId = null;
 		showCreatePanel = false;
@@ -943,13 +947,22 @@
 		markDirty();
 	}
 
+	/** Import texts as one undoable step (B13). */
 	function insertMsWhiteboardTexts(title: string | null | undefined, texts: string[]) {
 		if (!engine) return;
 		const lines = [...(title ? [title] : []), ...texts];
-		lines.forEach((line, i) => {
-			const obj = createText(40 + (i % 4) * 30, 40 + i * 60, line, { fontSize: 18 });
-			engine!.store.add(obj);
+		if (lines.length === 0) return;
+		const objs = lines.map((line, i) => createText(40 + (i % 4) * 30, 40 + i * 60, line, { fontSize: 18 }));
+		engine.store.addMany(objs);
+		const store = engine.store;
+		const ids = objs.map((o) => o.id);
+		engine.history.push({
+			description: 'Import',
+			undo: () => store.removeMany(ids),
+			redo: () => store.addMany(objs.map((o) => structuredClone(o)))
 		});
+		syncShell();
+		markDirty();
 	}
 
 	function pickFileFallback(): Promise<File | null> {
@@ -1016,8 +1029,8 @@
 		{ id: 'text', icon: 'text', label: 'Text' },
 		{ id: 'sticky', icon: 'sticky', label: 'Sticky Note' },
 		{ id: 'shape', icon: 'shapes', label: 'Shapes' },
-		{ id: 'image', icon: 'image', label: 'Image' },
-		{ id: 'connector', icon: 'connector', label: 'Connector' }
+		{ id: 'image', icon: 'image', label: 'Image' }
+		// 'connector' stays hidden until M1-09 (B10)
 	];
 	const CREATE_ITEMS: CreateItem[] = [
 		{ id: 'sticky', icon: 'sticky', label: 'Sticky note' },
@@ -1116,7 +1129,9 @@
 		document.addEventListener('visibilitychange', onVisibilityChange);
 
 		return () => {
+			destroyed = true;
 			void flushSave();
+			resetUi();
 			clearInterval(forceSaveInterval);
 			unlistenClose?.();
 			resizeObserver.disconnect();

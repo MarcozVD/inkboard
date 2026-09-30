@@ -1,6 +1,8 @@
 // ImageTool — insert images via file picker, paste, or drag & drop (§8)
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createImage } from '$lib/objects/factory';
+import type { CanvasObject } from '$lib/objects/types';
+import { AddObjectCommand } from '$lib/canvas/commands';
 
 export class ImageTool extends BaseTool {
 	private hiddenInput: HTMLInputElement | null = null;
@@ -35,27 +37,32 @@ export class ImageTool extends BaseTool {
 
 	private clickWorld: { x: number; y: number } = { x: 0, y: 0 };
 
+	/** Add the image and register it as a single undo step (B13). */
+	private commit(obj: CanvasObject): void {
+		this.ctx.store.add(obj);
+		this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, obj));
+		this.ctx.onDirty();
+	}
+
 	private loadFile(file: File) {
 		const reader = new FileReader();
 		reader.onload = () => {
 			const dataUrl = reader.result as string;
 			const img = new Image();
 			img.onload = () => {
-				const obj = createImage(
-					this.clickWorld.x - img.width / 2 / 2,
-					this.clickWorld.y - img.height / 2 / 2,
-					dataUrl,
-					img.width,
-					img.height
+				this.commit(
+					createImage(
+						this.clickWorld.x - img.width / 2 / 2,
+						this.clickWorld.y - img.height / 2 / 2,
+						dataUrl,
+						img.width,
+						img.height
+					)
 				);
-				this.ctx.store.add(obj);
-				this.ctx.onDirty();
 			};
 			img.onerror = () => {
 				// fallback: use conservative dimensions
-				const obj = createImage(this.clickWorld.x - 200, this.clickWorld.y - 150, dataUrl, 400, 300);
-				this.ctx.store.add(obj);
-				this.ctx.onDirty();
+				this.commit(createImage(this.clickWorld.x - 200, this.clickWorld.y - 150, dataUrl, 400, 300));
 			};
 			img.src = dataUrl;
 		};
@@ -63,20 +70,16 @@ export class ImageTool extends BaseTool {
 	}
 
 	/** Insert a pasted / dragged image from a data URL at the given world position. */
-	insertImage(dataUrl: string, name: string, wx: number, wy: number): void {
+	insertImage(dataUrl: string, _name: string, wx: number, wy: number): void {
 		const img = new Image();
 		img.onload = () => {
 			const w = img.width;
 			const h = img.height;
-			const obj = createImage(wx - w / 2 / 2, wy - h / 2 / 2, dataUrl, w, h);
-			this.ctx.store.add(obj);
-			this.ctx.onDirty();
+			this.commit(createImage(wx - w / 2 / 2, wy - h / 2 / 2, dataUrl, w, h));
 		};
 		img.onerror = () => {
-			const obj = createImage(wx - 200, wy - 150, dataUrl, 400, 300);
-			this.ctx.store.add(obj);
-			this.ctx.onDirty();
-			};
+			this.commit(createImage(wx - 200, wy - 150, dataUrl, 400, 300));
+		};
 		img.src = dataUrl;
 	}
 

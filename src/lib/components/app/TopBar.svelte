@@ -5,11 +5,12 @@
 	import ToolButton from '$lib/components/ui/ToolButton.svelte';
 	import { ui, uiActions } from '$lib/stores/ui.svelte';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
+	import { page } from '$app/stores';
 
 	let editing = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
-	// home (no board loaded) hides board-specific chrome
-	const isBoard = $derived(ui.boardName !== 'Inkboard' || ui.canUndo || ui.saveState !== 'idle');
+	// board vs home is decided by the route, not by leftover ui state (B14)
+	const isBoard = $derived(($page.route.id ?? '').startsWith('/board'));
 
 	$effect(() => {
 		if (editing && inputEl) {
@@ -63,10 +64,10 @@
 				<span class="avatar ghost">+</span>
 			</div>
 			<span class="divider"></span>
+			<ToolButton icon="undo" label="Undo" shortcut="Ctrl+Z" testid="undo" disabled={!ui.canUndo} onclick={() => uiActions.undo?.()} />
+			<ToolButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" testid="redo" disabled={!ui.canRedo} onclick={() => uiActions.redo?.()} />
+			<span class="divider"></span>
 		{/if}
-		<ToolButton icon="undo" label="Undo" shortcut="Ctrl+Z" testid="undo" disabled={!ui.canUndo} onclick={() => uiActions.undo?.()} />
-		<ToolButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" testid="redo" disabled={!ui.canRedo} onclick={() => uiActions.redo?.()} />
-		<span class="divider"></span>
 		<ToolButton icon="share" label="Share" disabled />
 		<ToolButton icon="settings" label="Settings" onclick={() => uiActions.openSettings?.()} />
 		<span class="divider"></span>

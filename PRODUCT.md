@@ -18,8 +18,13 @@
 
 ## Non-goals (ahora)
 
-- Autenticación/colaboración multiusuario real (UI preparada, backend futuro).
-- Web pública / responsive móvil nativo (desktop-first).
+- Autenticación / colaboración multiusuario real (hay stub de presencia + Share deshabilitado; sin backend).
+- Web pública / responsive móvil nativo (desktop-first; `pnpm dev` sirve para desarrollo en navegador).
+- Export PDF / JPG / `.inkboard`, conectores usables, agrupación, minimap, OffscreenCanvas worker (especificados en `implementation_plan.md`, no en v0.1).
+
+## Estado del producto (v0.1.0 · M0 en curso)
+
+Usable a medias: dibujo, formas, imágenes, **selección/transform (B01 corregido)**, undo/redo parcial, multi-tablero, persistencia SQLite (Tauri) o localStorage, export PNG/SVG/JSON, import imágenes + ZIP MS Whiteboard (solo texto). **Texto y sticky se crean pero no se pueden editar/guardar bien (B03).** Salir del board &lt;2s pierde cambios (B05). Atajos siguen compitiendo con inputs (B04/B09). Offset del canvas (B02) pendiente. Ver `README.md` → Current status y `implementation_plan.md` §0.2.
 
 ## How the product should feel
 

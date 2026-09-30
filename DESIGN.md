@@ -126,7 +126,7 @@ One sans family throughout UI. No display/body pairing. The mono face is reserve
 - **Canvas:** Full-bleed. The entire window area is the canvas; UI elements float over it.
 - **TopBar:** Fixed 48px at the top. Logo | board name (editable) | autosave status | center (empty) | undo/redo | share | settings.
 - **ToolBar:** Vertical floating strip on the left edge, 48px wide, detached from the edge by 8px. Tools stacked with 4px gap. Contextual popover opens to the right of the active tool.
-- **Zoom Controls:** Floating in bottom-right, 36px tall, compact. [-] [100%] [+] [Fit view]. Optional mini-map beside it.
+- **Zoom Controls:** Floating in bottom-right, 36px tall, compact. [-] [100%] [+] [Fit view]. Mini-map: not shipped.
 - **Context Toolbar:** Floating above/below selection, adapts to object type.
 - **Create Panel:** Floating panel, opened from a toolbar button, closed on click-outside.
 
@@ -139,7 +139,7 @@ One sans family throughout UI. No display/body pairing. The mono face is reserve
 **Flat-By-Default Rule.** Surfaces are flat at rest. No shadows. Depth is conveyed by tonal layering:
 - `bg-app` → `bg-panel` → `bg-hover` → `bg-active` (each step is a clear tonal jump)
 - Floating panels (context toolbar, create panel) use `bg-panel` with a 1px border and a subtle `box-shadow: 0 4px 12px rgba(0,0,0,0.4)` — only for floaters that need to be visually above the canvas.
-- No dark mode switch needed — the app is dark-first by scene.
+- Dark-first by scene; Settings also expose light / system themes (`data-theme` on `:root`).
 
 ## Shapes
 
@@ -181,14 +181,15 @@ One sans family throughout UI. No display/body pairing. The mono face is reserve
 - **Interaction:** Click to zoom in/out, click percentage to reset to 100%, click fit to fit view.
 
 ### CreatePanel
-- **Shape:** Floating panel, `--bg-panel` bg, 8px radius, 1px border, min-width 220px.
-- **Content:** Sections: Sticky Note, Text, Shapes, Reactions, Images, Templates.
-- **Interaction:** Opens from toolbar button (⊕), closes on click-outside, animated 150ms.
+- **Shape:** Floating panel, `--bg-panel` bg, 8px radius, 1px border, min-width ~210px.
+- **Content (v0.1):** Flat list of create actions — Sticky note, Text, Shape, Image. (Reactions / Templates not shipped.)
+- **Interaction:** Opens from toolbar ⊕, closes on click-outside, animated ~150ms.
 
 ### SettingsPanel
-- **Shape:** Slide-in panel from right, 300px wide, full height below TopBar.
-- **Sections:** Canvas (background, grid, snap), Interaction, Appearance, Accessibility, Data (export/import), About.
-- **Animation:** Slide in 200ms ease-out, overlay backdrop.
+- **Shape:** Slide-in panel from right, ~300px wide, full height below TopBar, overlay backdrop.
+- **Sections (v0.1):** Canvas (grid on/off, size, opacity, background color), Appearance (theme: dark / light / system), Data (export / import shortcuts), About.
+- **Not shipped yet:** Interaction, Accessibility, snap toggles as dedicated settings.
+- **Animation:** Slide in ~200ms ease-out.
 
 ### CommandPalette
 - **Shape:** Centered modal, max-width 480px, 8px radius, 1px border.

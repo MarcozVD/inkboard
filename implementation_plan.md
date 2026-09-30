@@ -1,12 +1,94 @@
-# Especificación Técnica Completa — Whiteboard App
+# Inkboard — Plan de Implementación y Especificación Técnica
 
-> **Versión:** 1.0 | **Fecha:** 2026-08-30 | **Stack:** Tauri 2 · SvelteKit · Rust · TypeScript
+> **Doc v2.0** · **Repo:** v0.1.0 (`main` @ `3948189`) · **Spec original:** 2026-08-30 · **Auditoría verificada y plan:** 2026-09-30
+> **Stack real:** Tauri 2 · SvelteKit 2 / Svelte 5 · Rust · TypeScript · Vite 8
+
+## Cómo leer este documento
+
+| Parte | Secciones | Uso |
+|-------|-----------|-----|
+| **Estado real** | §0 | Qué funciona hoy, verificado ejecutando la app (no deducido de los commits). |
+| **Plan activo** | §24 – §26, §30 | Qué hacer ahora, en qué orden y cómo se acepta cada tarea. |
+| Especificación de referencia | §1 – §23, §27 – §29 | Diseño objetivo. Los números de sección no cambian porque el código los cita (`// §15`, `// §19`…). |
+| Historial | Apéndice A | Fases 0–18 de v0.1. Los comentarios `Fase N` del código apuntan ahí. |
+
+---
+
+## 0. Estado real verificado (2026-09-30)
+
+**Método:** `pnpm test` (65/65 ✓), `pnpm check` (0 errores), `pnpm exec playwright test` (7/7 ✓), sondas Playwright contra `pnpm dev` (Chromium, el mismo motor que WebView2) y lectura de código.
+
+**Conclusión:** todo lo automatizado está en verde, pero ningún test cubre la selección, la edición de texto, las coordenadas del puntero ni el guardado al salir. En uso real, el núcleo de edición está roto (§0.2). Por eso el plan empieza por M0 (§24.4).
+
+### 0.1 Funciona
+
+- Canvas infinito: pan (rueda, Space+arrastre, botón medio), zoom (Ctrl+rueda, `+`/`-`, controles) y grid.
+- Pen y highlighter (perfect-freehand, presión), 8 formas por arrastre, creación de sticky y texto (aunque no se puede escribir en ellos, ver B03), imágenes por picker, paste y drag & drop.
+- Undo/redo al crear trazos, formas, sticky y texto, y al borrar y duplicar.
+- Autosave con debounce de 2 s → SQLite + zstd (Tauri) o localStorage (browser). Multi-board: crear, listar, buscar y marcar favoritos.
+- Export PNG / SVG / JSON (descarga vía `<a download>`; sin verificar en Tauri). Import de imagen y de ZIP de MS Whiteboard (solo texto).
+- Shell: TopBar, ToolBar, ZoomControls, CreatePanel, SettingsPanel, ContextMenu, ContextToolbar, CommandPalette y tema dark/light (solo la interfaz, no el canvas).
+- `pnpm tauri dev` compila y lanza la app.
+
+### 0.2 Bugs verificados
+
+| ID | Síntoma | Causa raíz | Evidencia |
+|----|---------|------------|-----------|
+| B01 | ~~Select no selecciona, ni mueve, ni escala, ni rota. Cada arrastre lanza `TypeError: Cannot read properties of undefined (reading 'shift')`.~~ **Corregido (M0-02).** | `CanvasEngine` llamaba `tool.pointerDown({ screenX, … })` con un objeto, pero `SelectTool.pointerDown(sx, sy, modifiers)` esperaba tres argumentos. El cast `as unknown as BaseTool` ocultaba el error a TypeScript. Fix: `SelectTool extends BaseTool` + `ToolPointerEvent`. | Sonda → fix |
+| B02 | El trazo aparece ~32 px por debajo del cursor (a y≈300) y el lienzo se ve achatado en vertical. En pantallas con escala del 125–200 %, además, se ve borroso. | El backing store usa `window.innerWidth × innerHeight` (1400×900), pero la caja CSS del canvas mide 1400×852 porque queda bajo el TopBar de 48 px (`src/lib/components/BoardCanvas.svelte:879`). Las coordenadas del puntero usan `clientX/Y` sin restar `getBoundingClientRect()`, y se ignora `devicePixelRatio`. | Sonda + captura |
+| B03 | Texto y sticky: el editor se cierra con el mismo clic que lo abre y el objeto queda vacío. Incluso si el editor sigue abierto, lo escrito no se guarda. | (a) El `mousedown` por defecto sobre el canvas quita el foco al textarea recién montado → `onblur` → commit vacío. (b) `onCommit` muta `editingText`, un proxy `$state` de Svelte 5 que no escribe en el objeto del `ObjectStore` (`BoardCanvas.svelte:1032`). (c) Enter seguido de blur hace doble commit → `TypeError: Cannot set properties of null`. | Sonda: con `preventDefault()` en `pointerdown` el editor sigue abierto, pero el contenido no se guarda |
+| B04 | Escribir en inputs (renombrar board, CommandPalette, editor de texto) cambia de herramienta. Backspace borra la selección y `+`/`-` hacen zoom. | El `onKeyDown` global en `window` no ignora los targets editables (`BoardCanvas.svelte:458`). | Sonda: escribir "Plan" en el nombre deja activa la tool sticky |
+| B05 | Se pierden los cambios si se sale del board o se cierra la ventana antes de 2 s desde la última edición. | El cleanup hace `clearTimeout(autosaveTimer)` sin guardar (`BoardCanvas.svelte:932`). No hay `onCloseRequested`. | Sonda: dibujar y volver a Home ⇒ 0 objetos guardados |
+| B06 | Deshacer un borrado del eraser no restaura nada. | El comando lee `this.removed` en el momento de deshacer, y para entonces `pointerUp` ya lo ha reasignado a `[]` (`src/lib/tools/EraserTool.ts:41`). | Sonda |
+| B07 | Bring to front / send to back no cambian lo que se ve: queda encima lo último que se movió. | `render()` pinta en el orden que devuelve RBush (`queryViewport`), no por `zIndex`. Reordenar tampoco se puede deshacer (`ReorderCommand` existe pero no se usa). | Código |
+| B08 | Los botones de minimizar, maximizar y cerrar del titlebar no hacen nada en la app de escritorio. | `capabilities/default.json` solo concede `core:window:default`, que no incluye `allow-minimize`, `allow-maximize`, `allow-unmaximize` ni `allow-close`. | `src-tauri/gen/schemas/acl-manifests.json` |
+| B09 | `S`, el atajo que muestran toolbar y palette, no activa sticky. `R/O/L/A` activan formas, pero no la forma indicada. | El mapa `toolKey` usa `n` para sticky (`BoardCanvas.svelte:489`). | Sonda |
+| B10 | El botón Connector se marca como activo, pero el engine sigue con la tool anterior. | `engine.setTool('connector')` retorna sin hacer nada porque no hay ConnectorTool, y la UI no se entera (`CanvasEngine.ts:71`). | Código |
+| B11 | *(Latente, tapado por B01.)* Mover o escalar un trazo o un conector no cambia lo que se ve. | Se actualiza `transform`, pero el renderer y los bounds usan `points` / `startPoint` / `endPoint` en coordenadas de mundo. | Código |
+| B12 | La rotación es inconsistente entre módulos. | El renderer rota alrededor de la esquina superior izquierda (`src/lib/objects/renderers.ts:42`) y `SelectTool` alrededor del centro. El AABB y el export SVG ignoran la rotación. | Código |
+| B13 | Hay operaciones que no se pueden deshacer. | Insertar imagen (`ImageTool` no registra comando), editar texto, reordenar e importar ZIP de MS Whiteboard. | Código |
+| B14 | En Home, la TopBar sigue mostrando los controles del board (undo/redo del engine ya destruido, avatares). | `ui`/`uiActions` no se resetean al desmontar y `isBoard` se deduce de `boardName !== 'Inkboard'` (`src/lib/components/app/TopBar.svelte:12`). | Código |
+| B15 | `object_count` vale siempre 0 en SQLite. | `count_objects` busca `objects` en la raíz, pero el JSON los guarda en `board.objects` (`src-tauri/src/db/mod.rs:170`). | Código |
+| B16 | Importar por el diálogo nativo una imagen de más de ~100 KB probablemente falla. | `read_file_bytes` devuelve `Vec<u8>` serializado como array JSON, y el front hace `String.fromCharCode(...bytes)` → `RangeError` (`BoardCanvas.svelte:804`). | Código (sin ejecutar) |
+| B17 | El `createdAt` del board se reescribe en cada autosave. | `scheduleAutosave` construye el board con `createdAt: Date.now()`. Como el JSON cambia siempre, el hash SHA-256 de Rust nunca llega a evitar una escritura. | Código |
+
+### 0.3 Deuda técnica que condiciona el plan
+
+- **`BoardCanvas.svelte` tiene 1235 líneas:** render, input, atajos, autosave, import/export, menús y paleta en un solo componente. Ahí viven B02–B05, B07, B09, B14 y B17.
+- **Mutaciones fuera del historial:** la UI llama a `store.*` directamente desde varios sitios. No hay un único camino comando → undo → autosave.
+- **Rendimiento:** `perfect-freehand` se recalcula para cada trazo visible en cada frame (`smoothedPoints` nunca se rellena). El autosave serializa el board entero, imágenes incluidas como data URL. Los comandos Tauri son síncronos, así que corren en el hilo principal.
+- **Seguridad:** `csp: null`. `inspect_import` y `read_file_bytes` leen cualquier ruta que mande el webview. El ZIP se descomprime entero antes de comprobar su tamaño (zip bomb).
+- **Tema:** el canvas usa colores oscuros fijos (`#0f1013`, grid, selección blanca). `system` no sigue al sistema operativo y el tema no se guarda.
+- **Sin UI de estilo:** no se puede cambiar el color ni el grosor del pen, ni el fill o el stroke de las formas (`engine.setPenConfig` existe, pero nada lo llama).
+- **Código muerto:** `src/lib/components/TopBar.svelte` (nadie lo importa) y `src-tauri/src/geometry/` (vacío).
+- **Calidad:** sin CI, sin ESLint y sin E2E de las funciones básicas de edición.
+- **Documentación:** `README.md` y `PRODUCT.md` dan por funcionales la selección/transformación y el texto. Hay que corregirlo al cerrar M0.
+
+### 0.4 Parcial o no implementado
+
+Conectores (tipo + renderer, sin tool) · grupos (solo el tipo) · clipboard de objetos (stub) · lock (campo sin UI) · snap y smart guides · minimap · PDF / JPG / `.inkboard` · versiones y backup (tabla sin uso) · thumbnails reales · borrar, renombrar o duplicar boards desde Home · workers / OffscreenCanvas · colaboración.
+
+### 0.5 Layout del repo y comandos
+
+Raíz plana, sin monorepo: `src/`, `src-tauri/`, `e2e/` y docs (detalle en §23).
+
+```bash
+pnpm dev                                       # Vite en :1420 (browser, persistencia en localStorage)
+pnpm tauri dev                                 # app de escritorio
+pnpm test                                      # Vitest (unit)
+pnpm exec playwright test                               # E2E contra :1420
+pnpm check                                     # svelte-check + TypeScript
+cargo test --manifest-path src-tauri/Cargo.toml   # tests Rust
+pnpm tauri build                               # instaladores
+```
+
+Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `inspect_import`, `read_file_bytes`.
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-Se plantea el desarrollo de **Inkboard** (nombre provisional), una aplicación de pizarras digitales infinitas de nivel profesional, multiplataforma (Windows/macOS/Linux), con capacidad futura de colaboración en tiempo real. El stack es **Tauri 2 + SvelteKit + Rust**, con renderizado basado en **Canvas 2D acelerado con OffscreenCanvas**, evolucionable hacia WebGL en caso de necesidad demostrada.
+Se plantea el desarrollo de **Inkboard**, una aplicación de pizarras digitales infinitas de nivel profesional, multiplataforma (Windows/macOS/Linux), con capacidad futura de colaboración en tiempo real. El stack es **Tauri 2 + SvelteKit + Rust**, con renderizado basado en **Canvas 2D** (hoy en hilo principal; **OffscreenCanvas** queda como upgrade path), evolucionable hacia WebGL en caso de necesidad demostrada.
 
 La prioridad explícita es: **PERFORMANCE > ESTABILIDAD > MANTENIBILIDAD > FUNCIONES EXÓTICAS**.
 
@@ -121,11 +203,15 @@ Mouse, teclado, touch (multi-touch), pen/stylus (Pointer Events API). Presión c
 └─────────────────────────────────────────────────────────┘
 ```
 
-**Principio fundamental:** el hilo principal solo maneja eventos de input y actualiza el estado. El renderizado ocurre en un Worker con OffscreenCanvas. Las operaciones pesadas (serialización, indexación espacial, import/export) ocurren en Rust (via Tauri IPC) o en Web Workers.
+**Principio fundamental (spec):** el hilo principal solo maneja eventos de input y actualiza el estado. El renderizado ocurre en un Worker con OffscreenCanvas…
+
+**Realidad v0.1:** renderizado y serialización viven en el hilo principal (`RenderLoop` + debounce de autosave). Workers / OffscreenCanvas **no** están activos; el diagrama de arriba es el diseño objetivo.
 
 ---
 
 ## 5. Diagrama de Componentes
+
+> **Diagrama objetivo.** Varios archivos todavía no existen (`Scene.ts`, `ClipboardManager.ts`, `SnapEngine.ts`, `ConnectorTool.ts`, `PropertyPanel.svelte`, `MiniMap.svelte`…). El layout real está en §23 y el plan que los crea, en §24.
 
 ```
 SvelteKit App
@@ -280,6 +366,9 @@ tokio = { version = "1", features = ["full"] }
 ```
 
 ### Tauri Commands expuestos al frontend
+
+> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `inspect_import`, `read_file_bytes`. Los de abajo son el diseño objetivo: la gestión de boards y los assets llegan en M2 (§24.6); PNG y JPG se exportan desde TypeScript y PDF desde Rust (M2-10).
+
 ```rust
 #[tauri::command]
 async fn save_board(board: BoardData) -> Result<(), String>
@@ -371,6 +460,8 @@ El objetivo es una app de escritorio rápida y ligera. Tauri 2 gana en todos los
 | **Híbrido Canvas + DOM** | Texto/inputs en DOM, dibujado en Canvas | Sincronización difícil | ⚠️ Media |
 
 ### Decisión: Canvas 2D con OffscreenCanvas + Worker
+
+> **Estado:** hoy se renderiza en el hilo principal. OffscreenCanvas + Worker solo se adopta si los benchmarks de M3 no alcanzan RNF-01/02 con las optimizaciones en hilo principal (decisión M3-07).
 
 **Justificación:**
 1. Canvas 2D es suficiente para 2.000-10.000 objetos a 60 FPS con culling correcto
@@ -1267,522 +1358,251 @@ fn validate_board_data(data: &BoardData) -> Result<(), ValidationError> {
 
 ## 23. Estructura Completa de Carpetas
 
+> **Actualizado 2026-09-30:** el repo es una app plana (no Turborepo). Estructura real:
+
 ```
-inkboard/
+board/   (package name: inkboard)
+├── package.json
+├── vite.config.ts              # port 1420
+├── svelte.config.js            # adapter-static
+├── vitest.config.ts
+├── playwright.config.ts
+├── README.md, DESIGN.md, PRODUCT.md, IDEA.md, implementation_plan.md
 │
-├── package.json                    # workspace root
-├── turbo.json                      # Turborepo (monorepo build tool)
+├── src/                        # SvelteKit frontend
+│   ├── app.html, app.css, app.d.ts
+│   ├── routes/
+│   │   ├── +layout.svelte / +layout.ts
+│   │   ├── +page.svelte        # Board picker (search, favorites)
+│   │   └── board/[id]/+page.svelte
+│   └── lib/
+│       ├── canvas/             # Camera, CanvasEngine, ObjectStore, SpatialIndex,
+│       │                       # SelectionManager, HistoryManager, RenderLoop,
+│       │                       # EventBus, commands (+ *.test.ts)
+│       ├── tools/              # Select, Pen, Highlighter, Eraser, Text,
+│       │                       # StickyNote, Shape, Image (+ tests)
+│       ├── objects/            # types, factory, renderers, bounds
+│       ├── io/                 # persistence, InternalFormat, PngExporter, SvgExporter
+│       ├── components/
+│       │   ├── BoardCanvas.svelte, TextEditor.svelte
+│       │   ├── app/TopBar.svelte
+│       │   ├── toolbar/ToolBar.svelte, ContextToolbar.svelte
+│       │   ├── menus/CommandPalette.svelte, ContextMenu.svelte
+│       │   ├── panels/CreatePanel.svelte, SettingsPanel.svelte
+│       │   ├── board/ZoomControls.svelte
+│       │   └── ui/Icon.svelte, ToolButton.svelte
+│       ├── stores/ui.svelte.ts
+│       └── utils/math.ts
 │
-├── apps/
-│   └── desktop/                    # App Tauri principal
-│       ├── src/                    # SvelteKit frontend
-│       │   ├── app.html
-│       │   ├── app.css
-│       │   ├── routes/
-│       │   │   ├── +layout.svelte
-│       │   │   ├── +page.svelte    # Workspace home (board list)
-│       │   │   └── board/
-│       │   │       └── [id]/
-│       │   │           └── +page.svelte
-│       │   └── lib/
-│       │       ├── canvas/         # Canvas Engine
-│       │       │   ├── Camera.ts
-│       │       │   ├── Scene.ts
-│       │       │   ├── Renderer.ts
-│       │       │   ├── RenderWorker.ts
-│       │       │   ├── RenderLoop.ts
-│       │       │   ├── ObjectStore.ts
-│       │       │   ├── SpatialIndex.ts
-│       │       │   ├── SelectionManager.ts
-│       │       │   ├── HistoryManager.ts
-│       │       │   ├── ClipboardManager.ts
-│       │       │   ├── SnapEngine.ts
-│       │       │   └── EventBus.ts
-│       │       ├── tools/
-│       │       │   ├── BaseTool.ts
-│       │       │   ├── SelectTool.ts
-│       │       │   ├── PenTool.ts
-│       │       │   ├── HighlighterTool.ts
-│       │       │   ├── EraserTool.ts
-│       │       │   ├── TextTool.ts
-│       │       │   ├── StickyNoteTool.ts
-│       │       │   ├── ShapeTool.ts
-│       │       │   ├── ConnectorTool.ts
-│       │       │   └── ImageTool.ts
-│       │       ├── objects/
-│       │       │   ├── types.ts    # Todas las interfaces TS
-│       │       │   ├── BaseObject.ts
-│       │       │   ├── StrokeObject.ts
-│       │       │   ├── TextObject.ts
-│       │       │   ├── ShapeObject.ts
-│       │       │   ├── ImageObject.ts
-│       │       │   ├── StickyNoteObject.ts
-│       │       │   ├── ConnectorObject.ts
-│       │       │   └── GroupObject.ts
-│       │       ├── stores/
-│       │       │   ├── workspace.store.ts
-│       │       │   ├── board.store.ts
-│       │       │   ├── selection.store.ts
-│       │       │   ├── tool.store.ts
-│       │       │   └── settings.store.ts
-│       │       ├── io/
-│       │       │   ├── InternalFormat.ts
-│       │       │   ├── SvgExporter.ts
-│       │       │   ├── formats/
-│       │       │   │   └── excalidraw.ts (futuro)
-│       │       │   └── index.ts
-│       │       ├── components/
-│       │       │   ├── ui/
-│       │       │   │   ├── Button.svelte
-│       │       │   │   ├── Tooltip.svelte
-│       │       │   │   ├── Modal.svelte
-│       │       │   │   ├── ContextMenu.svelte
-│       │       │   │   ├── ColorPicker.svelte
-│       │       │   │   └── Slider.svelte
-│       │       │   ├── TopBar.svelte
-│       │       │   ├── Toolbar.svelte
-│       │       │   ├── BoardList.svelte
-│       │       │   ├── BoardCanvas.svelte
-│       │       │   ├── PropertyPanel.svelte
-│       │       │   ├── MiniMap.svelte
-│       │       │   ├── ShortcutOverlay.svelte
-│       │       │   └── TextEditor.svelte  # in-canvas text input overlay
-│       │       ├── shortcuts/
-│       │       │   ├── ShortcutManager.ts
-│       │       │   └── defaultShortcuts.ts
-│       │       └── utils/
-│       │           ├── math.ts
-│       │           ├── color.ts
-│       │           ├── uuid.ts
-│       │           └── geometry.ts
-│       │
-│       ├── src-tauri/              # Rust backend
-│       │   ├── Cargo.toml
-│       │   ├── tauri.conf.json
-│       │   ├── capabilities/
-│       │   │   └── default.json
-│       │   └── src/
-│       │       ├── main.rs
-│       │       ├── lib.rs
-│       │       ├── commands/
-│       │       │   ├── persistence.rs
-│       │       │   ├── export.rs
-│       │       │   └── import.rs
-│       │       ├── db/
-│       │       │   ├── mod.rs
-│       │       │   ├── schema.rs
-│       │       │   └── migrations/
-│       │       │       └── 001_initial.sql
-│       │       ├── formats/
-│       │       │   ├── mod.rs
-│       │       │   ├── internal.rs
-│       │       │   └── ms_whiteboard.rs
-│       │       └── geometry/
-│       │           ├── mod.rs
-│       │           └── bounds.rs
-│       │
-│       ├── svelte.config.js
-│       ├── vite.config.ts
-│       └── package.json
+├── src-tauri/
+│   ├── Cargo.toml
+│   ├── tauri.conf.json         # decorations: false, devUrl :1420
+│   ├── capabilities/default.json
+│   └── src/
+│       ├── main.rs, lib.rs
+│       ├── commands/           # health, persistence, import
+│       ├── db/ + migrations/001_initial.sql
+│       ├── formats/ms_whiteboard.rs (+ test)
+│       └── geometry/           # placeholder
 │
-├── packages/
-│   └── shared-types/               # Tipos TypeScript compartidos
-│       ├── src/
-│       │   ├── board.ts
-│       │   ├── objects.ts
-│       │   └── index.ts
-│       └── package.json
-│
-├── docs/
-│   ├── architecture.md
-│   ├── data-model.md
-│   ├── shortcuts.md
-│   └── import-formats.md
-│
-└── tests/
-    ├── unit/
-    ├── integration/
-    ├── e2e/
-    ├── bench/
-    └── fuzz/
+├── e2e/                        # Playwright (smoke)
+└── static/
 ```
 
+> La estructura monorepo (`apps/desktop`, `packages/`, `turbo.json`, `docs/`) de la versión original de esta spec **no se adoptó**.
 ---
 
-## 24. Roadmap por Fases
+## 24. Plan de desarrollo (v0.1.1 → v1.0)
 
-### Fase 0 — Investigación Técnica (1 semana)
-**Objetivo:** Validar decisiones técnicas con prototipos descartables.
+### 24.1 Principios de ejecución
 
-**Tareas:**
-- [ ] Prototipo Canvas 2D + OffscreenCanvas: verificar que la transferencia es viable en WebView de Tauri
-- [ ] Prototipo RBush con 10k objetos: medir query performance
-- [ ] Verificar que OffscreenCanvas funciona en WebKitGTK (Linux) y WebView2 (Windows)
-- [ ] Verificar stack Tauri 2 + SvelteKit compila y corre en los 3 SO
+1. **Primero que funcione, después que sea rápido.** La prioridad del producto sigue siendo PERFORMANCE > ESTABILIDAD > MANTENIBILIDAD > FUNCIONES (§1), pero hoy la selección y el texto no funcionan, y medir el rendimiento de un editor roto no aporta nada. Orden: M0 estabilidad → M1 editor completo → M2 datos e IO → M3 rendimiento medido → M4 release.
+2. **Cada bug corregido deja un test que lo habría detectado.** Los 65 tests unitarios y los 7 E2E pasaban con B01–B06 presentes.
+3. **Un solo camino para mutar el board:** `engine.execute(command)` → store → historial → autosave → render. Los componentes nunca llaman a `store.*` directamente.
+4. **Tareas pequeñas y delegables.** Cada una tiene ID, archivos, criterio de aceptación y tamaño: **S** ≤ ½ día · **M** 1–2 días · **L** 3–5 días.
+5. **Rust solo donde se justifica** (§7): IO, SQLite, compresión, parsing de archivos no confiables y PDF.
+6. **Cada milestone termina en una puerta (gate), no en una fecha.** La siguiente no empieza mientras la puerta esté en rojo.
+7. **No mezclar refactor y fixes en el mismo cambio.** M0 corrige en el sitio; la reestructuración llega en M1-01, cuando ya exista la red de tests de M0.
 
-**Riesgo:** OffscreenCanvas puede tener limitaciones en WebView OS. Fallback: rendering en main thread.
+### 24.2 Definition of Done (toda tarea)
 
-**Criterio de completitud:** prototipo corriendo en Windows y macOS.
+- [ ] Código más un test (unit o E2E) que falla sin el cambio.
+- [ ] `pnpm test`, `pnpm check`, `pnpm exec playwright test` y `cargo test` en verde.
+- [ ] Probado a mano en `pnpm tauri dev` si toca canvas, ventana o IO (el browser no reproduce los permisos ni el IPC de Tauri).
+- [ ] `README.md` (Current status) y §0 actualizados si cambia lo que el usuario puede hacer.
+- [ ] El commit cita el ID: `fix(M0-02): SelectTool implementa BaseTool`.
 
----
+### 24.3 Mapa de milestones
 
-### Fase 1 — Scaffold del Proyecto (3-4 días)
-**Objetivo:** Estructura del proyecto funcional y compilable.
+| Milestone | Versión | Objetivo | Estimación | Gate |
+|-----------|---------|----------|------------|------|
+| **M0** | v0.1.1 | Núcleo usable: B01–B17 corregidos, red de tests y CI | 1–1,5 sem | E2E de edición básica en verde + checklist manual en Tauri |
+| **M1** | v0.2.0 | Editor completo: refactor de `BoardCanvas`, comandos, estilos, clipboard, grupos, conectores y tema en el canvas | 3–4 sem | Invariante undo/redo de todos los comandos; `BoardCanvas.svelte` < 400 líneas |
+| **M2** | v0.3.0 | Datos seguros e IO: gestión de boards, versiones, assets fuera del JSON, `.inkboard`, JPG/PDF e import seguro | 3 sem (en paralelo con M1) | Migración desde DB v0.1; roundtrip `.inkboard` sin pérdida; parsers fuzzeados |
+| **M3** | v0.4.0 | Rendimiento medido contra RNF-01…05 | 2 sem | `pnpm bench` dentro de umbrales |
+| **M4** | v0.5.0 beta | Release de escritorio: instaladores, updater, macOS/Linux y pulido | 2 sem | Instaladores de 3 SO desde CI + smoke manual por SO |
+| **M5** | v1.0.0 | Funciones 1.0 priorizadas con el feedback de la beta | 4–6 sem | §25 |
+| **M6** | — | Colaboración en tiempo real (I+D con go/no-go) | Spike de 2 sem | §24.10 |
 
-**Tareas:**
-- [ ] `npm create tauri-app@latest inkboard -- --template svelte-ts`
-- [ ] Configurar SvelteKit adapter-static, ssr=false
-- [ ] Configurar Turborepo
-- [ ] Setup Vitest, Playwright, ESLint, Prettier
-- [ ] Setup Rust: cargo fmt, clippy, cargo test
-- [ ] CI básico (GitHub Actions: lint, test, build)
-- [ ] Crear estructura de carpetas completa
+Estimación para una persona con agentes: **≈ 10–12 semanas hasta la beta v0.5**. M1 (frontend) y M2 (Rust e IO) tocan archivos distintos y pueden avanzar en paralelo; la excepción es M2-05, que conviene hacer después de M1-01.
 
-**Archivos creados:** todos los archivos de configuración base, estructura de directorios.
+```
+M0 ──► M1-01 refactor ──► M1-02 comandos ──┬──► M1-03 … M1-13
+  │                                        └──► (base de M6)
+  └──► M2-01 Rust async + migraciones ──► M2-02 … M2-11
+M1-02 + M2-05 ──► M3 (medir con el modelo final) ──► M4 ──► M5
+```
 
-**Criterio:** `npm run dev` funciona, `npm run tauri dev` abre la app.
+### 24.4 M0 — Núcleo usable (v0.1.1)
 
----
+Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impiden usar la app) y luego el resto.
 
-### Fase 2 — Canvas y Cámara (1 semana)
-**Objetivo:** Canvas infinito funcional con pan/zoom fluido.
+| ID | Tarea | Archivos | Aceptación | Tam. |
+|----|-------|----------|------------|------|
+| M0-01 ✅ | Red E2E **antes** de los fixes: `select.spec.ts`, `text.spec.ts`, `shortcuts.spec.ts` y `persistence.spec.ts`, más un helper que lee el board de localStorage. Deben fallar reproduciendo B01–B06 y B09. | `e2e/` | Cada bug de §0.2 verificable en runtime tiene un test en rojo | M |
+| M0-02 ✅ | **B01** · `SelectTool extends BaseTool` y recibe `ToolPointerEvent`. Quitar todos los casts `as unknown as BaseTool` de `CanvasEngine`. | `tools/SelectTool.ts`, `canvas/CanvasEngine.ts` | Seleccionar, marquee, mover, escalar y rotar funcionan; una firma incorrecta vuelve a ser error de `pnpm check` | S |
+| M0-03 | **B02** · Tamaño del canvas con `ResizeObserver` sobre su contenedor; backing store = tamaño CSS × `devicePixelRatio`, con `ctx.setTransform(dpr·zoom, …)`. Toda coordenada de puntero pasa por un único `toCanvasPoint(e)` (`clientX − rect.left`, `clientY − rect.top`). `TextEditor` y `ContextToolbar` suman el offset del canvas. | `BoardCanvas.svelte`, `TextEditor.svelte`, `ContextToolbar.svelte` | E2E: el objeto aparece bajo el cursor (±1 px) con DPR 1 y 2; una elipse dibujada con Shift sale circular | M |
+| M0-04 | **B03** · `preventDefault()` en el `pointerdown` del canvas. Commit idempotente. El commit escribe en el objeto real vía `store.update` (guardar solo el `id` en `editingText`, o usar `$state.raw`). Confirmar un texto vacío elimina el objeto y su entrada del historial. Editar es un comando que se puede deshacer (`UpdateContentCommand`). | `BoardCanvas.svelte`, `TextEditor.svelte`, `canvas/commands.ts` | E2E: crear texto, escribir y pulsar Enter ⇒ se guarda; doble clic edita; Esc cancela; undo revierte la edición. Lo mismo con sticky | M |
+| M0-05 | **B04, B09** · Tabla única de atajos en `lib/input/shortcuts.ts`, usada por el keydown, las pistas del ToolBar y la CommandPalette. Guard: ignorar la tecla si el target es input, textarea o contenteditable, o si hay un modal abierto. `S` y `N` ⇒ sticky; `R`/`O`/`L`/`A` ⇒ la forma concreta. | `BoardCanvas.svelte`, `input/shortcuts.ts` (nuevo), `ToolBar.svelte`, `CommandPalette.svelte` | E2E: escribir en rename, palette o editor no cambia la tool ni borra objetos | S |
+| M0-06 | **B05, B17** · `flushSave()` al desmontar, antes de `goto('/')`, en `pagehide`/`visibilitychange` y en `getCurrentWindow().onCloseRequested` (el handler async hace `await flushSave()`; la API espera al handler y luego llama a `destroy()`, que necesita el permiso de M0-09). Guardado forzado cada 30 s de edición continua. Conservar el `createdAt` del board cargado. | `BoardCanvas.svelte` | E2E: dibujar y salir en < 200 ms ⇒ persistido. Manual: cerrar con ✕ a los 500 ms conserva el cambio | S |
+| M0-07 | **B06** · Capturar `const removed = this.removed` dentro del comando. El eraser ignora los objetos `locked`. | `tools/EraserTool.ts` | Unit: borrar 3 objetos en un gesto → undo los restaura → redo los vuelve a quitar | S |
+| M0-08 | **B07** · Renderizar en orden de `zIndex`. Bring/send con `ReorderCommand` (se puede deshacer). `]`/`[` = un paso adelante/atrás; `Ctrl+]`/`Ctrl+[` = al frente/al fondo (ver Atajos). | `BoardCanvas.svelte`, `canvas/ObjectStore.ts`, `canvas/commands.ts` | E2E con captura: dos stickies superpuestos cambian de orden y undo lo revierte | S |
+| M0-09 | **B08** · Añadir `core:window:allow-minimize`, `allow-maximize`, `allow-unmaximize`, `allow-close` y `allow-destroy` (este último lo usa M0-06). | `src-tauri/capabilities/default.json` | Manual en `tauri dev`: minimizar, maximizar/restaurar y cerrar funcionan | S |
+| M0-10 | **B11, B12** · Helpers `translateObject`, `scaleObject(origin, sx, sy)` y `rotateObject(center, θ)` que mueven `points`/`startPoint`/`endPoint` en trazos y conectores, y `transform` en el resto. Convención única: **rotación alrededor del centro de la caja**, aplicada en el renderer, `worldToLocal`, `getObjectBounds` (AABB de la caja rotada) y el SVG (`rotate(deg cx cy)`). | `objects/geometry.ts` (nuevo), `tools/SelectTool.ts`, `objects/renderers.ts`, `objects/bounds.ts`, `utils/math.ts`, `io/SvgExporter.ts` | Unit por tipo (mover, escalar y rotar dan los bounds esperados). E2E: se puede mover un trazo; un clic en la esquina de un rect rotado 45° lo selecciona | M |
+| M0-11 | **B10** · Ocultar el botón Connector hasta M1-09. `setTool` devuelve `boolean` y la UI solo cambia si el engine aceptó. | `CanvasEngine.ts`, `BoardCanvas.svelte` | La tool activa en la UI siempre coincide con la del engine | S |
+| M0-12 | **B13** · Undo al insertar imagen (picker, paste y drop), al importar (un solo paso) y al reordenar. | `tools/ImageTool.ts`, `BoardCanvas.svelte` | Unit/E2E: cada operación se deshace y se rehace | S |
+| M0-13 | **B14** · Resetear `ui` y `uiActions` al desmontar el board. La TopBar decide el modo board/home por la ruta (`page.route.id`). | `stores/ui.svelte.ts`, `app/TopBar.svelte`, `BoardCanvas.svelte` | E2E: en Home no aparecen undo/redo ni avatares | S |
+| M0-14 | **B15** · `count_objects` lee `board.objects`, con test Rust. | `src-tauri/src/db/mod.rs` | `cargo test` cubre el conteo | S |
+| M0-15 | **B16** · `read_file_bytes` devuelve `tauri::ipc::Response` (bytes crudos → `ArrayBuffer`) y el front construye un `Blob` que lee con `FileReader`. | `commands/import.rs`, `BoardCanvas.svelte` | Manual: importar un PNG de 10 MB por el diálogo nativo | S |
+| M0-16 | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
+| M0-17 | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
 
-**Tareas:**
-- [ ] Implementar `Camera.ts` con worldToScreen/screenToWorld
-- [ ] Implementar RenderLoop con requestAnimationFrame + dirty flag
-- [ ] Implementar pan (space+drag, middle mouse, trackpad 2-finger)
-- [ ] Implementar zoom (ctrl+wheel, trackpad pinch, atajos +/-)
-- [ ] Implementar BoardCanvas.svelte con el canvas element
-- [ ] Grid de fondo opcional
-- [ ] Transferir canvas a OffscreenCanvas Worker
-- [ ] Limitar zoom (min 5%, max 3200%)
+**Gate M0**
+- [ ] E2E de M0-01 en verde en CI.
+- [ ] Checklist manual en Windows (`pnpm tauri dev`): dibujar exactamente bajo el cursor · seleccionar, mover, escalar y rotar formas y trazos · escribir en texto y sticky · deshacer todo lo anterior · cerrar con ✕ justo después de editar sin perder nada · minimizar y maximizar.
 
-**Archivos:** `Camera.ts`, `RenderLoop.ts`, `RenderWorker.ts`, `BoardCanvas.svelte`
+### 24.5 M1 — Editor completo (v0.2.0)
 
-**Criterio:** pan y zoom fluidos a 60 FPS en canvas vacío.
+| ID | Tarea | Aceptación | Tam. | Dep. |
+|----|-------|------------|------|------|
+| M1-01 | Partir `BoardCanvas.svelte` en módulos sin cambiar comportamiento: `canvas/Renderer.ts` (fondo, grid, objetos, overlay), `input/InputController.ts` (Pointer Events, rueda y pinch, sin touch events duplicados), `input/shortcuts.ts` (de M0-05), `board/BoardSession.ts` (carga, autosave, flush, estado de guardado) e `io/transfer.ts` (import, export y descargas). | `BoardCanvas.svelte` < 400 líneas; los E2E de M0 siguen en verde | L | M0 |
+| M1-02 | API única de mutación: `engine.execute(cmd)`. Comandos `AddObjects`, `RemoveObjects`, `UpdateTransform`, `UpdateStyle`, `UpdateContent`, `Reorder`, `Group`/`Ungroup` y `Batch`, con transacciones (`begin`/`commit`/`rollback`, §15). | Test de propiedades (`fast-check`) sobre el JSON del store: para todo comando, `undo(redo(s)) ≡ s` y `redo(undo(redo(s))) ≡ redo(s)` | M | M1-01 |
+| M1-03 | Estilos en el ContextToolbar (DESIGN § ContextToolbar; sin panel lateral fijo): color y grosor del pen/highlighter; fill, stroke, grosor, dash y radio de las formas; tamaño, negrita, cursiva, alineación y color del texto; color del sticky; opacidad. Swatches solo para contenido (One Color Rule). Se recuerda el último estilo de cada tool. | E2E: cambiar el color de un trazo seleccionado y deshacerlo | L | M1-02 |
+| M1-04 | Clipboard de objetos (RF-09): Ctrl+C/X/V/D. Portapapeles del sistema con JSON versionado (`inkboard/clipboard@1`) y fallback interno; pegar en el cursor o en el centro del viewport con offset acumulativo; pegar entre boards; el texto plano se pega como objeto texto; el pegado de imágenes sigue funcionando. | E2E: copiar en el board A y pegar en el B | M | M1-02 |
+| M1-05 | Grupos (RF-12): Ctrl+G / Ctrl+Shift+G. Un clic selecciona el grupo y el doble clic entra en él; los bounds salen de los hijos; un nivel de anidamiento. | Unit + E2E: agrupar → mover → undo | M | M1-02, M0-10 |
+| M1-06 | Lock/unlock (RF-02) desde el menú contextual y con Ctrl+Shift+L. Un objeto bloqueado no entra en el marquee ni lo borra el eraser. | E2E | S | M1-02 |
+| M1-07 | Snap básico (RF-13 parcial): snap a grid (toggle en Settings), Shift restringe el movimiento a un eje, rotación en pasos de 15° con Shift, nudge con flechas (1 px, 10 px con Shift). | Unit del snapping | M | M0-10 |
+| M1-08 | Texto: medir con `ctx.measureText` (cacheado) en lugar de `0,6 × fontSize`; wrap al redimensionar en horizontal; el editor usa la misma fuente e interlineado que el renderer; wrap también en sticky. | Captura E2E: el texto en edición y el renderizado coinciden | M | M0-04 |
+| M1-09 | Conectores v1 (RF-07): `ConnectorTool` entre 4 anclas por objeto (o hacia un punto libre), rectos y con flecha. Se recalculan al mover, escalar o borrar el objeto (listener del store); estilo desde M1-03. | E2E: conectar dos stickies, mover uno y comprobar que el conector lo sigue | L | M1-02, M0-10 |
+| M1-10 | Tema en el canvas: fondo, grid, overlay y colores por defecto desde los tokens CSS. `system` sigue a `prefers-color-scheme` en vivo. El tema se guarda en los settings del workspace. Color de tinta por defecto según D1 (§28). | Capturas E2E en light y dark | M | M1-01 |
+| M1-11 | Menú contextual completo: copiar, pegar, duplicar, borrar, orden, bloquear, agrupar y exportar selección, con los atajos tomados de la tabla de M0-05. | E2E | S | M1-04, M1-05 |
+| M1-12 | Overlay de atajos (`?`) y CommandPalette alimentados por la misma tabla. ESLint (`typescript-eslint`, `eslint-plugin-svelte`) y `prettier --check` en CI, con una regla de lint (o un test de arquitectura) que prohíba `store.*` fuera de `canvas/` y `tools/`. | La CI falla si se viola la regla | S | M0-05 |
+| M1-13 | Transformación precisa: handles alineados al objeto cuando hay uno solo seleccionado y está rotado; resize respetando su eje; tamaño mínimo; flip con escala negativa. | Unit + E2E de resize de un objeto rotado | M | M0-10 |
 
----
+**Gate M1:** test de invariantes en verde · `BoardCanvas.svelte` < 400 líneas · un E2E por tarea · tema claro usable de punta a punta.
 
-### Fase 3 — Sistema de Objetos Base (1 semana)
-**Objetivo:** Infraestructura para crear, renderizar y persistir objetos.
+### 24.6 M2 — Datos seguros e IO (v0.3.0)
 
-**Tareas:**
-- [ ] Definir todos los tipos en `types.ts`
-- [ ] Implementar `ObjectStore.ts` (CRUD)
-- [ ] Implementar `SpatialIndex.ts` (RBush)
-- [ ] Implementar renderizado básico de cada tipo (rectangles, texto, imágenes)
-- [ ] Implementar `EventBus.ts`
-- [ ] Definir serialización JSON del board completo
-- [ ] Tests unitarios para ObjectStore y SpatialIndex
+| ID | Tarea | Aceptación | Tam. |
+|----|-------|------------|------|
+| M2-01 | Rust: comandos pesados `async` o con `spawn_blocking` (hoy son síncronos y corren en el hilo principal). SQLite con `journal_mode=WAL`, `foreign_keys=ON` y `busy_timeout`. Runner de migraciones con `PRAGMA user_version` (hoy se reejecuta `001_initial.sql` en cada arranque). | Abrir una DB de v0.1 la migra; test Rust | M |
+| M2-02 | Gestión de boards en Home: renombrar, duplicar, borrar (papelera restaurable) y ordenar por fecha o nombre; favoritos en SQLite (hoy en localStorage). Comandos `rename_board`, `duplicate_board`, `delete_board` y `restore_board`. | E2E | M |
+| M2-03 | Thumbnails reales: render offscreen de 320×200 → PNG → `boards.thumbnail`, con debounce largo (≥ 10 s). Home los muestra y usa el tinte actual como fallback. | E2E: el thumbnail aparece tras editar | M |
+| M2-04 | Historial de versiones (la tabla `board_versions` existe sin uso): snapshot cada N minutos de edición activa, antes de importar o restaurar, y manual ("Guardar versión"). Retención de 50 versiones o 30 días; UI en Settings → Datos. Restaurar crea una versión nueva y nunca destruye. | Test Rust de retención; E2E de restaurar | M |
+| M2-05 | Almacén de assets: las imágenes salen del JSON del board a una tabla `assets(hash sha256, mime, bytes, w, h)`; `ImageObject.src = "asset:<hash>"`; carga como Blob/object URL; deduplicación. Migración de los boards con data URLs (schema 1.1.0) con snapshot previo. En el browser, IndexedDB (D3). Hacerlo después de M1-01 (toca `renderers.ts` e `ImageTool`). | El autosave de un board con 20 MB de imágenes envía < 100 KB por guardado | L |
+| M2-06 | Formato `.inkboard` (ZIP con `board.json`, `metadata.json` y `assets/`, §16), con export e import en Rust mediante el crate `zip`. | Roundtrip board → `.inkboard` → import idéntico (JSON + hashes de assets) | M |
+| M2-07 | Import del JSON propio (hoy "not wired yet"): validación de esquema, límites de tamaño y de número de objetos, e importación como board nuevo o dentro del actual en un solo paso de undo. | E2E | S |
+| M2-08 | Import seguro (§22): el comando Rust abre el diálogo y lee el archivo, sin aceptar rutas del webview. Comprobar el tamaño con la metadata antes de leer (≤ 100 MB); en ZIP, límite por entrada (`file.size()` + `take()`) y límite de entradas. Re-encode de imágenes con el crate `image`. Definir la CSP en `tauri.conf.json`. | `cargo-fuzz` 10 min sin panics; test de zip bomb | M |
+| M2-09 | Export: JPG con calidad; modos board completo, selección o área visible; escala 1×–4×; fondo transparente opcional. En Tauri, diálogo nativo de guardado (`plugin-dialog` + `plugin-fs`); `<a download>` solo en el browser. | E2E en browser; manual en Tauri | M |
+| M2-10 | Fidelidad del SVG (rotación, star/polygon, puntas de flecha, contorno perfect-freehand, wrap de texto) y PDF vectorial generado desde ese SVG en Rust (`usvg` + `svg2pdf`, D2). | Diff visual PNG vs SVG rasterizado < 1 % | L |
+| M2-11 | MS Whiteboard: los textos extraídos entran como stickies en rejilla en el centro del viewport, en un solo paso de undo, con un mensaje honesto sobre el alcance (§17). | E2E con un ZIP de fixture | S |
 
-**Criterio:** crear 1.000 objetos programáticamente, todos visibles, culling funciona.
+**Gate M2:** migración desde una DB v0.1 probada · roundtrip `.inkboard` sin pérdida · parsers fuzzeados sin panics · el webview no puede leer rutas arbitrarias.
 
----
+### 24.7 M3 — Rendimiento medido (v0.4.0)
 
-### Fase 4 — Selección y Transformación (1-2 semanas)
-**Objetivo:** SelectTool completamente funcional.
+Primero medir, después optimizar. OffscreenCanvas solo si los números lo exigen.
 
-**Tareas:**
-- [ ] Implementar `SelectionManager.ts`
-- [ ] Hit-testing por tipo de objeto
-- [ ] Rectangle selection (drag)
-- [ ] Shift+click para selección múltiple
-- [ ] Renderizar bounding box y handles de selección
-- [ ] Move (drag de la selección)
-- [ ] Resize (handles de esquinas/bordes)
-- [ ] Rotate (handle de rotación)
-- [ ] Bloqueo/desbloqueo de objetos
-- [ ] Delete (Delete key)
-- [ ] Duplicate (Ctrl+D)
+| ID | Tarea | Aceptación | Tam. |
+|----|-------|------------|------|
+| M3-01 | Harness de benchmarks: generador de boards sintéticos (2k/5k/10k objetos mixtos) y escenarios Playwright que miden el frame time de pan/zoom, la latencia del pen, la carga, las long tasks del autosave y la memoria. `pnpm bench` guarda los resultados en JSON versionado. | Baseline registrado para cada fila de la tabla de §19 | M |
+| M3-02 | Caché de contornos: un `Path2D` por trazo, invalidado por versión (hoy `getStroke` corre para cada trazo visible en cada frame). | Pan con 2k trazos ≥ 60 FPS | S |
+| M3-03 | Cachés de layout de texto y de imágenes decodificadas (`createImageBitmap`, LRU por memoria, versiones reducidas para zoom bajo). | Memoria dentro de RNF-04 | M |
+| M3-04 | LOD: con zoom < 0,25, trazos como polilínea simplificada, texto de menos de 3 px como barras e imágenes en baja resolución. | Zoom-out con 5k objetos ≥ 60 FPS | S |
+| M3-05 | Arrastre de muchos objetos: no reindexar RBush en cada `pointermove`; reindexar al soltar y usar los bounds de la selección para el culling durante el gesto. | Mover 1.000 objetos ≥ 50 FPS | S |
+| M3-06 | Autosave incremental: dirty flag en el engine (hoy siempre se serializa y se envía, y el hash de Rust nunca coincide, ver B17). Medir `JSON.stringify` y moverlo a un Worker solo si supera 16 ms. | Autosave de 5k objetos sin long tasks > 50 ms | M |
+| M3-07 | Decisión OffscreenCanvas/Worker (§9, §20): spike de 2 días solo si M3-02…06 no alcanzan RNF-01/02. Resultado documentado en §28. | Decisión escrita | S |
 
-**Archivos:** `SelectTool.ts`, `SelectionManager.ts`
+**Gate M3:** `pnpm bench` en CI con umbrales basados en RNF-01…05, medidos en una máquina de referencia documentada (CPU, GPU, DPR).
 
-**Criterio:** seleccionar, mover, redimensionar y rotar objetos correctamente.
+### 24.8 M4 — Release de escritorio (v0.5.0 beta)
 
----
+| ID | Tarea | Tam. |
+|----|-------|------|
+| M4-01 | Guardar tamaño, posición y estado maximizado de la ventana (`tauri-plugin-window-state`); instancia única que enfoca la ventana existente (`tauri-plugin-single-instance`). | S |
+| M4-02 | macOS: controles nativos (`titleBarStyle: "Overlay"` en `tauri.macos.conf.json`) en lugar de los botones propios; verificar el menú Edit (sin él, Cmd+C/V pueden no funcionar en WKWebView). Linux: checklist manual en WebKitGTK (Ubuntu 22.04+, Fedora). | M |
+| M4-03 | Asociar `.inkboard` en el instalador y abrir los archivos recibidos como argumento. | S |
+| M4-04 | Logs también en release (hoy `tauri-plugin-log` solo se activa en debug), en archivo rotativo; "Abrir carpeta de logs" en Settings; panic hook en Rust. | S |
+| M4-05 | Updater (`tauri-plugin-updater`) con claves de firma y canal beta. | M |
+| M4-06 | Pipeline de release con `tauri-action` al crear un tag: MSI/NSIS, dmg universal y AppImage/deb; firma de código en Windows y notarización en macOS (D4). | M |
+| M4-07 | Pulido: onboarding en el empty state, accesibilidad de los paneles (foco visible, navegación por teclado, `prefers-reduced-motion`) y revisión de textos. | M |
+| M4-08 | Presupuesto de tamaño: binario < 15 MB (RNF-06), medido en CI. | S |
 
-### Fase 5 — Lápiz (1 semana)
-**Objetivo:** Herramienta de dibujo libre con calidad profesional.
+**Gate M4:** instaladores de los 3 SO generados por CI · checklist manual pasado en cada SO · changelog · tag `v0.5.0`.
 
-**Tareas:**
-- [ ] Implementar `PenTool.ts`
-- [ ] Captura de Pointer Events (mouse, touch, stylus)
-- [ ] Captura de presión (pointerEvent.pressure)
-- [ ] Suavizado con Catmull-Rom splines
-- [ ] Corrección de trazos (simplificación post-stroke con Ramer-Douglas-Peucker)
-- [ ] Renderizado en tiempo real (dirty region)
-- [ ] `HighlighterTool.ts` (opacity reducida, composite mode)
-- [ ] `EraserTool.ts` (borrado por objeto)
-- [ ] Configuración: color, grosor, opacidad
+### 24.9 M5 — Producto 1.0
 
-**Archivos:** `PenTool.ts`, `HighlighterTool.ts`, `EraserTool.ts`, `StrokeObject.ts`
+Candidatos, a priorizar con el uso real de la beta:
+- Smart guides, alinear y distribuir (RF-13 completo).
+- Minimap.
+- Búsqueda de objetos por texto (Ctrl+F) con salto de cámara.
+- Frames/secciones: agrupan contenido, permiten exportar por frame y sirven de base para un modo presentación.
+- Conectores ortogonales y curvos con waypoints editables.
+- Borrador parcial que parte los trazos (RF-03).
+- Recorte de imágenes (RF-08).
+- Plantillas básicas en CreatePanel.
+- Touch y stylus: palm rejection y gestos de dos dedos (RF-19).
 
-**Criterio:** latencia de dibujo < 16ms, trazos suaves y naturales.
+### 24.10 M6 — Colaboración en tiempo real (I+D)
 
----
-
-### Fase 6 — Texto (1 semana)
-**Objetivo:** Objetos de texto editables in-canvas.
-
-**Tareas:**
-- [ ] Implementar `TextTool.ts`
-- [ ] Double-click para editar → overlay de textarea HTML posicionado sobre el canvas
-- [ ] Sincronización textarea ↔ TextObject
-- [ ] Configuración: fuente, tamaño, bold, italic, alineación, color
-- [ ] Resize del text box
-- [ ] Rotación del text object
-
-**Decisión de implementación:** el texto se edita vía un `<textarea>` HTML en overlay, posicionado y transformado para coincidir con la posición del canvas. Esto evita reimplementar edición de texto en canvas y mantiene la accesibilidad del navegador.
-
-**Criterio:** crear y editar texto con formato correctamente.
-
----
-
-### Fase 7 — Formas (1 semana)
-**Objetivo:** Todas las formas básicas funcionales.
-
-**Tareas:**
-- [ ] Implementar `ShapeTool.ts`
-- [ ] Renderizado de: rect, ellipse, line, arrow, triangle, diamond, star, polygon
-- [ ] Drag para crear (esquina a esquina)
-- [ ] Shift para mantener proporción
-- [ ] Panel de propiedades: fill, stroke, grosor, opacidad, corner radius
-
-**Archivos:** `ShapeTool.ts`, `ShapeObject.ts`, shapes renderers
-
-**Criterio:** todas las formas creables, editables y renderizadas correctamente.
-
----
-
-### Fase 8 — Imágenes (3-4 días)
-**Objetivo:** Insertar y manipular imágenes.
-
-**Tareas:**
-- [ ] Drag & drop de archivos al canvas
-- [ ] Paste desde clipboard (Ctrl+V)
-- [ ] Upload dialog
-- [ ] Renderizado con transform
-- [ ] Resize manteniendo aspect ratio (con Shift para libre)
-- [ ] Soporte PNG, JPG, WEBP, SVG
-- [ ] Imágenes se almacenan como data URL en el modelo
-
-**Criterio:** insertar imagen vía D&D, paste y upload. Resize y rotate correctos.
-
----
-
-### Fase 9 — Sticky Notes (3-4 días)
-**Objetivo:** Notas adhesivas con edición in-canvas.
-
-**Tareas:**
-- [ ] Implementar `StickyNoteTool.ts`
-- [ ] Crear, editar, cambiar color, resize, move, rotate, duplicate, delete
-- [ ] 6-8 colores predefinidos
-
-**Criterio:** sticky note funcional al nivel de Miro/FigJam.
+- **Preparación que ya incluye el plan:** IDs estables (uuid), toda mutación como comando (M1-02) y assets direccionados por contenido (M2-05).
+- **Spike de 2 semanas:** modelo en Yjs (`Y.Map` por objeto), `Y.UndoManager` en lugar de `HistoryManager`, updates persistidos en SQLite y transporte `y-websocket` con un relay mínimo.
+- **Go/no-go:** overhead < 10 % en `pnpm bench` · dos clientes editando a la vez sin pérdidas en un test automatizado · coste de servidor asumible (D5).
 
 ---
 
-### Fase 10 — Undo / Redo (1 semana)
-**Objetivo:** Sistema de historial completo.
+## 25. Definición de versiones
 
-**Tareas:**
-- [ ] Implementar `HistoryManager.ts`
-- [ ] Implementar todos los Commands para operaciones existentes
-- [ ] Agrupación de operaciones (ej. mover múltiples objetos = 1 command)
-- [ ] Transacciones (para operaciones que involucran múltiples cambios)
-- [ ] UI: botones undo/redo en TopBar, atajos Ctrl+Z/Y
-- [ ] Límite de historial configurable
-
-**Criterio:** undo/redo funciona correctamente para todas las operaciones de F2-F9.
+| Versión | Nombre | El usuario puede… |
+|---------|--------|-------------------|
+| v0.1.1 | Usable | Dibujar bajo el cursor; seleccionar, mover, escalar y rotar cualquier objeto; escribir texto y notas; deshacer todo eso; cerrar la app sin perder trabajo. |
+| v0.2.0 | Editor | Además: cambiar estilos, copiar y pegar entre boards, agrupar, bloquear, usar snap a grid y conectores rectos, y trabajar en tema claro. |
+| v0.3.0 | Datos | Además: renombrar, duplicar y borrar boards; recuperar versiones; exportar a `.inkboard`, JPG y PDF; importar sin riesgo. |
+| v0.4.0 | Rápido | Además: trabajar con 2k–10k objetos dentro de RNF-01…05. |
+| v0.5.0 | Beta | Además: instalar y actualizar la app en Windows, macOS y Linux. |
+| v1.0.0 | 1.0 | M5 priorizado, cero bugs P0/P1 abiertos y documentación de usuario. |
 
 ---
 
-### Fase 11 — Persistencia (1-2 semanas)
-**Objetivo:** Guardar y cargar tableros localmente.
+## 26. Backlog de funciones
 
-**Tareas:**
-- [ ] Implementar schema SQLite en Rust
-- [ ] Comandos Tauri: save_board, load_board, list_boards
-- [ ] Serialización/deserialización completa en Rust (serde_json + zstd)
-- [ ] Autosave con debounce en Web Worker
-- [ ] Indicador visual de estado de guardado en UI
-- [ ] Recuperación de versiones anteriores
-- [ ] Export/import del archivo `.inkboard`
-
-**Criterio:** crear board, cerrar app, reabrir, board intacto.
-
----
-
-### Fase 12 — Múltiples Tableros (1 semana)
-**Objetivo:** Workspace con gestión de múltiples tableros.
-
-**Tareas:**
-- [ ] Board list en la ruta principal
-- [ ] Crear, renombrar, eliminar, duplicar boards
-- [ ] Miniaturas de boards (generadas async)
-- [ ] Navegación entre boards
-- [ ] Cada board tiene su propia cámara e historial
-
-**Criterio:** crear 5+ tableros, navegar entre ellos, todos persisten independientemente.
-
----
-
-### Fase 13 — Importación (1 semana)
-**Objetivo:** Pipeline de importación funcional.
-
-**Tareas:**
-- [ ] Implementar `FormatDetector.rs`
-- [ ] `MsWhiteboardImporter.rs` (extrae texto de ZIP si existe, importa como imagen si solo hay PNG)
-- [ ] `ImageImporter.ts` (PNG/JPG/WEBP/SVG como ImageObject)
-- [ ] UI de importación con feedback de progreso
-
-**Criterio:** importar PNG de MS Whiteboard como imagen. Importar ZIP extrayendo texto disponible.
-
----
-
-### Fase 14 — Exportación (1 semana)
-**Objetivo:** Exportación a múltiples formatos.
-
-**Tareas:**
-- [ ] Export PNG via Rust (tiny-skia)
-- [ ] Export JPG via Rust
-- [ ] Export SVG via TypeScript (serialización directa)
-- [ ] Export PDF via Rust (printpdf)
-- [ ] Export JSON (formato interno)
-- [ ] Export .inkboard (ZIP)
-- [ ] Dialog de exportación con opciones (escala, área)
-
-**Criterio:** exportar board como PNG, JPG, SVG, PDF y .inkboard.
-
----
-
-### Fase 15 — Optimización (1-2 semanas)
-**Objetivo:** Alcanzar performance targets definidos en §19.
-
-**Tareas:**
-- [ ] Ejecutar benchmarks de referencia
-- [ ] Implementar object caching (ImageBitmap)
-- [ ] Optimizar stroke rendering (dirty regions)
-- [ ] Perfil de memoria: detectar y eliminar leaks
-- [ ] Level of Detail para zoom extremo
-- [ ] Optimizar autosave (medir impacto en UI)
-
-**Criterio:** todos los performance targets de §19 alcanzados.
-
----
-
-### Fase 16 — Desktop Tauri Completo (1 semana)
-**Objetivo:** App de escritorio pulida con features nativas.
-
-**Tareas:**
-- [ ] Menú nativo de la aplicación
-- [ ] Drag & drop de archivos desde el SO
-- [ ] Integración con clipboard del sistema (imágenes)
-- [ ] Notificaciones nativas (autosave, export completo)
-- [ ] Window management (tamaño, posición persiste)
-- [ ] Atajos de teclado nativos (registrados en Tauri)
-
-**Criterio:** se siente como una app nativa de escritorio.
-
----
-
-### Fase 17 — Testing (2 semanas, paralelo a otras fases)
-**Objetivo:** Cobertura de tests adecuada.
-
-**Tareas:**
-- [ ] Unit tests: ≥ 80% cobertura del Canvas Engine
-- [ ] Integration tests: flujos principales cubiertos
-- [ ] E2E tests: flujos críticos (crear board, dibujar, guardar, reabrir)
-- [ ] Fuzz tests: parsers de importación
-- [ ] Performance benchmarks automatizados
-
-**Criterio:** CI verde, ningún bug crítico conocido.
-
----
-
-### Fase 18 — Preparación para Colaboración en Tiempo Real
-**Objetivo:** Refactoring para soportar colaboración sin reimplementar desde cero.
-
-**Tareas:**
-- [ ] Introducir **Yjs** como CRDT layer (sin activar networking aún)
-- [ ] Adaptar `ObjectStore` para usar `Y.Map` como fuente de verdad
-- [ ] Adaptar `HistoryManager` para usar Yjs undo manager
-- [ ] Verificar que undo/redo sigue funcionando via Yjs
-- [ ] Documentar el protocolo de sincronización futuro
-
-**Decisión CRDT:** **Yjs** (vs Automerge)
-- Yjs tiene mejor rendimiento para objetos del canvas en tiempo real
-- Ecosistema más maduro para whiteboard apps
-- Bindings para WebSocket/WebRTC ya existentes
-- El historial puede gestionarse via `Y.UndoManager`
-
-**Criterio:** la app funciona exactamente igual que antes, pero el estado del board está en Yjs, listo para sincronizar.
-
----
-
-## 25. MVP
-
-### Definición del MVP
-
-El MVP es la Fase 0 → Fase 12, que incluye:
-
-**Canvas:**
-- ✅ Lienzo infinito
-- ✅ Pan y zoom (mouse, trackpad, atajos)
-- ✅ Grid opcional
-- ✅ Snap a grid opcional
-
-**Objetos:**
-- ✅ Lápiz libre
-- ✅ Marcador/resaltador
-- ✅ Borrador
-- ✅ Texto editable
-- ✅ Sticky notes
-- ✅ Formas (rect, ellipse, line, arrow, triangle, diamond)
-- ✅ Imágenes (D&D, paste, upload)
-
-**Interacción:**
-- ✅ Seleccionar, mover, redimensionar, rotar
-- ✅ Selección múltiple y rect selection
-- ✅ Bloquear/desbloquear objetos
-- ✅ Copy/Paste/Duplicate/Delete
-- ✅ Bring to front/back
-
-**Sistema:**
-- ✅ Undo/Redo (200 operaciones)
-- ✅ Autosave local
-- ✅ Múltiples tableros
-- ✅ Guardar/cargar
-- ✅ Exportar PNG/JPG/SVG
-- ✅ Import imagen
-
-**UI:**
-- ✅ Top bar con nombre del board, undo/redo, export
-- ✅ Toolbar lateral con todas las herramientas
-- ✅ Panel de propiedades contextual
-- ✅ Board list en home
-
----
-
-## 26. Funciones Posteriores al MVP
-
-| Función | Prioridad | Fase |
-|---------|-----------|------|
-| Conectores entre objetos | Alta | Post-MVP |
-| Minimap | Media | Post-MVP |
-| Smart guides / snap a objetos | Media | Post-MVP |
-| PDF export | Alta | 14 |
-| Importación MS Whiteboard ZIP | Media | 13 |
-| Colaboración tiempo real (Yjs) | Alta | 18+ |
-| Estrella, polígono, rombo | Baja | Post-MVP |
-| Agrupación anidada (>1 nivel) | Baja | Post-MVP |
-| Detección automática de formas | Baja | Post-MVP |
-| Templates de tableros | Baja | Post-MVP |
-| Búsqueda de objetos | Media | Post-MVP |
-| Comentarios/anotaciones | Media | Post-MVP |
-| Modo presentación | Media | Post-MVP |
-| Versión web (SvelteKit SSR) | Media | Post-MVP |
-| Plugin system | Baja | Futuro |
+| Función | Prioridad | Estado (2026-09-30) | Planificado en |
+|---------|-----------|---------------------|----------------|
+| Estilos editables (color, grosor, fill) | Alta | Sin UI | M1-03 |
+| Clipboard de objetos | Alta | Stub | M1-04 |
+| Conectores entre objetos | Alta | Tipo + renderer, sin tool | M1-09 (rectos), M5 (ortogonales) |
+| PDF / JPG / `.inkboard` | Alta | No | M2-06, M2-09, M2-10 |
+| Colaboración en tiempo real | Alta (largo plazo) | Solo stub de UI | M6 |
+| Agrupación | Media | Solo el tipo | M1-05 |
+| Gestión de boards (renombrar, duplicar, borrar) | Media | Solo crear, listar, buscar y favoritos | M2-02 |
+| Versiones / backup | Media | Tabla sin uso | M2-04 |
+| Snap a grid / smart guides | Media | No | M1-07 (grid), M5 (guías) |
+| Minimap | Media | No | M5 |
+| Búsqueda de objetos | Media | No (sí de boards) | M5 |
+| Importación MS Whiteboard | Media | Parcial (texto) | M2-11; no se amplía por el límite del formato (§17) |
+| Plantillas / Reactions en CreatePanel | Baja | No | M5 / post-1.0 |
+| Estrella, polígono, rombo | Baja | Hecho | — |
+| Comentarios, presentación, web SSR, plugins | Baja | No | Post-1.0 |
 
 ---
 
@@ -1797,14 +1617,19 @@ El MVP es la Fase 0 → Fase 12, que incluye:
 | rusqlite bundled no compila en alguna plataforma | Baja | Alto | Alternativa: `sqlx` o `libsqlite3-sys` |
 | Sincronización Main Thread ↔ RenderWorker introduce jank | Media | Alto | Medición temprana en Fase 0. Fallback: single thread |
 | Yjs overhead en Fase 18 rompe performance existente | Media | Medio | Benchmark antes y después de introducir Yjs |
+| El refactor de `BoardCanvas` (M1-01) introduce regresiones | Media | Alto | Hacerlo después de la red E2E de M0 y sin cambios de comportamiento en el mismo PR |
+| WebView2, WebKitGTK y WKWebView difieren en foco y eventos de puntero (B03 es un caso así) | Alta | Medio | E2E en Chromium + checklist manual en Tauri en cada gate; pasada completa por SO en M4 |
+| Migrar las imágenes a assets corrompe boards existentes (M2-05) | Baja | Alto | Snapshot en `board_versions` antes de migrar; migración idempotente; test con una DB real de v0.1 |
+| El coste o el plazo de la firma de código retrasa la beta | Media | Medio | Beta interna sin firmar; firmar antes de distribuir en público (D4) |
+| Las tareas delegadas a agentes se salen de alcance o rompen invariantes | Media | Medio | Tareas con archivos y criterio explícitos, el test como contrato y revisión del diff antes del merge |
 
 ---
 
 ## 28. Decisiones Técnicas y Alternativas Descartadas
 
 ### Canvas 2D vs WebGL
-**Elegido: Canvas 2D + OffscreenCanvas**
-WebGL descartado: complejidad de shaders no justificada para el rango de objetos esperado. WebGL sería el upgrade path si Canvas 2D falla en benchmarks.
+**Elegido: Canvas 2D** (hoy: main thread `RenderLoop`; OffscreenCanvas documentado como upgrade path, no activo en v0.1).
+WebGL descartado por ahora: complejidad de shaders no justificada. Upgrade path si Canvas 2D falla en benchmarks.
 
 ### Tauri 2 vs Electron
 **Elegido: Tauri 2**
@@ -1830,161 +1655,139 @@ Event Sourcing descartado para v1: sobre-ingeniería sin colaboración activa. S
 **Elegido: TypeScript primero (RBush), Rust via IPC para operaciones pesadas de IO**
 WASM compilado descartado para el MVP: complejidad de compilación y bindgen sin beneficio demostrado para las operaciones actuales. Si el spatial indexing TypeScript resulta insuficiente, se puede compilar RBush a WASM con AssemblyScript, o implementar R-tree en Rust y exponer via WASM.
 
----
+### Decisiones tomadas en la auditoría (2026-09-30)
 
-## 29. Dependencias y Packages Recomendados
+- **Rotación alrededor del centro de la caja** en todos los módulos (M0-10).
+- **Toda mutación del board pasa por un comando** (`engine.execute`). Es la condición para tener undo completo, un autosave fiable y, más adelante, colaboración (M1-02).
+- **Render en el hilo principal** hasta que los benchmarks de M3 demuestren lo contrario (M3-07).
+- **PNG y JPG se exportan desde TypeScript**, porque el canvas ya existe. Rust queda para PDF, `.inkboard` y el parsing de imports.
 
-### Frontend (TypeScript / Svelte)
-```json
-{
-  "dependencies": {
-    "@tauri-apps/api": "^2.0",
-    "@tauri-apps/plugin-fs": "^2.0",
-    "@tauri-apps/plugin-dialog": "^2.0",
-    "@tauri-apps/plugin-clipboard-manager": "^2.0",
-    "rbush": "^3.0",              // R-tree spatial index
-    "perfect-freehand": "^1.2",   // stroke rendering de calidad
-    "uuid": "^9.0"                // UUID generation
-  },
-  "devDependencies": {
-    "@sveltejs/kit": "^2.0",
-    "@sveltejs/adapter-static": "^3.0",
-    "svelte": "^5.0",
-    "typescript": "^5.0",
-    "vite": "^6.0",
-    "vitest": "^2.0",
-    "@playwright/test": "^1.0",
-    "eslint": "^9.0",
-    "prettier": "^3.0",
-    "prettier-plugin-svelte": "^3.0"
-  }
-}
-```
+### Decisiones pendientes
 
-**Nota sobre `perfect-freehand`:** esta librería (de Steve Ruiz, creador de tldraw) genera strokes de alta calidad con simulación de presión. Es la elección pragmática para el lápiz en lugar de implementar Catmull-Rom desde cero.
-
-### Rust (Cargo.toml)
-```toml
-[dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
-tauri-plugin-fs = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-clipboard-manager = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-rusqlite = { version = "0.31", features = ["bundled"] }
-zstd = "0.13"
-image = { version = "0.25", features = ["png", "jpeg", "webp"] }
-resvg = "0.43"
-usvg = "0.43"
-printpdf = "0.7"
-uuid = { version = "1", features = ["v4"] }
-anyhow = "1"
-tokio = { version = "1", features = ["full"] }
-sha2 = "0.10"                   # hash para detección de cambios
-zip = "2.1"                     # lectura de ZIP (import MS Whiteboard)
-
-[dev-dependencies]
-cargo-fuzz = "0.12"
-```
+| ID | Pregunta | Opciones | Recomendación | Decidir antes de |
+|----|----------|----------|---------------|------------------|
+| D1 | Color de tinta por defecto al cambiar de tema | a) color absoluto (el blanco desaparece en tema claro) · b) valor semántico `ink` resuelto según el tema · c) invertir el canvas en modo oscuro con un filtro | b): solo el color por defecto es semántico; los que elige el usuario son absolutos | M1-10 |
+| D2 | Motor de PDF | a) raster PNG con `printpdf` · b) vectorial con `svg2pdf` a partir del SVG | b): reutiliza el SVG y deja el texto seleccionable | M2-10 |
+| D3 | Assets en modo browser | IndexedDB · seguir con data URLs en localStorage (límite ≈ 5 MB) | IndexedDB (el browser solo se usa en desarrollo) | M2-05 |
+| D4 | Firma de código | Certificado de Windows (OV/EV) · Apple Developer Program (99 USD/año) | Presupuestarlo antes de M4-06 | M4 |
+| D5 | Transporte de colaboración | Relay propio (`y-websocket`) · servicio gestionado · P2P (`y-webrtc`) | Decidir con los datos del spike | M6 |
+| D6 | Idioma de la UI | Inglés (actual) · español · i18n | Inglés, extrayendo los strings en M4-07 | M4 |
 
 ---
 
-## 30. Comandos Iniciales para Crear el Proyecto
+## 29. Dependencias
 
-```bash
-# 1. Crear app con Tauri 2 + SvelteKit
-npm create tauri-app@latest inkboard -- \
-  --template svelte-ts \
-  --manager npm
+Versiones reales de `package.json` y `src-tauri/Cargo.toml` (2026-09-30):
 
-cd inkboard
+- **Frontend:** svelte 5.57 · @sveltejs/kit 2.70 · vite 8.2 · vitest 4.1 · typescript 6.0 · @playwright/test 1.62 · rbush 4.0 · perfect-freehand 1.2 · uuid 14 · @tauri-apps/api 2.11 con los plugins fs, dialog y clipboard-manager.
+- **Rust:** tauri 2.11 · rusqlite 0.31 (bundled) · zstd 0.13 · sha2 0.10 · zip 2.1 · serde / serde_json · uuid · anyhow · tauri-plugin-fs, dialog, clipboard-manager y log.
 
-# 2. Instalar dependencias frontend
-npm install rbush perfect-freehand uuid
-npm install --save-dev vitest @playwright/test prettier prettier-plugin-svelte
+**Nota sobre `perfect-freehand`:** esta librería (de Steve Ruiz, creador de tldraw) genera strokes de alta calidad con simulación de presión. Es la elección pragmática para el lápiz frente a implementar Catmull-Rom desde cero.
 
-# 3. Configurar SvelteKit para modo SPA (adapter-static)
-# svelte.config.js:
-# import adapter from '@sveltejs/adapter-static';
-# export default { kit: { adapter: adapter() } };
-# src/routes/+layout.ts: export const ssr = false; export const prerender = true;
+Dependencias que añade el plan:
 
-# 4. Agregar Rust dependencies en src-tauri/Cargo.toml
-# (ver sección §29)
+| Milestone | Dependencia | Para qué |
+|-----------|-------------|----------|
+| M1 | `fast-check` (dev) | Tests de propiedades de los comandos (M1-02) |
+| M1 | `eslint`, `typescript-eslint`, `eslint-plugin-svelte` (dev) | Lint en CI (M1-12) |
+| M2 | `image` | Re-encode de imágenes importadas (M2-08) |
+| M2 | `usvg`, `svg2pdf` | PDF vectorial (M2-10) |
+| M2 | `cargo-fuzz` (herramienta) | Fuzzing de parsers (M2-08) |
+| M4 | `tauri-plugin-window-state`, `tauri-plugin-single-instance`, `tauri-plugin-updater` | Estado de ventana, instancia única y updater |
 
-# 5. Agregar Tauri plugins
-cd src-tauri
-cargo add tauri-plugin-fs
-cargo add tauri-plugin-dialog
-cargo add tauri-plugin-clipboard-manager
-cargo add rusqlite --features bundled
-cargo add serde --features derive
-cargo add serde_json
-cargo add zstd
-cargo add image --features png,jpeg,webp
-cargo add anyhow
-cargo add uuid --features v4
-cargo add tokio --features full
-cd ..
+Quedan descartadas mientras no se demuestre que hacen falta: `tokio` explícito (Tauri ya trae su runtime async), `rmp-serde` (MessagePack), `printpdf` y `resvg` (solo si hay que rasterizar en Rust).
 
-# 6. Inicializar testing
-npx playwright install
+---
 
-# 7. Verificar que todo compila y corre
-npm run tauri dev
+## 30. Flujo de trabajo
 
-# 8. Setup monorepo (opcional, para escalar)
-npm install -D turbo
-# Crear turbo.json con pipeline de build/test/lint
+**Por tarea**
+1. Rama por ID, p. ej. `m0-02-select-tool`.
+2. Escribir o ajustar el test que reproduce el problema y verlo fallar.
+3. Implementar solo lo que pide la tarea.
+4. Cumplir la Definition of Done (§24.2).
+5. Commit `tipo(ID): descripción` y merge a `main` con la CI en verde.
 
-# 9. Crear estructura de directorios
-mkdir -p src/lib/{canvas,tools,objects,stores,io,components/ui,shortcuts,utils}
-mkdir -p src/routes/board/'[id]'
-mkdir -p src-tauri/src/{commands,db/migrations,formats,geometry}
-mkdir -p tests/{unit,integration,e2e,bench,fuzz}
-mkdir -p docs
+**Con agentes (Herdr).** `dev` (opencode) implementa una tarea por prompt; `docs` (Cursor) actualiza README y §0 al cerrar cada milestone; una persona revisa el diff antes del merge. M1 (frontend) y M2 (Rust) pueden repartirse entre agentes distintos porque casi no comparten archivos (ver la nota de M2-05). Plantilla de prompt:
+
+```text
+Tarea <ID> de implementation_plan.md §24 (léela completa antes de empezar).
+Archivos: <lista>. Aceptación: <criterio de la tabla>.
+Reglas: no toques archivos fuera de la lista; añade un test que falle sin el cambio;
+ejecuta pnpm test, pnpm check y pnpm exec playwright test (y cargo test si tocas Rust).
+Responde con un resumen, los archivos cambiados y la salida de los tests.
 ```
+
+**Comandos:** ver §0.5.
 
 ---
 
 ## Atajos de Teclado (Referencia)
 
-| Atajo | Acción |
-|-------|--------|
-| `V` | Select tool |
-| `P` | Pen tool |
-| `H` | Highlighter tool |
-| `E` | Eraser tool |
-| `T` | Text tool |
-| `N` | Sticky Note tool |
-| `R` | Rectangle tool |
-| `O` | Ellipse/Circle tool |
-| `L` | Line tool |
-| `A` | Arrow tool |
-| `I` | Image tool |
-| `Delete` / `Backspace` | Eliminar selección |
-| `Ctrl+Z` | Undo |
-| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo |
-| `Ctrl+C` | Copy |
-| `Ctrl+X` | Cut |
-| `Ctrl+V` | Paste |
-| `Ctrl+D` | Duplicate |
-| `Ctrl+A` | Select all |
-| `Ctrl+G` | Group |
-| `Ctrl+Shift+G` | Ungroup |
-| `Space + drag` | Pan |
-| `Ctrl + wheel` | Zoom |
-| `Ctrl+0` | Reset zoom (100%) |
-| `Ctrl+Shift+H` | Fit to screen |
-| `[` | Bring backward |
-| `]` | Bring forward |
-| `Ctrl+[` | Send to back |
-| `Ctrl+]` | Bring to front |
-| `Escape` | Deselect / Cancel |
+Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna "Plan" indica la tarea que lo corrige o lo implementa.
+
+| Atajo | Acción | Estado | Plan |
+|-------|--------|--------|------|
+| `V` | Select tool | ✅ (la tool está rota, B01) | M0-02 |
+| `P` | Pen tool | ✅ | — |
+| `H` | Highlighter tool | ✅ | — |
+| `E` | Eraser tool | ✅ | — |
+| `T` | Text tool | ✅ (el editor no guarda, B03) | M0-04 |
+| `S` / `N` | Sticky Note tool | ⚠️ solo `N` (B09) | M0-05 |
+| `R` / `O` / `L` / `A` | Rectángulo / elipse / línea / flecha | ⚠️ activan formas sin elegir cuál | M0-05 |
+| `I` | Image tool | ✅ | — |
+| `Delete` / `Backspace` | Eliminar selección | ⚠️ también se dispara al escribir en inputs (B04) | M0-05 |
+| `Ctrl+Z` | Undo | ✅ | — |
+| `Ctrl+Shift+Z` / `Ctrl+Y` | Redo | ✅ | — |
+| `Ctrl+C` / `Ctrl+X` | Copy / Cut | ❌ | M1-04 |
+| `Ctrl+V` | Paste | ⚠️ solo imágenes | M1-04 |
+| `Ctrl+D` | Duplicate | ✅ | — |
+| `Ctrl+A` | Select all | ✅ | — |
+| `Ctrl+G` / `Ctrl+Shift+G` | Group / Ungroup | ❌ | M1-05 |
+| `Ctrl+Shift+L` | Lock / Unlock | ❌ | M1-06 |
+| `Flechas` / `Shift+Flechas` | Nudge 1 px / 10 px | ❌ | M1-07 |
+| `Space + drag` | Pan | ✅ | — |
+| `Ctrl + wheel` | Zoom | ✅ | — |
+| `+` / `-` | Zoom in / out | ⚠️ también se dispara al escribir en inputs (B04) | M0-05 |
+| `Ctrl+0` | Reset zoom (100 %) | ✅ | — |
+| `Ctrl+Shift+H` | Fit to screen | ❌ (solo desde la UI y la palette) | M1-12 |
+| `[` / `]` | Un paso atrás / adelante | ⚠️ hoy manda al fondo / al frente y no se ve el cambio (B07) | M0-08 |
+| `Ctrl+[` / `Ctrl+]` | Al fondo / al frente | ❌ | M0-08 |
+| `Ctrl+K` | Command palette | ✅ | — |
+| `?` | Overlay de atajos | ❌ | M1-12 |
+| `Ctrl+F` | Buscar objetos | ❌ | M5 |
+| `Escape` | Deseleccionar / cancelar | ✅ | — |
 
 ---
 
 > [!NOTE]
-> Este documento es la especificación técnica maestra. Antes de iniciar cada fase, revisar las dependencias y criterios de completitud. Las decisiones técnicas pueden revisarse si los benchmarks de la Fase 0 y Fase 2 indican que un cambio de enfoque está justificado.
+> Estado real: §0. Plan activo: §24–§26 y §30. Las secciones de arquitectura (workers, PDF en Rust, colaboración…) describen el diseño objetivo, salvo que §0 o §24 digan lo contrario.
+
+---
+
+## Apéndice A — Historial de fases v0.1
+
+Es la numeración de los commits `Fase N` y de los comentarios del código. Los commits `FASE 2–11`, en mayúsculas, siguen otra numeración: la del rediseño del shell de UI.
+
+| Fase | Tema | Estado real (2026-09-30) | Continúa en |
+|------|------|--------------------------|-------------|
+| 0 | Investigación técnica | Stack validado; OffscreenCanvas no adoptado; sin benchmark formal | M3-01, M3-07 |
+| 1 | Scaffold | ✓ (layout plano, sin Turborepo); sin ESLint ni CI | M0-16, M1-12 |
+| 2 | Canvas y cámara | ✓, con bug de tamaño, offset y DPR (B02) | M0-03 |
+| 3 | Objetos base | ✓; el render ignora `zIndex` (B07) | M0-08 |
+| 4 | Selección y transformación | Código presente, roto en runtime (B01, B11, B12) | M0-02, M0-10 |
+| 5 | Lápiz | ✓; sin UI de color ni grosor | M1-03 |
+| 6 | Texto | Roto: el editor no guarda (B03) | M0-04, M1-08 |
+| 7 | Formas | ✓ 8 formas; sin UI de estilo | M1-03 |
+| 8 | Imágenes | ✓; insertar no se puede deshacer (B13); import grande por diálogo (B16) | M0-12, M0-15 |
+| 9 | Sticky notes | Se crean, pero el texto no se guarda (B03) | M0-04 |
+| 10 | Undo / Redo | ✓ con huecos (B06, B13) | M0-07, M0-12, M1-02 |
+| 11 | Persistencia | ✓ SQLite + zstd; pérdida al salir (B05); versiones sin uso | M0-06, M2-01, M2-04 |
+| 12 | Múltiples tableros | ✓ crear, listar, buscar y favoritos; thumbnails de relleno | M2-02, M2-03 |
+| 13 | Importación | ✓ imagen + ZIP (texto); JSON sin cablear; lee rutas arbitrarias | M2-07, M2-08, M2-11 |
+| 14 | Exportación | ✓ PNG / SVG / JSON; el SVG no aplica rotación ni exporta star/polygon | M2-09, M2-10 |
+| 15 | Optimización | No iniciada | M3 |
+| 16 | Desktop Tauri | Titlebar propio; botones de ventana sin permiso (B08) | M0-09, M4 |
+| 17 | Testing | 65 unit + 7 E2E que no cubren selección ni texto | M0-01, M0-16 |
+| 18 | Colaboración | Solo stub de UI | M6 |
 

@@ -4,6 +4,7 @@
 	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
 	import { CanvasEngine, type ToolId } from '$lib/canvas/CanvasEngine';
+	import { shouldIgnoreShortcut, toolShortcutForKey } from '$lib/input/shortcuts';
 	import {
 		dropLastAddCommand,
 		RemoveObjectCommand,
@@ -42,6 +43,8 @@
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let activeTool = $state<ToolId>('select');
+	// reactive mirror of engine.shapeTool.config.shape (class instances are not reactive)
+	let currentShape = $state<ShapeType>('rect');
 	let editingTextId = $state<string | null>(null);
 	let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
 	let boardName = $state('Untitled');
@@ -426,6 +429,7 @@
 	function setShape(shape: ShapeType) {
 		if (engine) {
 			engine.shapeTool.config.shape = shape;
+			currentShape = shape;
 			setTool('shape');
 		}
 	}
@@ -575,6 +579,8 @@
 	function onKeyDown(e: KeyboardEvent) {
 		// while the in-canvas editor is open, keys belong to the textarea (B03)
 		if (editingTextId) return;
+		// B04: never steal keys from inputs/contenteditable or while a modal is open
+		if (shouldIgnoreShortcut(e, { modalOpen: showPalette || showSettings })) return;
 		if (e.code === 'Space' && !e.repeat) {
 			spaceDown = true;
 			if (canvasEl) canvasEl.style.cursor = 'grab';
@@ -597,24 +603,15 @@
 		const sel = engine.selectionManager;
 		const mod = e.ctrlKey || e.metaKey;
 
-		// tool shortcuts (V/P/H/E, T/N/R/O/L/A/I)
+		// tool shortcuts from the shared table (B09): S/N → sticky, R/O/L/A → shape
 		if (!mod) {
-			const toolKey: Record<string, ToolId> = {
-				v: 'select',
-				p: 'pen',
-				h: 'highlighter',
-				e: 'eraser',
-				t: 'text',
-				n: 'sticky',
-				r: 'shape',
-				o: 'shape',
-				l: 'shape',
-				a: 'shape',
-				i: 'image'
-			};
-			const t = toolKey[e.key.toLowerCase()];
-			if (t) {
-				setTool(t);
+			const shortcut = toolShortcutForKey(e.key);
+			if (shortcut) {
+				if (shortcut.shape) {
+					engine.shapeTool.config.shape = shortcut.shape;
+					currentShape = shortcut.shape;
+				}
+				setTool(shortcut.tool);
 				return;
 			}
 		}
@@ -757,22 +754,23 @@
 	}
 
 	// ── Fase 3: command palette (Ctrl+K) ──
+	// Hints come from the shared shortcut table (CommandPalette falls back per id).
 	const paletteCommands: PaletteCmd[] = [
-		{ id: 'select', label: 'Select tool', hint: 'V', icon: 'select', action: () => setTool('select'), group: 'Tools' },
-		{ id: 'pen', label: 'Pen tool', hint: 'P', icon: 'pen', action: () => setTool('pen'), group: 'Tools' },
-		{ id: 'highlighter', label: 'Highlighter', hint: 'H', icon: 'highlighter', action: () => setTool('highlighter'), group: 'Tools' },
-		{ id: 'eraser', label: 'Eraser', hint: 'E', icon: 'eraser', action: () => setTool('eraser'), group: 'Tools' },
-		{ id: 'text', label: 'Text tool', hint: 'T', icon: 'text', action: () => setTool('text'), group: 'Tools' },
-		{ id: 'sticky', label: 'Sticky note', hint: 'S', icon: 'sticky', action: () => setTool('sticky'), group: 'Tools' },
-		{ id: 'shape', label: 'Shapes', hint: 'R', icon: 'shapes', action: () => setTool('shape'), group: 'Tools' },
+		{ id: 'select', label: 'Select tool', icon: 'select', action: () => setTool('select'), group: 'Tools' },
+		{ id: 'pen', label: 'Pen tool', icon: 'pen', action: () => setTool('pen'), group: 'Tools' },
+		{ id: 'highlighter', label: 'Highlighter', icon: 'highlighter', action: () => setTool('highlighter'), group: 'Tools' },
+		{ id: 'eraser', label: 'Eraser', icon: 'eraser', action: () => setTool('eraser'), group: 'Tools' },
+		{ id: 'text', label: 'Text tool', icon: 'text', action: () => setTool('text'), group: 'Tools' },
+		{ id: 'sticky', label: 'Sticky note', icon: 'sticky', action: () => setTool('sticky'), group: 'Tools' },
+		{ id: 'shape', label: 'Shapes', icon: 'shapes', action: () => setTool('shape'), group: 'Tools' },
 		{ id: 'image', label: 'Image', icon: 'image', action: () => setTool('image'), group: 'Tools' },
-		{ id: 'undo', label: 'Undo', hint: 'Ctrl+Z', icon: 'undo', action: () => { uiActions.undo?.(); }, group: 'Actions' },
-		{ id: 'redo', label: 'Redo', hint: 'Ctrl+Shift+Z', icon: 'redo', action: () => { uiActions.redo?.(); }, group: 'Actions' },
+		{ id: 'undo', label: 'Undo', icon: 'undo', action: () => { uiActions.undo?.(); }, group: 'Actions' },
+		{ id: 'redo', label: 'Redo', icon: 'redo', action: () => { uiActions.redo?.(); }, group: 'Actions' },
 		{ id: 'export-png', label: 'Export as PNG', icon: 'export', action: () => exportBoard('png'), group: 'Export' },
 		{ id: 'export-svg', label: 'Export as SVG', icon: 'export', action: () => exportBoard('svg'), group: 'Export' },
 		{ id: 'export-json', label: 'Export as JSON', icon: 'export', action: () => exportBoard('json'), group: 'Export' },
 		{ id: 'zoom-fit', label: 'Zoom to fit', icon: 'fit', action: () => zoomFit(), group: 'View' },
-		{ id: 'zoom-reset', label: 'Reset zoom', hint: 'Ctrl+0', action: () => zoomReset(), group: 'View' },
+		{ id: 'zoom-reset', label: 'Reset zoom', action: () => zoomReset(), group: 'View' },
 		{ id: 'settings', label: 'Settings', icon: 'settings', action: () => uiActions.openSettings?.(), group: 'App' },
 	];
 
@@ -959,13 +957,13 @@
 
 	// ── Toolbar definition (DESIGN.md — floating vertical tool strip) ──
 	const TOOLBAR_TOOLS: ToolItem[] = [
-		{ id: 'select', icon: 'select', label: 'Select', shortcut: 'V' },
-		{ id: 'pen', icon: 'pen', label: 'Pen', shortcut: 'P' },
-		{ id: 'highlighter', icon: 'highlighter', label: 'Highlighter', shortcut: 'H' },
-		{ id: 'eraser', icon: 'eraser', label: 'Eraser', shortcut: 'E' },
-		{ id: 'text', icon: 'text', label: 'Text', shortcut: 'T' },
-		{ id: 'sticky', icon: 'sticky', label: 'Sticky Note', shortcut: 'S' },
-		{ id: 'shape', icon: 'shapes', label: 'Shapes', shortcut: 'R' },
+		{ id: 'select', icon: 'select', label: 'Select' },
+		{ id: 'pen', icon: 'pen', label: 'Pen' },
+		{ id: 'highlighter', icon: 'highlighter', label: 'Highlighter' },
+		{ id: 'eraser', icon: 'eraser', label: 'Eraser' },
+		{ id: 'text', icon: 'text', label: 'Text' },
+		{ id: 'sticky', icon: 'sticky', label: 'Sticky Note' },
+		{ id: 'shape', icon: 'shapes', label: 'Shapes' },
 		{ id: 'image', icon: 'image', label: 'Image' },
 		{ id: 'connector', icon: 'connector', label: 'Connector' }
 	];
@@ -1092,7 +1090,7 @@
 			<div class="shape-palette">
 				{#each SHAPE_TYPES as shape}
 					<button
-						class:active={engine?.shapeTool.config.shape === shape}
+						class:active={currentShape === shape}
 						title={shape}
 						onclick={() => setShape(shape)}
 					>

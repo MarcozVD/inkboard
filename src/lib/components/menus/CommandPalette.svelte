@@ -3,6 +3,7 @@
 	// Search tools, actions, boards, templates, settings.
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import type { IconName } from '$lib/components/ui/Icon.svelte';
+	import { shortcutLabelFor } from '$lib/input/shortcuts';
 
 	export interface PaletteCmd {
 		id: string;
@@ -27,9 +28,18 @@
 	let selected = $state(0);
 	let inputEl: HTMLInputElement | undefined = $state();
 
+	/** Hint from the command itself or from the shared shortcut table (M0-05). */
+	function hintFor(cmd: PaletteCmd): string | undefined {
+		return cmd.hint ?? shortcutLabelFor(cmd.id);
+	}
+
 	const filtered = $derived(
 		query.trim()
-			? commands.filter((c) => (c.label + ' ' + (c.hint ?? '') + ' ' + (c.group ?? '')).toLowerCase().includes(query.toLowerCase()))
+			? commands.filter((c) =>
+					(c.label + ' ' + (hintFor(c) ?? '') + ' ' + (c.group ?? ''))
+						.toLowerCase()
+						.includes(query.toLowerCase())
+				)
 			: commands
 	);
 
@@ -91,6 +101,7 @@
 						{/if}
 						{#each filtered.filter((c) => (c.group ?? '') === g) as cmd, i}
 							{@const idx = filtered.indexOf(cmd)}
+							{@const hint = hintFor(cmd)}
 							<button
 								class="palette-item"
 								class:selected={idx === selected}
@@ -101,8 +112,8 @@
 									<Icon name={cmd.icon} size={15} />
 								{/if}
 								<span class="pi-label">{cmd.label}</span>
-								{#if cmd.hint}
-									<span class="pi-hint">{cmd.hint}</span>
+								{#if hint}
+									<span class="pi-hint">{hint}</span>
 								{/if}
 							</button>
 						{/each}

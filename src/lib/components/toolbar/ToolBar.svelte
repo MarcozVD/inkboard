@@ -4,11 +4,13 @@
 	// and a contextual popover (children) for the active tool.
 	import ToolButton from '$lib/components/ui/ToolButton.svelte';
 	import type { IconName } from '$lib/components/ui/Icon.svelte';
+	import { shortcutLabelFor } from '$lib/input/shortcuts';
 
 	export interface ToolItem {
 		id: string;
 		icon: IconName;
 		label: string;
+		/** explicit override; otherwise the shared shortcut table supplies the hint */
 		shortcut?: string;
 	}
 
@@ -41,7 +43,7 @@
 			<ToolButton
 				icon={tool.icon}
 				label={tool.label}
-				shortcut={tool.shortcut}
+				shortcut={tool.shortcut ?? shortcutLabelFor(tool.id)}
 				active={tool.id === activeTool}
 				testid={`tool-${tool.id}`}
 				onclick={() => onSelectTool(tool.id)}

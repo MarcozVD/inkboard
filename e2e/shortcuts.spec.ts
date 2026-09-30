@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { createBoard, drawShape, storedObjects, waitForObjectCount } from './helpers';
 
 test.describe('B09 — tool shortcuts', () => {
-	test('S activates sticky; O/L pick ellipse and line', async ({ page }) => {
+	test('S/N activate sticky; R/O/L/A pick the concrete shape', async ({ page }) => {
 		await createBoard(page);
 
 		await page.keyboard.press('s');
@@ -17,6 +17,27 @@ test.describe('B09 — tool shortcuts', () => {
 
 		await page.keyboard.press('r');
 		await expect(page.getByTitle('rect')).toHaveClass(/active/);
+
+		await page.keyboard.press('a');
+		await expect(page.getByTitle('arrow')).toHaveClass(/active/);
+
+		await page.keyboard.press('n');
+		await expect(page.getByTestId('tool-sticky')).toHaveAttribute('aria-pressed', 'true');
+	});
+
+	test('UI hints come from the shared shortcut table', async ({ page }) => {
+		await createBoard(page);
+
+		await expect(page.getByTestId('tool-sticky').locator('kbd')).toHaveText('S');
+		await expect(page.getByTestId('tool-shape').locator('kbd')).toHaveText('R');
+
+		await page.keyboard.press('Control+k');
+		await expect(
+			page.locator('.palette-item').filter({ hasText: 'Sticky note' }).locator('.pi-hint')
+		).toHaveText('S');
+		await expect(
+			page.locator('.palette-item').filter({ hasText: 'Shapes' }).locator('.pi-hint')
+		).toHaveText('R');
 	});
 });
 

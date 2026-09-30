@@ -37,12 +37,12 @@
 | B01 | ~~Select no selecciona, ni mueve, ni escala, ni rota. Cada arrastre lanza `TypeError: Cannot read properties of undefined (reading 'shift')`.~~ **Corregido (M0-02).** | `CanvasEngine` llamaba `tool.pointerDown({ screenX, … })` con un objeto, pero `SelectTool.pointerDown(sx, sy, modifiers)` esperaba tres argumentos. El cast `as unknown as BaseTool` ocultaba el error a TypeScript. Fix: `SelectTool extends BaseTool` + `ToolPointerEvent`. | Sonda → fix |
 | B02 | ~~El trazo aparece ~32 px por debajo del cursor (a y≈300) y el lienzo se ve achatado en vertical. En pantallas con escala del 125–200 %, además, se ve borroso.~~ **Corregido (M0-03).** | El backing store usaba `window.innerWidth × innerHeight`, mientras la caja CSS quedaba bajo el TopBar; coords sin `getBoundingClientRect()`; sin `devicePixelRatio`. Fix: `ResizeObserver` + DPR + `toCanvasPoint`; TextEditor/ContextToolbar suman offset. | Sonda → fix |
 | B03 | ~~Texto y sticky: el editor se cierra con el mismo clic que lo abre y el objeto queda vacío. Incluso si el editor sigue abierto, lo escrito no se guarda.~~ **Corregido (M0-04).** | (a) `mousedown` por defecto quitaba foco al textarea → commit vacío. (b) `onCommit` mutaba proxy `$state` sin escribir en el store. (c) doble commit Enter+blur. Fix: `preventDefault`, commit idempotente vía `UpdateContentCommand`, vacío elimina objeto. | Sonda → fix |
-| B04 | Escribir en inputs (renombrar board, CommandPalette, editor de texto) cambia de herramienta. Backspace borra la selección y `+`/`-` hacen zoom. | El `onKeyDown` global en `window` no ignora los targets editables (`BoardCanvas.svelte:458`). | Sonda: escribir "Plan" en el nombre deja activa la tool sticky |
+| B04 | ~~Escribir en inputs (renombrar board, CommandPalette, editor de texto) cambia de herramienta. Backspace borra la selección y `+`/`-` hacen zoom.~~ **Corregido (M0-05).** | El `onKeyDown` global en `window` no ignoraba los targets editables (`BoardCanvas.svelte:458`). Fix: guard `shouldIgnoreShortcut` (target `input`/`textarea`/`contenteditable` o modal abierto) antes de interpretar la tecla. | Sonda → fix |
 | B05 | Se pierden los cambios si se sale del board o se cierra la ventana antes de 2 s desde la última edición. | El cleanup hace `clearTimeout(autosaveTimer)` sin guardar (`BoardCanvas.svelte:932`). No hay `onCloseRequested`. | Sonda: dibujar y volver a Home ⇒ 0 objetos guardados |
 | B06 | Deshacer un borrado del eraser no restaura nada. | El comando lee `this.removed` en el momento de deshacer, y para entonces `pointerUp` ya lo ha reasignado a `[]` (`src/lib/tools/EraserTool.ts:41`). | Sonda |
 | B07 | Bring to front / send to back no cambian lo que se ve: queda encima lo último que se movió. | `render()` pinta en el orden que devuelve RBush (`queryViewport`), no por `zIndex`. Reordenar tampoco se puede deshacer (`ReorderCommand` existe pero no se usa). | Código |
 | B08 | Los botones de minimizar, maximizar y cerrar del titlebar no hacen nada en la app de escritorio. | `capabilities/default.json` solo concede `core:window:default`, que no incluye `allow-minimize`, `allow-maximize`, `allow-unmaximize` ni `allow-close`. | `src-tauri/gen/schemas/acl-manifests.json` |
-| B09 | `S`, el atajo que muestran toolbar y palette, no activa sticky. `R/O/L/A` activan formas, pero no la forma indicada. | El mapa `toolKey` usa `n` para sticky (`BoardCanvas.svelte:489`). | Sonda |
+| B09 | ~~`S`, el atajo que muestran toolbar y palette, no activa sticky. `R/O/L/A` activan formas, pero no la forma indicada.~~ **Corregido (M0-05).** | El mapa `toolKey` usaba `n` para sticky y mapeaba `r/o/l/a` al mismo tool sin fijar la forma (`BoardCanvas.svelte:489`). Fix: tabla única en `lib/input/shortcuts.ts` con `S`/`N` ⇒ sticky y `R`/`O`/`L`/`A` ⇒ la forma concreta; toolbar y palette leen la misma tabla. | Sonda → fix |
 | B10 | El botón Connector se marca como activo, pero el engine sigue con la tool anterior. | `engine.setTool('connector')` retorna sin hacer nada porque no hay ConnectorTool, y la UI no se entera (`CanvasEngine.ts:71`). | Código |
 | B11 | *(Latente, tapado por B01.)* Mover o escalar un trazo o un conector no cambia lo que se ve. | Se actualiza `transform`, pero el renderer y los bounds usan `points` / `startPoint` / `endPoint` en coordenadas de mundo. | Código |
 | B12 | La rotación es inconsistente entre módulos. | El renderer rota alrededor de la esquina superior izquierda (`src/lib/objects/renderers.ts:42`) y `SelectTool` alrededor del centro. El AABB y el export SVG ignoran la rotación. | Código |
@@ -1463,7 +1463,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-02 ✅ | **B01** · `SelectTool extends BaseTool` y recibe `ToolPointerEvent`. Quitar todos los casts `as unknown as BaseTool` de `CanvasEngine`. | `tools/SelectTool.ts`, `canvas/CanvasEngine.ts` | Seleccionar, marquee, mover, escalar y rotar funcionan; una firma incorrecta vuelve a ser error de `pnpm check` | S |
 | M0-03 ✅ | **B02** · Tamaño del canvas con `ResizeObserver` sobre su contenedor; backing store = tamaño CSS × `devicePixelRatio`, con `ctx.setTransform(dpr·zoom, …)`. Toda coordenada de puntero pasa por un único `toCanvasPoint(e)` (`clientX − rect.left`, `clientY − rect.top`). `TextEditor` y `ContextToolbar` suman el offset del canvas. | `BoardCanvas.svelte`, `TextEditor.svelte`, `ContextToolbar.svelte` | E2E: el objeto aparece bajo el cursor (±1 px) con DPR 1 y 2; una elipse dibujada con Shift sale circular | M |
 | M0-04 ✅ | **B03** · `preventDefault()` en el `pointerdown` del canvas. Commit idempotente. El commit escribe en el objeto real vía `store.update` (guardar solo el `id` en `editingText`, o usar `$state.raw`). Confirmar un texto vacío elimina el objeto y su entrada del historial. Editar es un comando que se puede deshacer (`UpdateContentCommand`). | `BoardCanvas.svelte`, `TextEditor.svelte`, `canvas/commands.ts` | E2E: crear texto, escribir y pulsar Enter ⇒ se guarda; doble clic edita; Esc cancela; undo revierte la edición. Lo mismo con sticky | M |
-| M0-05 | **B04, B09** · Tabla única de atajos en `lib/input/shortcuts.ts`, usada por el keydown, las pistas del ToolBar y la CommandPalette. Guard: ignorar la tecla si el target es input, textarea o contenteditable, o si hay un modal abierto. `S` y `N` ⇒ sticky; `R`/`O`/`L`/`A` ⇒ la forma concreta. | `BoardCanvas.svelte`, `input/shortcuts.ts` (nuevo), `ToolBar.svelte`, `CommandPalette.svelte` | E2E: escribir en rename, palette o editor no cambia la tool ni borra objetos | S |
+| M0-05 ✅ | **B04, B09** · Tabla única de atajos en `lib/input/shortcuts.ts`, usada por el keydown, las pistas del ToolBar y la CommandPalette. Guard: ignorar la tecla si el target es input, textarea o contenteditable, o si hay un modal abierto. `S` y `N` ⇒ sticky; `R`/`O`/`L`/`A` ⇒ la forma concreta. | `BoardCanvas.svelte`, `input/shortcuts.ts` (nuevo), `ToolBar.svelte`, `CommandPalette.svelte` | E2E: escribir en rename, palette o editor no cambia la tool ni borra objetos | S |
 | M0-06 | **B05, B17** · `flushSave()` al desmontar, antes de `goto('/')`, en `pagehide`/`visibilitychange` y en `getCurrentWindow().onCloseRequested` (el handler async hace `await flushSave()`; la API espera al handler y luego llama a `destroy()`, que necesita el permiso de M0-09). Guardado forzado cada 30 s de edición continua. Conservar el `createdAt` del board cargado. | `BoardCanvas.svelte` | E2E: dibujar y salir en < 200 ms ⇒ persistido. Manual: cerrar con ✕ a los 500 ms conserva el cambio | S |
 | M0-07 | **B06** · Capturar `const removed = this.removed` dentro del comando. El eraser ignora los objetos `locked`. | `tools/EraserTool.ts` | Unit: borrar 3 objetos en un gesto → undo los restaura → redo los vuelve a quitar | S |
 | M0-08 | **B07** · Renderizar en orden de `zIndex`. Bring/send con `ReorderCommand` (se puede deshacer). `]`/`[` = un paso adelante/atrás; `Ctrl+]`/`Ctrl+[` = al frente/al fondo (ver Atajos). | `BoardCanvas.svelte`, `canvas/ObjectStore.ts`, `canvas/commands.ts` | E2E con captura: dos stickies superpuestos cambian de orden y undo lo revierte | S |
@@ -1724,7 +1724,7 @@ Responde con un resumen, los archivos cambiados y la salida de los tests.
 
 ## Atajos de Teclado (Referencia)
 
-Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna "Plan" indica la tarea que lo corrige o lo implementa.
+Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna "Plan" indica la tarea que lo corrige o lo implementa. Desde M0-05 las pistas de la UI se generan desde `lib/input/shortcuts.ts`, la misma tabla que consume el keydown del canvas.
 
 | Atajo | Acción | Estado | Plan |
 |-------|--------|--------|------|
@@ -1733,10 +1733,10 @@ Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna 
 | `H` | Highlighter tool | ✅ | — |
 | `E` | Eraser tool | ✅ | — |
 | `T` | Text tool | ✅ (el editor no guarda, B03) | M0-04 |
-| `S` / `N` | Sticky Note tool | ⚠️ solo `N` (B09) | M0-05 |
-| `R` / `O` / `L` / `A` | Rectángulo / elipse / línea / flecha | ⚠️ activan formas sin elegir cuál | M0-05 |
+| `S` / `N` | Sticky Note tool | ✅ | — |
+| `R` / `O` / `L` / `A` | Rectángulo / elipse / línea / flecha | ✅ (eligen la forma) | — |
 | `I` | Image tool | ✅ | — |
-| `Delete` / `Backspace` | Eliminar selección | ⚠️ también se dispara al escribir en inputs (B04) | M0-05 |
+| `Delete` / `Backspace` | Eliminar selección | ✅ (ya no se dispara al escribir en inputs, B04) | — |
 | `Ctrl+Z` | Undo | ✅ | — |
 | `Ctrl+Shift+Z` / `Ctrl+Y` | Redo | ✅ | — |
 | `Ctrl+C` / `Ctrl+X` | Copy / Cut | ❌ | M1-04 |
@@ -1748,7 +1748,7 @@ Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna 
 | `Flechas` / `Shift+Flechas` | Nudge 1 px / 10 px | ❌ | M1-07 |
 | `Space + drag` | Pan | ✅ | — |
 | `Ctrl + wheel` | Zoom | ✅ | — |
-| `+` / `-` | Zoom in / out | ⚠️ también se dispara al escribir en inputs (B04) | M0-05 |
+| `+` / `-` | Zoom in / out | ✅ (ya no se dispara al escribir en inputs, B04) | — |
 | `Ctrl+0` | Reset zoom (100 %) | ✅ | — |
 | `Ctrl+Shift+H` | Fit to screen | ❌ (solo desde la UI y la palette) | M1-12 |
 | `[` / `]` | Un paso atrás / adelante | ⚠️ hoy manda al fondo / al frente y no se ve el cambio (B07) | M0-08 |

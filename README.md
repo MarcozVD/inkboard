@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, and text/sticky editing fixed (M0-02…M0-04). Flush-on-exit and shortcut-vs-input bugs remain — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing and keyboard shortcuts fixed (M0-02…M0-05). Flush-on-exit bug remains — see [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -30,12 +30,12 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Canvas sizing / pointer coords | **Works** after M0-03 (B02 fixed) |
 | Text / sticky editing | **Works** after M0-04 (B03 fixed) |
 | Leave board &lt;2s | **Broken** — changes lost; no flush on unmount (B05) |
-| Shortcuts while typing in inputs | **Broken** — keys still switch tools / delete (B04); sticky shortcut `S` wrong (B09) |
+| Shortcuts while typing in inputs | **Works** after M0-05 (B04, B09 fixed) — one table in `src/lib/input/shortcuts.ts` feeds the keydown, tooltips and palette |
 | Connectors / groups | Stub only |
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-04 done; M0-05… pending).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-05 done; M0-06… pending).
 
 ## Tech Stack
 
@@ -67,7 +67,7 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 65/65
+pnpm test                           # Unit (Vitest) — 73/73
 pnpm exec playwright test           # E2E on :1420 — some fails expected until M0-03…M0-07
 pnpm check                          # Svelte / TS check
 ```
@@ -93,6 +93,7 @@ src/
     tools/        Select, Pen, Highlighter, Eraser, Text, Sticky, Shape, Image
     objects/      types, factory, renderers, bounds
     io/           persistence, InternalFormat, PngExporter, SvgExporter
+    input/        keyboard shortcut table (single source of truth)
     components/   BoardCanvas, TextEditor, app/TopBar, toolbar/, menus/,
                   panels/, board/ZoomControls, ui/
     stores/       ui.svelte.ts

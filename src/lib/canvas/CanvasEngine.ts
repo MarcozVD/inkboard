@@ -43,16 +43,12 @@ export class CanvasEngine {
 			pushHistory: (cmd: import('$lib/canvas/HistoryManager').Command) => this.history.push(cmd)
 		};
 
-		this.selectTool = new SelectTool(this.store, this.cameraFn, {
-			onDirty: this.onDirty,
-			onGestureEnd: this.onGestureEnd,
-			onCommit: (cmd: import('$lib/canvas/HistoryManager').Command) => this.history.push(cmd)
-		});
+		this.selectTool = new SelectTool(ctx);
 		this.textTool = new TextTool(ctx);
 		this.shapeTool = new ShapeTool(ctx);
 		this.imageTool = new ImageTool(ctx);
 		this.stickyTool = new StickyNoteTool(ctx);
-		this.tools.set('select', this.selectTool as unknown as BaseTool);
+		this.tools.set('select', this.selectTool);
 		this.tools.set('pen', new PenTool(ctx));
 		this.tools.set('highlighter', new HighlighterTool(ctx));
 		this.tools.set('eraser', new EraserTool(ctx));

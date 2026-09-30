@@ -1,9 +1,8 @@
 // SelectTool — pointer interaction for selection & transform (§4)
-import type { ObjectStore } from '$lib/canvas/ObjectStore';
+import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { SelectionManager, type HandleId } from '$lib/canvas/SelectionManager';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
-import type { CameraState } from '$lib/canvas/Camera';
 import { UpdateTransformCommand } from '$lib/canvas/commands';
 import type { Transform } from '$lib/objects/types';
 
@@ -13,15 +12,9 @@ const HANDLE_HIT = 10; // screen px
 
 export interface SelectToolCallbacks {
 	onSelectionChange?: (ids: string[]) => void;
-	/** fired after a gesture ends (move/resize/rotate commit) */
-	onGestureEnd?: () => void;
-	/** render request */
-	onDirty?: () => void;
-	/** register an undo command for the finished transform gesture */
-	onCommit?: (cmd: import('$lib/canvas/HistoryManager').Command) => void;
 }
 
-export class SelectTool {
+export class SelectTool extends BaseTool {
 	private sel: SelectionManager;
 	private mode: Mode = 'idle';
 	private dragStartWorld: Vec2 = { x: 0, y: 0 };
@@ -33,12 +26,9 @@ export class SelectTool {
 	private rectStart: Vec2 = { x: 0, y: 0 };
 	private moved = false;
 
-	constructor(
-		private store: ObjectStore,
-		private camera: () => CameraState,
-		private cb: SelectToolCallbacks = {}
-	) {
-		this.sel = new SelectionManager(store);
+	constructor(ctx: ToolContext, private cb: SelectToolCallbacks = {}) {
+		super(ctx);
+		this.sel = new SelectionManager(ctx.store);
 	}
 
 	get selectionManager(): SelectionManager {
@@ -47,7 +37,10 @@ export class SelectTool {
 
 	// ── Pointer events (screen space) ──
 
-	pointerDown(sx: number, sy: number, modifiers: { shift: boolean }): void {
+	pointerDown(e: ToolPointerEvent): void {
+		const sx = e.screenX;
+		const sy = e.screenY;
+		const shift = e.shift;
 		const world = this.screenToWorld(sx, sy);
 		this.dragStartScreen = { x: sx, y: sy };
 		this.dragStartWorld = { ...world };
@@ -70,9 +63,9 @@ export class SelectTool {
 		const hit = this.sel.hitTest(world);
 		if (hit && !hit.locked) {
 			if (!this.sel.isSelected(hit.id)) {
-				this.sel.select(hit.id, modifiers.shift);
+				this.sel.select(hit.id, shift);
 				this.cb.onSelectionChange?.(this.sel.selected);
-			} else if (modifiers.shift) {
+			} else if (shift) {
 				this.sel.toggle(hit.id);
 				this.cb.onSelectionChange?.(this.sel.selected);
 				return; // click on selected + shift = deselect
@@ -84,10 +77,13 @@ export class SelectTool {
 			this.mode = 'rect-select';
 			this.rectStart = { ...world };
 		}
-		this.cb.onDirty?.();
+		this.ctx.onDirty();
 	}
 
-	pointerMove(sx: number, sy: number, modifiers: { shift: boolean }): void {
+	pointerMove(e: ToolPointerEvent): void {
+		const sx = e.screenX;
+		const sy = e.screenY;
+		const shift = e.shift;
 		const world = this.screenToWorld(sx, sy);
 		const dxWorld = world.x - this.lastWorld.x;
 		const dyWorld = world.y - this.lastWorld.y;
@@ -96,22 +92,22 @@ export class SelectTool {
 
 		switch (this.mode) {
 			case 'move':
-				this.applyMove(dxWorld, dyWorld, modifiers.shift);
+				this.applyMove(dxWorld, dyWorld, shift);
 				break;
 			case 'resize':
-				this.applyResize(world, modifiers.shift);
+				this.applyResize(world, shift);
 				break;
 			case 'rotate':
-				this.applyRotate(world, modifiers.shift);
+				this.applyRotate(world, shift);
 				break;
 			case 'rect-select':
-				this.applyRectSelect(world, modifiers.shift);
+				this.applyRectSelect(world, shift);
 				break;
 		}
-		this.cb.onDirty?.();
+		this.ctx.onDirty();
 	}
 
-	pointerUp(): void {
+	pointerUp(_e: ToolPointerEvent): void {
 		if (this.mode === 'rect-select' && !this.moved) {
 			// simple click on empty space → clear selection
 			this.sel.clear();
@@ -119,13 +115,13 @@ export class SelectTool {
 		}
 		if (this.mode !== 'idle' && this.mode !== 'rect-select' && this.moved) {
 			this.commitTransform();
-			this.cb.onGestureEnd?.();
+			this.ctx.onGestureEnd?.();
 		}
 		this.mode = 'idle';
 		this.activeHandle = null;
 		this.startTransforms.clear();
 		this.startBounds = null;
-		this.cb.onDirty?.();
+		this.ctx.onDirty();
 	}
 
 	/** Called when the tool is deselected mid-gesture — drop any transient state. */
@@ -143,31 +139,31 @@ export class SelectTool {
 		const before = new Map<string, Transform>();
 		const after = new Map<string, Transform>();
 		for (const [id, t] of this.startTransforms) {
-			const obj = this.store.get(id);
+			const obj = this.ctx.store.get(id);
 			if (!obj) continue;
 			before.set(id, { ...t });
 			after.set(id, { ...obj.transform });
 		}
 		if (before.size === 0) return;
-		this.cb.onCommit?.(new UpdateTransformCommand(this.store, before, after));
+		this.ctx.pushHistory?.(new UpdateTransformCommand(this.ctx.store, before, after));
 	}
 
 	// ── Coordinate helpers ──
 
 	private screenToWorld(sx: number, sy: number): Vec2 {
-		const c = this.camera();
+		const c = this.ctx.camera();
 		return { x: (sx - c.x) / c.zoom, y: (sy - c.y) / c.zoom };
 	}
 
 	private worldToScreen = (wx: number, wy: number): [number, number] => {
-		const c = this.camera();
+		const c = this.ctx.camera();
 		return [wx * c.zoom + c.x, wy * c.zoom + c.y];
 	};
 
 	private captureStart(): void {
 		this.startTransforms.clear();
 		for (const id of this.sel.selected) {
-			const obj = this.store.get(id);
+			const obj = this.ctx.store.get(id);
 			if (obj) {
 				this.startTransforms.set(id, { ...obj.transform });
 			}
@@ -182,13 +178,13 @@ export class SelectTool {
 			// snap to grid if shift held (16px grid snap when holding Shift)
 		}
 		for (const id of this.sel.selected) {
-			const obj = this.store.get(id);
+			const obj = this.ctx.store.get(id);
 			if (!obj || obj.locked) continue;
 			obj.transform.x += dx;
 			obj.transform.y += dy;
 			obj.updatedAt = Date.now();
 		}
-		this.store.notifyMoved(this.sel.selected);
+		this.ctx.store.notifyMoved(this.sel.selected);
 	}
 
 	private applyResize(world: Vec2, shift: boolean): void {
@@ -226,7 +222,7 @@ export class SelectTool {
 		const scaleX = sb.width > 0 ? newW / sb.width : 1;
 		const scaleY = sb.height > 0 ? newH / sb.height : 1;
 		for (const selId of this.sel.selected) {
-			const obj = this.store.get(selId);
+			const obj = this.ctx.store.get(selId);
 			if (!obj || obj.locked) continue;
 			const st = this.startTransforms.get(selId)!;
 			// rescale relative to the start bounds top-left corner
@@ -236,7 +232,7 @@ export class SelectTool {
 			obj.transform.height = st.height * scaleY;
 			obj.updatedAt = Date.now();
 		}
-		this.store.notifyMoved(this.sel.selected);
+		this.ctx.store.notifyMoved(this.sel.selected);
 	}
 
 	private applyRotate(world: Vec2, _shift: boolean): void {
@@ -246,7 +242,7 @@ export class SelectTool {
 		const startAngle = Math.atan2(this.dragStartWorld.y - c.y, this.dragStartWorld.x - c.x);
 		const delta = angle - startAngle;
 		for (const selId of this.sel.selected) {
-			const obj = this.store.get(selId);
+			const obj = this.ctx.store.get(selId);
 			if (!obj || obj.locked) continue;
 			const st = this.startTransforms.get(selId)!;
 			// rotate around selection center
@@ -260,7 +256,7 @@ export class SelectTool {
 			obj.transform.rotation = st.rotation + delta;
 			obj.updatedAt = Date.now();
 		}
-		this.store.notifyMoved(this.sel.selected);
+		this.ctx.store.notifyMoved(this.sel.selected);
 	}
 
 	private applyRectSelect(world: Vec2, shift: boolean): void {

@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing, keyboard shortcuts, autosave flush and eraser undo fixed (M0-02…M0-07). Window controls need a manual check in `tauri dev` (B08) — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing, keyboard shortcuts, autosave flush, eraser undo, z-order and object transform fixed (M0-02…M0-08, M0-10). Window controls need a manual check in `tauri dev` (B08) — see [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -13,7 +13,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Shapes** — rect, ellipse, line, arrow, triangle, diamond, star, polygon
 - **Sticky notes / text** — in-canvas editing with undoable `UpdateContentCommand` (M0-04)
 - **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG)
-- **Selection** — select, marquee, move, resize, rotate (fixed in M0-02; stroke transform still latent B11)
+- **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10)
 - **Undo/redo** — Command Pattern, 200 steps (eraser undo fixed in M0-07 — B06)
 - **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (flushed on unmount, on `pagehide`/hidden, before returning Home and on window close — M0-06)
 - **Export** — PNG, SVG, JSON (client-side)
@@ -26,18 +26,19 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 | Area | State |
 |------|--------|
-| Selection / transform | **Works** after M0-02 (B01 fixed) |
+| Selection / transform | **Works** after M0-02 and M0-10 (B01, B11, B12 fixed) — strokes and connectors move, scale and rotate around the box center |
 | Canvas sizing / pointer coords | **Works** after M0-03 (B02 fixed) |
 | Text / sticky editing | **Works** after M0-04 (B03 fixed) |
 | Leave board &lt;2s | **Works** after M0-06 — flush on unmount, on `pagehide`/hidden, before returning Home and on window close (B05) |
 | Shortcuts while typing in inputs | **Works** after M0-05 (B04, B09 fixed) — one table in `src/lib/input/shortcuts.ts` feeds the keydown, tooltips and palette |
 | Eraser undo | **Works** after M0-07 (B06 fixed); locked objects are skipped |
+| Z-order (bring/send to front/back) | **Works** after M0-08 (B07 fixed) — painted by `zIndex`, undoable via `ReorderCommand`; `]`/`[` one step, `Ctrl+]`/`Ctrl+[` all the way |
 | Window controls (titlebar) | **Likely fixed** in M0-09 (B08) — capabilities granted, still to be confirmed in `tauri dev` |
 | Connectors / groups | Stub only |
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-07 done; M0-09 done pending its manual check; M0-08, M0-10… pending).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-08, M0-10 done; M0-09 done pending its manual check; M0-11… pending).
 
 ## Tech Stack
 
@@ -69,8 +70,8 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 75/75
-pnpm exec playwright test           # E2E on :1420 — 31/31
+pnpm test                           # Unit (Vitest) — 94/94
+pnpm exec playwright test           # E2E on :1420 — 34/34
 pnpm check                          # Svelte / TS check
 ```
 
@@ -93,7 +94,7 @@ src/
     canvas/       Camera, CanvasEngine, ObjectStore, SpatialIndex,
                   SelectionManager, HistoryManager, RenderLoop, commands
     tools/        Select, Pen, Highlighter, Eraser, Text, Sticky, Shape, Image
-    objects/      types, factory, renderers, bounds
+    objects/      types, factory, renderers, bounds, geometry
     io/           persistence, InternalFormat, PngExporter, SvgExporter
     input/        keyboard shortcut table (single source of truth)
     components/   BoardCanvas, TextEditor, app/TopBar, toolbar/, menus/,

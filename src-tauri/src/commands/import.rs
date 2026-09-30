@@ -35,7 +35,9 @@ pub fn inspect_import(path: String) -> Result<serde_json::Value, String> {
 }
 
 /// Read a file as raw bytes (for image imports picked via the OS dialog).
+/// Returns a raw IPC response; the frontend receives an ArrayBuffer (B16).
 #[tauri::command]
-pub fn read_file_bytes(path: String) -> Result<Vec<u8>, String> {
-    std::fs::read(&path).map_err(|e| format!("cannot read file: {e}"))
+pub fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read file: {e}"))?;
+    Ok(tauri::ipc::Response::new(bytes))
 }

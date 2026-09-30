@@ -919,9 +919,8 @@
 					name?: string;
 				}>('inspect_import', { path });
 				if (info.format === 'image' && file === null) {
-					// image via Tauri path — read as data URL
-					const bytes = await invoke<number[]>('read_file_bytes', { path });
-					const dataUrl = bytesToDataUrl(bytes, info.name ?? 'image');
+					// image via Tauri path — raw bytes → Blob → data URL (B16)
+					const dataUrl = await readFileAsDataUrl(path, info.name ?? 'image');
 					engine.imageTool.insertImage(dataUrl, info.name ?? 'image', world.x, world.y);
 				} else if (info.format === 'ms_whiteboard_zip') {
 					insertMsWhiteboardTexts(info.title, info.texts ?? []);
@@ -976,16 +975,24 @@
 		});
 	}
 
-	function bytesToDataUrl(bytes: number[], name: string): string {
-		const mime = name.toLowerCase().endsWith('.svg')
-			? 'image/svg+xml'
-			: name.toLowerCase().endsWith('.jpg') || name.toLowerCase().endsWith('.jpeg')
-				? 'image/jpeg'
-				: name.toLowerCase().endsWith('.webp')
-					? 'image/webp'
-					: 'image/png';
-		const b64 = btoa(String.fromCharCode(...bytes));
-		return `data:${mime};base64,${b64}`;
+	function mimeForName(name: string): string {
+		const lower = name.toLowerCase();
+		if (lower.endsWith('.svg')) return 'image/svg+xml';
+		if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+		if (lower.endsWith('.webp')) return 'image/webp';
+		return 'image/png';
+	}
+
+	/** Raw bytes from the Rust side → Blob → data URL, no spread over the byte array (B16). */
+	async function readFileAsDataUrl(path: string, name: string): Promise<string> {
+		const bytes = await invoke<ArrayBuffer>('read_file_bytes', { path });
+		const blob = new Blob([bytes], { type: mimeForName(name) });
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result as string);
+			reader.onerror = () => reject(reader.error);
+			reader.readAsDataURL(blob);
+		});
 	}
 
 	function onKeyUp(e: KeyboardEvent) {

@@ -97,23 +97,33 @@ export async function selectTool(page: Page, tool: string): Promise<void> {
 	await page.waitForTimeout(100);
 }
 
-/** Draw a shape with the shape tool. `from`/`to` are client (page) coordinates. */
-export async function drawShape(page: Page, shape: string, from: Point, to: Point): Promise<void> {
+/** Draw a shape with the shape tool. `from`/`to` are canvas-local coordinates. */
+export async function drawShape(
+	page: Page,
+	shape: string,
+	from: Point,
+	to: Point,
+	options: { shift?: boolean } = {}
+): Promise<void> {
+	const box = await canvasBox(page);
 	await selectTool(page, 'shape');
 	await page.getByTitle(shape).click();
 	await page.waitForTimeout(100);
-	await page.mouse.move(from.x, from.y);
+	await page.mouse.move(box.x + from.x, box.y + from.y);
 	await page.mouse.down();
-	await page.mouse.move(to.x, to.y, { steps: 8 });
+	if (options.shift) await page.keyboard.down('Shift');
+	await page.mouse.move(box.x + to.x, box.y + to.y, { steps: 8 });
+	if (options.shift) await page.keyboard.up('Shift');
 	await page.mouse.up();
 	await page.waitForTimeout(100);
 }
 
-/** Real-mouse drag. `from`/`to` are client (page) coordinates. */
+/** Real-mouse drag. `from`/`to` are canvas-local coordinates. */
 export async function dragMouse(page: Page, from: Point, to: Point, steps = 8): Promise<void> {
-	await page.mouse.move(from.x, from.y);
+	const box = await canvasBox(page);
+	await page.mouse.move(box.x + from.x, box.y + from.y);
 	await page.mouse.down();
-	await page.mouse.move(to.x, to.y, { steps });
+	await page.mouse.move(box.x + to.x, box.y + to.y, { steps });
 	await page.mouse.up();
 	await page.waitForTimeout(100);
 }

@@ -56,8 +56,31 @@
 	let engine: CanvasEngine | null = $state(null);
 	let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
 
+	// ── Canvas size / viewport offset (B02) ──
+	// CSS px of the canvas box inside the viewport; camera coordinates live in this space.
+	let canvasRect = $state({ left: 0, top: 0, width: 0, height: 0 });
+	let dpr = 1;
+
 	function markDirty() {
 		renderLoop?.markDirty();
+	}
+
+	/** Single entry point for pointer → canvas-local CSS px (B02). */
+	function toCanvasPoint(e: { clientX: number; clientY: number }): { x: number; y: number } {
+		return { x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top };
+	}
+
+	/** Backing store = CSS size × devicePixelRatio; tracks the container size (B02). */
+	function syncCanvasSize() {
+		if (!canvasEl) return;
+		const rect = canvasEl.getBoundingClientRect();
+		dpr = window.devicePixelRatio || 1;
+		canvasRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+		const bw = Math.max(1, Math.round(rect.width * dpr));
+		const bh = Math.max(1, Math.round(rect.height * dpr));
+		if (canvasEl.width !== bw) canvasEl.width = bw;
+		if (canvasEl.height !== bh) canvasEl.height = bh;
+		markDirty();
 	}
 
 	// Shell state sync — TopBar reads ui.*; refresh on every history-affecting change
@@ -129,14 +152,15 @@
 		const { size, color, opacity } = grid;
 		if (size * camera.zoom < 8) return;
 
-		const w = canvasEl!.width;
-		const h = canvasEl!.height;
+		const w = canvasRect.width;
+		const h = canvasRect.height;
 		const [wx0, wy0] = screenToWorld(0, 0, camera);
 		const [wx1, wy1] = screenToWorld(w, h, camera);
 		const startX = Math.floor(wx0 / size) * size;
 		const startY = Math.floor(wy0 / size) * size;
 
 		ctx.save();
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.strokeStyle = color;
 		ctx.globalAlpha = opacity;
 		ctx.lineWidth = 1;
@@ -166,6 +190,7 @@
 		const w = canvasEl.width;
 		const h = canvasEl.height;
 
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.fillStyle = '#0f1013';
 		ctx.fillRect(0, 0, w, h);
 
@@ -173,12 +198,12 @@
 
 		// viewport culling (§19)
 		const [wx0, wy0] = screenToWorld(0, 0, camera);
-		const [wx1, wy1] = screenToWorld(w, h, camera);
+		const [wx1, wy1] = screenToWorld(canvasRect.width, canvasRect.height, camera);
 		const viewport = { x: wx0, y: wy0, width: wx1 - wx0, height: wy1 - wy0 };
 		const visible = engine.store.queryViewport(viewport);
 
 		ctx.save();
-		ctx.setTransform(camera.zoom, 0, 0, camera.zoom, camera.x, camera.y);
+		ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y);
 		for (const obj of visible) {
 			renderObject(ctx, obj, { getImage });
 		}
@@ -203,6 +228,7 @@
 		const sh = Math.abs(y1 - y0);
 
 		ctx.save();
+		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 		ctx.strokeStyle = 'rgba(255,255,255,0.9)';
 		ctx.lineWidth = 1.5;
 		ctx.setLineDash([4, 3]);
@@ -233,6 +259,7 @@
 			const [mx0, my0] = worldToScreenHelper(marquee.x, marquee.y);
 			const [mx1, my1] = worldToScreenHelper(marquee.x + marquee.width, marquee.y + marquee.height);
 			ctx.save();
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			ctx.fillStyle = 'rgba(255,255,255,0.12)';
 			ctx.strokeStyle = 'rgba(255,255,255,0.7)';
 			ctx.lineWidth = 1;
@@ -245,24 +272,26 @@
 	// ── Input handling ──
 	function onPointerDown(e: PointerEvent) {
 		if (!engine) return;
+		const p = toCanvasPoint(e);
 		const panMode = spaceDown || e.button === 1 || e.button === 2;
 		if (panMode) {
 			isPanning = true;
-			panStart = { x: e.clientX, y: e.clientY };
+			panStart = { x: p.x, y: p.y };
 			if (canvasEl) canvasEl.setPointerCapture(e.pointerId);
 		} else {
-			engine.pointerDown(e.clientX, e.clientY, { shift: e.shiftKey, button: e.button, pressure: e.pressure });
+			engine.pointerDown(p.x, p.y, { shift: e.shiftKey, button: e.button, pressure: e.pressure });
 		}
 	}
 
 	function onPointerMove(e: PointerEvent) {
 		if (!engine) return;
+		const p = toCanvasPoint(e);
 		if (isPanning) {
-			camera = pan(camera, e.clientX - panStart.x, e.clientY - panStart.y);
-			panStart = { x: e.clientX, y: e.clientY };
+			camera = pan(camera, p.x - panStart.x, p.y - panStart.y);
+			panStart = { x: p.x, y: p.y };
 			markDirty();
 		} else {
-			engine.pointerMove(e.clientX, e.clientY, { shift: e.shiftKey, pressure: e.pressure });
+			engine.pointerMove(p.x, p.y, { shift: e.shiftKey, pressure: e.pressure });
 		}
 	}
 
@@ -279,9 +308,10 @@
 
 	function onWheel(e: WheelEvent) {
 		e.preventDefault();
+		const p = toCanvasPoint(e);
 		if (e.ctrlKey) {
 			const factor = Math.exp(-e.deltaY * 0.002);
-			camera = zoomAt(camera, e.clientX, e.clientY, factor);
+			camera = zoomAt(camera, p.x, p.y, factor);
 			markDirty();
 			return;
 		}
@@ -306,15 +336,15 @@
 
 	// ── Zoom handlers (FASE 2 — DESIGN.md zoom controls) ──
 	function zoomIn() {
-		if (canvasEl) camera = zoomAt(camera, canvasEl.width / 2, canvasEl.height / 2, 1.25);
+		if (canvasEl) camera = zoomAt(camera, canvasRect.width / 2, canvasRect.height / 2, 1.25);
 		markDirty();
 	}
 	function zoomOut() {
-		if (canvasEl) camera = zoomAt(camera, canvasEl.width / 2, canvasEl.height / 2, 0.8);
+		if (canvasEl) camera = zoomAt(camera, canvasRect.width / 2, canvasRect.height / 2, 0.8);
 		markDirty();
 	}
 	function zoomReset() {
-		if (canvasEl) camera = resetZoom(camera, canvasEl.width, canvasEl.height);
+		if (canvasEl) camera = resetZoom(camera, canvasRect.width, canvasRect.height);
 		markDirty();
 	}
 	function zoomFit() {
@@ -334,7 +364,7 @@
 		}
 		if (!isFinite(minX)) { zoomReset(); return; }
 		const w = maxX - minX, h = maxY - minY;
-		const cw = canvasEl.width, ch = canvasEl.height;
+		const cw = canvasRect.width, ch = canvasRect.height;
 		const zoom = Math.min(cw / (w + 80), ch / (h + 80), 4);
 		camera = {
 			...camera,
@@ -404,8 +434,9 @@
 	function onDblClick(e: MouseEvent) {
 		if (!engine || activeTool !== 'select') return;
 		const c = camera;
-		const wx = (e.clientX - c.x) / c.zoom;
-		const wy = (e.clientY - c.y) / c.zoom;
+		const p = toCanvasPoint(e);
+		const wx = (p.x - c.x) / c.zoom;
+		const wy = (p.y - c.y) / c.zoom;
 		const hit = engine.selectionManager.hitTest({ x: wx, y: wy });
 		if (hit && (hit.type === 'text' || hit.type === 'sticky_note')) {
 			openTextEditor(hit as unknown as EditableObj);
@@ -426,8 +457,8 @@
 				reader.onload = () => {
 					const dataUrl = reader.result as string;
 					// center at current viewport
-					const w = canvasEl!.width;
-					const h = canvasEl!.height;
+					const w = canvasRect.width;
+					const h = canvasRect.height;
 					const c = camera;
 					const wx = (w / 2 - c.x) / c.zoom;
 					const wy = (h / 2 - c.y) / c.zoom;
@@ -446,8 +477,9 @@
 		const file = files[0];
 		if (!file.type.startsWith('image/')) return;
 		const c = camera;
-		const wx = (e.clientX - c.x) / c.zoom;
-		const wy = (e.clientY - c.y) / c.zoom;
+		const p = toCanvasPoint(e);
+		const wx = (p.x - c.x) / c.zoom;
+		const wy = (p.y - c.y) / c.zoom;
 		const reader = new FileReader();
 		reader.onload = () => {
 			engine!.imageTool.insertImage(reader.result as string, file.name, wx, wy);
@@ -461,16 +493,16 @@
 			if (canvasEl) canvasEl.style.cursor = 'grab';
 		}
 		if (e.key === '+' || e.key === '=') {
-			camera = zoomAt(camera, canvasEl!.width / 2, canvasEl!.height / 2, 1.25);
+			camera = zoomAt(camera, canvasRect.width / 2, canvasRect.height / 2, 1.25);
 			markDirty();
 		}
 		if (e.key === '-') {
-			camera = zoomAt(camera, canvasEl!.width / 2, canvasEl!.height / 2, 0.8);
+			camera = zoomAt(camera, canvasRect.width / 2, canvasRect.height / 2, 0.8);
 			markDirty();
 		}
 		if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
 			e.preventDefault();
-			camera = resetZoom(camera, canvasEl!.width, canvasEl!.height);
+			camera = resetZoom(camera, canvasRect.width, canvasRect.height);
 			markDirty();
 		}
 
@@ -602,8 +634,9 @@
 	function onCanvasContextMenu(e: MouseEvent) {
 		e.preventDefault();
 		if (!engine) return;
-		const wx = (e.clientX - camera.x) / camera.zoom;
-		const wy = (e.clientY - camera.y) / camera.zoom;
+		const p = toCanvasPoint(e);
+		const wx = (p.x - camera.x) / camera.zoom;
+		const wy = (p.y - camera.y) / camera.zoom;
 		const obj = engine.selectionManager.hitTest({ x: wx, y: wy });
 		if (obj) {
 			const sel = engine.selectionManager;
@@ -824,11 +857,13 @@
 		if (e.touches.length === 2) {
 			const [a, b] = [e.touches[0], e.touches[1]];
 			const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
-			const midX = (a.clientX + b.clientX) / 2;
-			const midY = (a.clientY + b.clientY) / 2;
+			const mid = toCanvasPoint({
+				clientX: (a.clientX + b.clientX) / 2,
+				clientY: (a.clientY + b.clientY) / 2
+			});
 			if (pinchDist > 0) {
 				const factor = dist / pinchDist;
-				camera = zoomAt(camera, midX, midY, factor);
+				camera = zoomAt(camera, mid.x, mid.y, factor);
 				markDirty();
 			}
 			pinchDist = dist;
@@ -875,12 +910,9 @@
 		// StickyNoteTool → open editor after creating a note
 		engine.stickyTool.onEditRequest = (obj) => openTextEditor(obj as unknown as EditableObj);
 
-		const resize = () => {
-			canvas.width = window.innerWidth;
-			canvas.height = window.innerHeight;
-			markDirty();
-		};
-		resize();
+		syncCanvasSize();
+		const resizeObserver = new ResizeObserver(() => syncCanvasSize());
+		resizeObserver.observe(canvas);
 
 		renderLoop = new RenderLoop(render);
 		renderLoop.start();
@@ -918,13 +950,14 @@
 			})
 			.catch(() => markDirty());
 
-		window.addEventListener('resize', resize);
+		window.addEventListener('resize', syncCanvasSize);
 		window.addEventListener('keydown', onKeyDown);
 		window.addEventListener('keyup', onKeyUp);
 		window.addEventListener('paste', onPaste);
 
 		return () => {
-			window.removeEventListener('resize', resize);
+			resizeObserver.disconnect();
+			window.removeEventListener('resize', syncCanvasSize);
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
 			window.removeEventListener('paste', onPaste);
@@ -1027,6 +1060,7 @@
 		<TextEditor
 			obj={editingText}
 			camera={{ x: camera.x, y: camera.y, zoom: camera.zoom }}
+			offset={{ x: canvasRect.left, y: canvasRect.top }}
 			onCommit={(content) => {
 				if (engine) {
 					const obj = editingText!;
@@ -1059,6 +1093,8 @@
 		<ContextToolbar
 			x={ctxBar.x}
 			y={ctxBar.y}
+			offsetX={canvasRect.left}
+			offsetY={canvasRect.top}
 			actions={ctxBar.actions}
 		/>
 	{/if}

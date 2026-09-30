@@ -8,20 +8,23 @@
 	let {
 		obj,
 		camera,
+		offset = { x: 0, y: 0 },
 		onCommit,
 		onCancel
 	}: {
 		obj: EditableObj;
 		camera: { x: number; y: number; zoom: number };
+		/** canvas box origin in viewport coords (the editor is position: fixed) */
+		offset?: { x: number; y: number };
 		onCommit: (content: string) => void;
 		onCancel: () => void;
 	} = $props();
 
 	let textarea: HTMLTextAreaElement | null = null;
 
-	// compute screen position from world transform + camera
-	const left = $derived(obj.transform.x * camera.zoom + camera.x);
-	const top = $derived(obj.transform.y * camera.zoom + camera.y);
+	// compute screen position from world transform + camera + canvas offset
+	const left = $derived(obj.transform.x * camera.zoom + camera.x + offset.x);
+	const top = $derived(obj.transform.y * camera.zoom + camera.y + offset.y);
 	const width = $derived(Math.max(obj.transform.width * camera.zoom, 120));
 	const height = $derived(Math.max(obj.transform.height * camera.zoom, 60));
 	// sticky notes use textColor; text objects use color

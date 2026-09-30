@@ -15,10 +15,15 @@
 	let {
 		x,
 		y,
+		offsetX = 0,
+		offsetY = 0,
 		actions
 	}: {
 		x: number;
 		y: number;
+		/** canvas box origin in viewport coords (the toolbar is position: fixed) */
+		offsetX?: number;
+		offsetY?: number;
 		actions: CtxAction[];
 	} = $props();
 
@@ -29,8 +34,8 @@
 		const r = barEl.getBoundingClientRect();
 		const vw = window.innerWidth;
 		// clamp horizontally; keep above the object (y - height - 8)
-		barEl.style.left = `${Math.max(8, Math.min(x - r.width / 2, vw - r.width - 8))}px`;
-		barEl.style.top = `${Math.max(8, y - r.height - 8)}px`;
+		barEl.style.left = `${Math.max(8, Math.min(x + offsetX - r.width / 2, vw - r.width - 8))}px`;
+		barEl.style.top = `${Math.max(8, y + offsetY - r.height - 8)}px`;
 	});
 </script>
 

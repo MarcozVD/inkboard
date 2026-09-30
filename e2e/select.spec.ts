@@ -20,7 +20,7 @@ function shapeAt(objects: StoredObject[], index = 0): StoredObject | undefined {
 /**
  * Dispatch a synthetic PointerEvent straight at the canvas element.
  * The context toolbar (fixed, above the selection) covers the rotate handle,
- * so a real mouse drag cannot reach it.
+ * so a real mouse drag cannot reach it. `point` is canvas-local.
  */
 async function dispatchPointer(
 	page: Page,
@@ -28,6 +28,7 @@ async function dispatchPointer(
 	point: Point,
 	buttons: number
 ): Promise<void> {
+	const box = await canvasBox(page);
 	await page.locator('canvas.board-canvas').evaluate(
 		(canvas, args) => {
 			canvas.dispatchEvent(
@@ -46,7 +47,7 @@ async function dispatchPointer(
 				})
 			);
 		},
-		{ type, x: point.x, y: point.y, buttons }
+		{ type, x: box.x + point.x, y: box.y + point.y, buttons }
 	);
 }
 
@@ -138,23 +139,47 @@ test.describe('B01 — selection and transforms', () => {
 	});
 });
 
-test.describe('B02 — pointer coordinates', () => {
-	test('a drawn shape lands under the cursor (canvas offset + DPR)', async ({ page }) => {
-		const id = await createBoard(page);
-		const box = await canvasBox(page);
+async function drawAndAssertUnderCursor(page: Page): Promise<void> {
+	const id = await createBoard(page);
+	await drawShape(page, 'rect', { x: 300, y: 200 }, { x: 500, y: 350 });
+	const objects = await waitForObjectCount(page, id, 1);
+	const shape = shapeAt(objects);
 
-		await drawShape(
-			page,
-			'rect',
-			{ x: box.x + 300, y: box.y + 200 },
-			{ x: box.x + 500, y: box.y + 350 }
-		);
+	// world coords are canvas-local: the object lands where the pointer was
+	expect(Math.abs((shape?.transform.x ?? NaN) - 300)).toBeLessThanOrEqual(1);
+	expect(Math.abs((shape?.transform.y ?? NaN) - 200)).toBeLessThanOrEqual(1);
+
+	// backing store = CSS size × devicePixelRatio
+	const dims = await page.locator('canvas.board-canvas').evaluate((c) => {
+		const r = c.getBoundingClientRect();
+		return { w: c.width, h: c.height, cssW: r.width, cssH: r.height, dpr: window.devicePixelRatio || 1 };
+	});
+	expect(dims.w).toBe(Math.round(dims.cssW * dims.dpr));
+	expect(dims.h).toBe(Math.round(dims.cssH * dims.dpr));
+}
+
+test.describe('B02 — pointer coordinates', () => {
+	test('shape lands under the cursor at DPR 1', async ({ page }) => {
+		await drawAndAssertUnderCursor(page);
+	});
+
+	test('Shift keeps an ellipse circular', async ({ page }) => {
+		const id = await createBoard(page);
+		await drawShape(page, 'ellipse', { x: 300, y: 200 }, { x: 500, y: 350 }, { shift: true });
 		const objects = await waitForObjectCount(page, id, 1);
 		const shape = shapeAt(objects);
 
-		// world coords are canvas-local: client minus the canvas box origin
-		expect(Math.abs((shape?.transform.x ?? NaN) - 300)).toBeLessThanOrEqual(1);
-		expect(Math.abs((shape?.transform.y ?? NaN) - 200)).toBeLessThanOrEqual(1);
+		expect(shape?.shape).toBe('ellipse');
+		expect(Math.abs((shape?.transform.width ?? NaN) - 200)).toBeLessThanOrEqual(1);
+		expect(Math.abs((shape?.transform.height ?? NaN) - 200)).toBeLessThanOrEqual(1);
+	});
+});
+
+test.describe('B02 — pointer coordinates at DPR 2', () => {
+	test.use({ deviceScaleFactor: 2 });
+
+	test('shape lands under the cursor at DPR 2', async ({ page }) => {
+		await drawAndAssertUnderCursor(page);
 	});
 });
 

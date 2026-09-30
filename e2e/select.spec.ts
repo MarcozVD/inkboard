@@ -205,3 +205,68 @@ test.describe('B06 — eraser undo', () => {
 			.toBe(2);
 	});
 });
+
+test.describe('B07 — z-order', () => {
+	test('bring to front changes paint order and undo reverts it', async ({ page }) => {
+		const id = await createBoard(page);
+		const canvas = page.locator('canvas.board-canvas');
+		const box = await canvasBox(page);
+
+		// sticky A (yellow) at (400,250)
+		await selectTool(page, 'sticky');
+		await page.mouse.click(box.x + 400, box.y + 250);
+		let editor = page.locator('textarea.text-editor');
+		await expect(editor).toBeVisible({ timeout: 3000 });
+		await page.keyboard.type('AAAA');
+		await page.keyboard.press('Enter');
+		await expect(editor).toBeHidden();
+
+		// sticky B (orange) overlapping at (430,280)
+		await selectTool(page, 'sticky');
+		await page.getByTitle('Color 1').click();
+		await page.mouse.click(box.x + 430, box.y + 280);
+		editor = page.locator('textarea.text-editor');
+		await expect(editor).toBeVisible({ timeout: 3000 });
+		await page.keyboard.type('BBBB');
+		await page.keyboard.press('Enter');
+		await expect(editor).toBeHidden();
+
+		await waitForObjectCount(page, id, 2);
+
+		// pixel in the overlap region (canvas-local coords, camera 1:1)
+		const overlapPixel = () =>
+			canvas.evaluate((c) => {
+				const ctx = c.getContext('2d')!;
+				const dpr = window.devicePixelRatio || 1;
+				const d = ctx.getImageData(Math.round(445 * dpr), Math.round(287 * dpr), 1, 1).data;
+				return `${d[0]},${d[1]},${d[2]}`;
+			});
+
+		// B (orange #FF9F66) is painted on top
+		await expect.poll(overlapPixel, { timeout: TIMEOUT }).toBe('255,159,102');
+
+		// select A on its exposed part and bring it to the front
+		await selectTool(page, 'select');
+		await page.mouse.click(box.x + 410, box.y + 260);
+		await page.keyboard.press('Control+]');
+		await expect.poll(overlapPixel, { timeout: TIMEOUT }).toBe('255,214,102');
+
+		// stored order changed too (paint order = zIndex ascending)
+		await expect
+			.poll(
+				async () => {
+					const objs = await storedObjects(page, id);
+					return (
+						objs.findIndex((o) => o.content === 'AAAA') >
+						objs.findIndex((o) => o.content === 'BBBB')
+					);
+				},
+				{ timeout: TIMEOUT }
+			)
+			.toBe(true);
+
+		await page.keyboard.press('Control+z');
+		await expect.poll(overlapPixel, { timeout: TIMEOUT }).toBe('255,159,102');
+	});
+});
+

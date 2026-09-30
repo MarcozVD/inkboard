@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	COMMAND_SHORTCUTS,
 	TOOL_SHORTCUTS,
+	reorderShortcutFor,
 	shortcutLabelFor,
 	shouldIgnoreShortcut,
 	toolShortcutForKey
@@ -39,6 +40,16 @@ describe('shortcuts — tool bindings', () => {
 		expect(shortcutLabelFor('undo')).toBe(COMMAND_SHORTCUTS.undo);
 		expect(shortcutLabelFor('redo')).toBe(COMMAND_SHORTCUTS.redo);
 		expect(shortcutLabelFor('settings')).toBeUndefined();
+	});
+
+	it('maps z-order keys (M0-08)', () => {
+		expect(reorderShortcutFor(']', false)?.mode).toBe('forward');
+		expect(reorderShortcutFor('[', false)?.mode).toBe('backward');
+		expect(reorderShortcutFor(']', true)?.mode).toBe('front');
+		expect(reorderShortcutFor('[', true)?.mode).toBe('back');
+		expect(reorderShortcutFor('x', false)).toBeUndefined();
+		expect(reorderShortcutFor(']', false)?.label).toBe(']');
+		expect(reorderShortcutFor('[', true)?.label).toBe('Ctrl+[');
 	});
 });
 

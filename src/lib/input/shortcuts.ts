@@ -33,8 +33,36 @@ export const TOOL_SHORTCUTS: readonly ToolShortcut[] = [
 export const COMMAND_SHORTCUTS: Readonly<Record<string, string>> = {
 	undo: 'Ctrl+Z',
 	redo: 'Ctrl+Shift+Z',
-	'zoom-reset': 'Ctrl+0'
+	'zoom-reset': 'Ctrl+0',
+	'bring-forward': ']',
+	'send-backward': '[',
+	'bring-to-front': 'Ctrl+]',
+	'send-to-back': 'Ctrl+['
 };
+
+export type ReorderMode = 'front' | 'back' | 'forward' | 'backward';
+
+export interface ReorderShortcut {
+	id: string;
+	key: string;
+	/** Ctrl/Cmd is required when true, forbidden when false */
+	ctrl: boolean;
+	mode: ReorderMode;
+	label: string;
+}
+
+/** Z-order keys (§M0-08): `]`/`[` one step, Ctrl+`]`/`[` all the way. */
+export const REORDER_SHORTCUTS: readonly ReorderShortcut[] = [
+	{ id: 'bring-forward', key: ']', ctrl: false, mode: 'forward', label: ']' },
+	{ id: 'send-backward', key: '[', ctrl: false, mode: 'backward', label: '[' },
+	{ id: 'bring-to-front', key: ']', ctrl: true, mode: 'front', label: 'Ctrl+]' },
+	{ id: 'send-to-back', key: '[', ctrl: true, mode: 'back', label: 'Ctrl+[' }
+];
+
+/** Look up a reorder binding for a pressed key + modifier state. */
+export function reorderShortcutFor(key: string, mod: boolean): ReorderShortcut | undefined {
+	return REORDER_SHORTCUTS.find((s) => s.key === key && s.ctrl === mod);
+}
 
 /** Look up the tool binding for a pressed key (case-insensitive). */
 export function toolShortcutForKey(key: string): ToolShortcut | undefined {

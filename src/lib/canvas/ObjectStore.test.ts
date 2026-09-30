@@ -95,6 +95,36 @@ describe('ObjectStore', () => {
 		expect(store.queryPoint({ x: 99 * 200 + 25, y: 99 * 200 + 25 }, 10).length).toBeGreaterThan(0);
 	});
 
+	it('moveForward/moveBackward swap one step', () => {
+		const store = new ObjectStore();
+		const a = createShape(0, 0, 10, 10, 'rect');
+		const b = createShape(0, 0, 10, 10, 'rect');
+		const c = createShape(0, 0, 10, 10, 'rect');
+		store.add(a);
+		store.add(b);
+		store.add(c);
+
+		store.moveForward([a.id]);
+		expect(store.sortedByZ().map((o) => o.id)).toEqual([b.id, a.id, c.id]);
+
+		store.moveBackward([c.id]);
+		expect(store.sortedByZ().map((o) => o.id)).toEqual([b.id, c.id, a.id]);
+	});
+
+	it('queryViewport returns objects in paint order (B07)', () => {
+		const store = new ObjectStore();
+		const a = createShape(0, 0, 10, 10, 'rect');
+		const b = createShape(0, 0, 10, 10, 'rect');
+		const c = createShape(0, 0, 10, 10, 'rect');
+		store.add(a);
+		store.add(b);
+		store.add(c);
+		store.bringToFront([a.id]);
+
+		const order = store.queryViewport({ x: 0, y: 0, width: 100, height: 100 }).map((o) => o.id);
+		expect(order).toEqual([b.id, c.id, a.id]);
+	});
+
 	it('toJSON returns z-sorted serializable objects', () => {
 		const store = new ObjectStore();
 		const a = createShape(0, 0, 10, 10, 'rect');

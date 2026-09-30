@@ -4,10 +4,11 @@
 	import type { CameraState } from '$lib/canvas/Camera';
 	import { RenderLoop } from '$lib/canvas/RenderLoop';
 	import { CanvasEngine, type ToolId } from '$lib/canvas/CanvasEngine';
-	import { shouldIgnoreShortcut, toolShortcutForKey } from '$lib/input/shortcuts';
+	import { shouldIgnoreShortcut, toolShortcutForKey, reorderShortcutFor, type ReorderMode } from '$lib/input/shortcuts';
 	import {
 		dropLastAddCommand,
 		RemoveObjectCommand,
+		ReorderCommand,
 		UpdateContentCommand,
 		type ContentSnapshot
 	} from '$lib/canvas/commands';
@@ -423,6 +424,34 @@
 		markDirty();
 	}
 
+	// ── Z-order (M0-08): undoable bring/send + one-step moves ──
+	function reorderSelection(mode: ReorderMode) {
+		if (!engine) return;
+		const eng = engine;
+		const ids = eng.selectionManager.selected;
+		if (ids.length === 0) return;
+		const before = new Map(eng.store.getAll().map((o) => [o.id, o.zIndex ?? 0]));
+		switch (mode) {
+			case 'front':
+				eng.store.bringToFront(ids);
+				break;
+			case 'back':
+				eng.store.sendToBack(ids);
+				break;
+			case 'forward':
+				eng.store.moveForward(ids);
+				break;
+			case 'backward':
+				eng.store.moveBackward(ids);
+				break;
+		}
+		const after = new Map(eng.store.getAll().map((o) => [o.id, o.zIndex ?? 0]));
+		const changed = [...after].some(([objId, z]) => before.get(objId) !== z);
+		if (changed) eng.history.push(new ReorderCommand(eng.store, before, after));
+		syncShell();
+		markDirty();
+	}
+
 	// ── Context toolbar (FASE 3 — DESIGN.md § Context Toolbar) ──
 	function updateCtxBar() {
 		if (!engine || !canvasEl) { ctxBar = null; return; }
@@ -434,8 +463,8 @@
 		const [sx, sy] = worldToScreen(bounds.x + bounds.width / 2, bounds.y, camera);
 		const actions: CtxAction[] = [
 			{ id: 'duplicate', icon: 'duplicate', label: 'Duplicate', onClick: () => duplicateSelection() },
-			{ id: 'front', icon: 'layer-front', label: 'Bring to front', onClick: () => { eng.store.bringToFront(sel.selected); syncShell(); markDirty(); } },
-			{ id: 'back', icon: 'layer-back', label: 'Send to back', onClick: () => { eng.store.sendToBack(sel.selected); syncShell(); markDirty(); } },
+			{ id: 'front', icon: 'layer-front', label: 'Bring to front', onClick: () => reorderSelection('front') },
+			{ id: 'back', icon: 'layer-back', label: 'Send to back', onClick: () => reorderSelection('back') },
 			{ id: 'delete', icon: 'trash', label: 'Delete', onClick: () => {
 				const ids = sel.selected;
 				const store = eng.store;
@@ -683,17 +712,12 @@
 			ctxBar = null;
 			markDirty();
 		}
-		if (e.key === ']') {
+		// z-order shortcuts from the shared table (M0-08): ]/[ one step, Ctrl+] /Ctrl+[ front/back
+		const reorder = reorderShortcutFor(e.key, mod);
+		if (reorder) {
 			e.preventDefault();
-			engine.store.bringToFront(sel.selected);
-			syncShell();
-			markDirty();
-		}
-		if (e.key === '[') {
-			e.preventDefault();
-			engine.store.sendToBack(sel.selected);
-			syncShell();
-			markDirty();
+			reorderSelection(reorder.mode);
+			return;
 		}
 
 		// ── Fase 10: undo/redo shortcuts ──

@@ -103,9 +103,13 @@ export class ObjectStore {
 		return this.objects.size;
 	}
 
-	/** Viewport culling candidates (§19) */
+	/** Viewport culling candidates (§19), in paint order (zIndex ascending). */
 	queryViewport(viewport: Rect): CanvasObject[] {
-		return this.spatial.queryViewport(viewport).map((id) => this.objects.get(id)!).filter(Boolean);
+		return this.spatial
+			.queryViewport(viewport)
+			.map((id) => this.objects.get(id)!)
+			.filter(Boolean)
+			.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
 	}
 
 	/** Candidates for point hit-testing (§14) */
@@ -178,6 +182,48 @@ export class ObjectStore {
 		this.nextZ = Math.max(this.nextZ, cursor);
 		if (modified.length) this.emit({ added: [], modified, removed: [] });
 		void min;
+	}
+
+	/** Move ids one step forward in paint order (`]`). */
+	moveForward(ids: string[]): void {
+		if (ids.length === 0) return;
+		const set = new Set(ids);
+		const sorted = this.sortedByZ();
+		const modified: string[] = [];
+		for (let i = sorted.length - 2; i >= 0; i--) {
+			if (set.has(sorted[i].id) && !set.has(sorted[i + 1].id)) {
+				const a = sorted[i];
+				const b = sorted[i + 1];
+				const z = a.zIndex ?? 0;
+				a.zIndex = b.zIndex ?? 0;
+				b.zIndex = z;
+				sorted[i] = b;
+				sorted[i + 1] = a;
+				modified.push(a.id, b.id);
+			}
+		}
+		if (modified.length) this.emit({ added: [], modified, removed: [] });
+	}
+
+	/** Move ids one step backward in paint order (`[`). */
+	moveBackward(ids: string[]): void {
+		if (ids.length === 0) return;
+		const set = new Set(ids);
+		const sorted = this.sortedByZ();
+		const modified: string[] = [];
+		for (let i = 1; i < sorted.length; i++) {
+			if (set.has(sorted[i].id) && !set.has(sorted[i - 1].id)) {
+				const a = sorted[i];
+				const b = sorted[i - 1];
+				const z = a.zIndex ?? 0;
+				a.zIndex = b.zIndex ?? 0;
+				b.zIndex = z;
+				sorted[i] = b;
+				sorted[i - 1] = a;
+				modified.push(a.id, b.id);
+			}
+		}
+		if (modified.length) this.emit({ added: [], modified, removed: [] });
 	}
 
 	// ── Serialization helper (model only, see lib/io) ──

@@ -80,13 +80,17 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 105/105
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 36/36
+pnpm test                           # Unit (Vitest) — 134/134
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 50/50
 pnpm check                          # Svelte / TS check
+pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
+pnpm lint:fix                       # ESLint autofix
+pnpm format                         # Prettier write
+pnpm format:check                   # Prettier check
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 11/11
 ```
 
-**CI** (M0-16): `.github/workflows/ci.yml` runs `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Not yet executed on GitHub — the first run happens with the first push.
+**CI** (M0-16, ampliada en M1-12): `.github/workflows/ci.yml` runs `lint`, `format:check`, `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Not yet executed on GitHub — the first run happens with the first push.
 
 ## Design System
 

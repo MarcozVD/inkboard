@@ -61,7 +61,7 @@
 - **Tema:** el canvas usa colores oscuros fijos (`#0f1013`, grid, selección blanca). `system` no sigue al sistema operativo y el tema no se guarda.
 - ~~**Sin UI de estilo:**~~ resuelta en M1-03: ContextToolbar y popover del ToolBar editan color, grosor, fill, stroke, dash, radio, opacidad y tipografía, cada cambio pasa por `UpdateStyle` y el último estilo se recuerda por tool.
 - **Código muerto:** `src-tauri/src/geometry/` (vacío). `src/lib/components/TopBar.svelte` se borró en M0-17 (nadie lo importaba).
-- **Calidad:** con CI desde M0-16 y E2E de las funciones básicas de edición; sin ESLint ni `prettier --check` (M1-12).
+- **Calidad:** CI desde M0-16, E2E de las funciones básicas de edición, y desde M1-12 `pnpm lint` (ESLint con regla anti-`store.*`) y `pnpm format:check` también en el pipeline. Sigue sin haber un linter de CSS ni reglas de accesibilidad automática.
 - **Documentación:** `README.md` refleja el estado real tras M0 (`PRODUCT.md` L27 todavía cita B04/B05/B09 como pendientes y su título sigue diciendo "M0 en curso").
 
 ### 0.4 Parcial o no implementado
@@ -1500,8 +1500,8 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M1-08 ✅ | Texto: medir con `ctx.measureText` (cacheado) en lugar de `0,6 × fontSize`; wrap al redimensionar en horizontal; el editor usa la misma fuente e interlineado que el renderer; wrap también en sticky. Todo pasa por `objects/textLayout.ts`, que comparte la medición cacheada entre renderer, editor y `fitContentBox` (con fallback a la heurística cuando no hay contexto de canvas). | Unit de layout (`textLayout.test.ts`) + E2E del texto en edición | M | M0-04 |
 | M1-09 ✅ | Conectores v1 (RF-07): `ConnectorTool` entre 4 anclas por objeto (o hacia un punto libre), rectos y con flecha. Se recalculan al mover, escalar o borrar el objeto (listener del store); estilo desde M1-03. Atajo `C` y botón de nuevo visible (B10). La geometría se deriva de los objetos adjuntos vía `board/connectors.ts` y todo el ciclo es undoable (`e2e/connectors.spec.ts`). **Al borrar un objeto, ese extremo del conector pasa a punto libre y conserva su posición** en vez de dejar el conector colgando o borrarlo (ver §28). | E2E: conectar dos stickies, mover uno y comprobar que el conector lo sigue | L | M1-02, M0-10 |
 | M1-10 | Tema en el canvas: fondo, grid, overlay y colores por defecto desde los tokens CSS. `system` sigue a `prefers-color-scheme` en vivo. El tema se guarda en los settings del workspace. Color de tinta por defecto según D1 (§28). | Capturas E2E en light y dark | M | M1-01 |
-| M1-11 | Menú contextual completo: copiar, pegar, duplicar, borrar, orden, bloquear, agrupar y exportar selección, con los atajos tomados de la tabla de M0-05. | E2E | S | M1-04, M1-05 |
-| M1-12 | Overlay de atajos (`?`) y CommandPalette alimentados por la misma tabla. ESLint (`typescript-eslint`, `eslint-plugin-svelte`) y `prettier --check` en CI, con una regla de lint (o un test de arquitectura) que prohíba `store.*` fuera de `canvas/` y `tools/`. | La CI falla si se viola la regla | S | M0-05 |
+| M1-11 ✅ | Menú contextual completo: copiar, pegar, duplicar, borrar, orden, bloquear, agrupar y exportar selección, con los atajos tomados de la tabla de M0-05. Las etiquetas de cada acción salen de `COMMAND_SHORTCUTS`, el overlay y el menú comparten tabla (`e2e/context-menu.spec.ts`). | E2E: abrir el menú con selección y ejecutar cada acción | S | M1-04, M1-05 |
+| M1-12 ✅ | Overlay de atajos (`?`) y CommandPalette alimentados por la misma tabla (`shortcutGroups()` en `input/shortcuts.ts`, `ShortcutsOverlay.svelte`). ESLint (`typescript-eslint`, `eslint-plugin-svelte`) y `prettier --check` en CI, con una regla de lint que prohíbe `store.*` fuera de `canvas/` y `tools/`. Añadidos `pnpm lint`, `pnpm lint:fix`, `pnpm format` y `pnpm format:check`; el job de CI corre lint y format antes de los tests. | La CI falla si se viola la regla (`pnpm lint` y `pnpm format:check` en verde) | S | M0-05 |
 | M1-13 | Transformación precisa: handles alineados al objeto cuando hay uno solo seleccionado y está rotado; resize respetando su eje; tamaño mínimo; flip con escala negativa. | Unit + E2E de resize de un objeto rotado | M | M0-10 |
 
 **Gate M1:** test de invariantes en verde · `BoardCanvas.svelte` < 400 líneas · un E2E por tarea · tema claro usable de punta a punta.
@@ -1627,6 +1627,7 @@ Candidatos, a priorizar con el uso real de la beta:
 | Migrar las imágenes a assets corrompe boards existentes (M2-05) | Baja | Alto | Snapshot en `board_versions` antes de migrar; migración idempotente; test con una DB real de v0.1 |
 | El coste o el plazo de la firma de código retrasa la beta | Media | Medio | Beta interna sin firmar; firmar antes de distribuir en público (D4) |
 | Las tareas delegadas a agentes se salen de alcance o rompen invariantes | Media | Medio | Tareas con archivos y criterio explícitos, el test como contrato y revisión del diff antes del merge |
+| `e2e/clipboard.spec.ts` (copiar en el board A y pegar en el B) es flaky con workers en paralelo | Alta | Bajo | El portapapeles del SO es un recurso compartido entre contextos: dos specs que copien a la vez se pisan. Pasa con `--workers=1` y en local; en CI hay que aislarlo (un worker para ese spec o `fullyParallel: false`) antes de fiarse del gate |
 
 ---
 
@@ -1695,7 +1696,7 @@ Dependencias que añade el plan:
 | Milestone | Dependencia | Para qué |
 |-----------|-------------|----------|
 | M1 | `fast-check` (dev) — **añadida en M1-02** | Tests de propiedades de los comandos (M1-02) |
-| M1 | `eslint`, `typescript-eslint`, `eslint-plugin-svelte` (dev) | Lint en CI (M1-12) |
+| M1 | `eslint`, `typescript-eslint`, `eslint-plugin-svelte`, `globals`, `@eslint/js` (dev) — **añadidos en M1-12** | Lint en CI (M1-12) |
 | M2 | `image` | Re-encode de imágenes importadas (M2-08) |
 | M2 | `usvg`, `svg2pdf` | PDF vectorial (M2-10) |
 | M2 | `cargo-fuzz` (herramienta) | Fuzzing de parsers (M2-08) |
@@ -1761,7 +1762,7 @@ Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna 
 | `[` / `]` | Un paso atrás / adelante | ✅ | — |
 | `Ctrl+[` / `Ctrl+]` | Al fondo / al frente | ✅ | — |
 | `Ctrl+K` | Command palette | ✅ | — |
-| `?` | Overlay de atajos | ❌ | M1-12 |
+| `?` | Overlay de atajos | ✅ (misma tabla que el keydown y la paleta) | M1-12 |
 | `Ctrl+F` | Buscar objetos | ❌ | M5 |
 | `Escape` | Deseleccionar / cancelar | ✅ | — |
 
@@ -1779,7 +1780,7 @@ Es la numeración de los commits `Fase N` y de los comentarios del código. Los 
 | Fase | Tema | Estado real (2026-09-30) | Continúa en |
 |------|------|--------------------------|-------------|
 | 0 | Investigación técnica | Stack validado; OffscreenCanvas no adoptado; sin benchmark formal | M3-01, M3-07 |
-| 1 | Scaffold | ✓ (layout plano, sin Turborepo); sin ESLint ni CI | M0-16, M1-12 |
+| 1 | Scaffold | ✓ (layout plano, sin Turborepo); CI y lint desde M0-16 y M1-12 | — |
 | 2 | Canvas y cámara | ✓, con bug de tamaño, offset y DPR (B02) | M0-03 |
 | 3 | Objetos base | ✓; el render ignora `zIndex` (B07) | M0-08 |
 | 4 | Selección y transformación | Código presente, roto en runtime (B01, B11, B12) | M0-02, M0-10 |

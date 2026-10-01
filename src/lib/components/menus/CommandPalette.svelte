@@ -36,9 +36,7 @@
 	const filtered = $derived(
 		query.trim()
 			? commands.filter((c) =>
-					(c.label + ' ' + (hintFor(c) ?? '') + ' ' + (c.group ?? ''))
-						.toLowerCase()
-						.includes(query.toLowerCase())
+					(c.label + ' ' + (hintFor(c) ?? '') + ' ' + (c.group ?? '')).toLowerCase().includes(query.toLowerCase())
 				)
 			: commands
 	);
@@ -57,10 +55,18 @@
 	}
 
 	function onKey(e: KeyboardEvent) {
-		if (e.key === 'ArrowDown') { e.preventDefault(); selected = Math.min(selected + 1, filtered.length - 1); }
-		else if (e.key === 'ArrowUp') { e.preventDefault(); selected = Math.max(selected - 1, 0); }
-		else if (e.key === 'Enter') { e.preventDefault(); if (filtered[selected]) run(filtered[selected]); }
-		else if (e.key === 'Escape') { onClose(); }
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			selected = Math.min(selected + 1, filtered.length - 1);
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			selected = Math.max(selected - 1, 0);
+		} else if (e.key === 'Enter') {
+			e.preventDefault();
+			if (filtered[selected]) run(filtered[selected]);
+		} else if (e.key === 'Escape') {
+			onClose();
+		}
 	}
 
 	let groups = $derived([...new Set(filtered.map((c) => c.group ?? ''))]);
@@ -71,7 +77,9 @@
 		class="palette-backdrop"
 		role="presentation"
 		onclick={onClose}
-		onkeydown={(e) => { if (e.key === 'Escape') onClose(); }}
+		onkeydown={(e) => {
+			if (e.key === 'Escape') onClose();
+		}}
 	>
 		<div
 			class="palette"
@@ -87,7 +95,10 @@
 					bind:this={inputEl}
 					placeholder="Type a command…"
 					value={query}
-					oninput={(e) => { query = (e.target as HTMLInputElement).value; selected = 0; }}
+					oninput={(e) => {
+						query = (e.target as HTMLInputElement).value;
+						selected = 0;
+					}}
 				/>
 				<kbd>Esc</kbd>
 			</div>
@@ -95,11 +106,11 @@
 				{#if filtered.length === 0}
 					<div class="palette-empty">No results for “{query}”</div>
 				{:else}
-					{#each groups as g}
+					{#each groups as g (g)}
 						{#if g}
 							<div class="palette-group">{g}</div>
 						{/if}
-						{#each filtered.filter((c) => (c.group ?? '') === g) as cmd, i}
+						{#each filtered.filter((c) => (c.group ?? '') === g) as cmd (cmd.id)}
 							{@const idx = filtered.indexOf(cmd)}
 							{@const hint = hintFor(cmd)}
 							<button
@@ -138,8 +149,12 @@
 	}
 
 	@keyframes pd-in {
-		from { opacity: 0; }
-		to { opacity: 1; }
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
 	}
 
 	.palette {

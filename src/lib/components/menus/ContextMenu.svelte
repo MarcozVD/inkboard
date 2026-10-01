@@ -11,6 +11,8 @@
 		separator?: boolean;
 		danger?: boolean;
 		disabled?: boolean;
+		/** keyboard shortcut shown at the right edge (from input/shortcuts.ts) */
+		hint?: string;
 	}
 
 	let {
@@ -64,7 +66,7 @@
 
 {#if x !== -1 && y !== -1}
 	<div class="context-menu" bind:this={menuEl} role="menu">
-		{#each items as item}
+		{#each items as item, i (i)}
 			{#if item.separator}
 				<div class="cm-sep"></div>
 			{:else}
@@ -78,7 +80,10 @@
 					{#if item.icon}
 						<Icon name={item.icon} size={14} />
 					{/if}
-					<span>{item.label}</span>
+					<span class="cm-label">{item.label}</span>
+					{#if item.hint}
+						<span class="cm-hint">{item.hint}</span>
+					{/if}
 				</button>
 			{/if}
 		{/each}
@@ -139,6 +144,16 @@
 	.cm-item :global(svg) {
 		color: var(--color-text-muted);
 		flex-shrink: 0;
+	}
+
+	.cm-label {
+		flex: 1;
+	}
+
+	.cm-hint {
+		font-family: var(--font-mono);
+		font-size: var(--text-size-caption);
+		color: var(--color-text-muted);
 	}
 
 	.cm-item.danger :global(svg) {

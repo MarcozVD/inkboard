@@ -2,28 +2,36 @@ import { describe, expect, it } from 'vitest';
 import { HistoryManager } from './HistoryManager';
 import { AddObjectsCommand, RemoveObjectsCommand, UpdateTransformCommand } from './commands';
 import { ObjectStore } from './ObjectStore';
-import { createShape, createStroke, createText } from '$lib/objects/factory';
+import { createShape, createStroke } from '$lib/objects/factory';
 import { captureGeometry, translateObject } from '$lib/objects/geometry';
 
 describe('HistoryManager', () => {
 	it('executes a command and pushes onto undo stack', () => {
-		const store = new ObjectStore();
 		const h = new HistoryManager();
 		let executed = false;
-		h.execute({ description: 'test', undo: () => {}, redo: () => { executed = true; } });
+		h.execute({
+			description: 'test',
+			undo: () => {},
+			redo: () => {
+				executed = true;
+			}
+		});
 		expect(executed).toBe(true);
 		expect(h.canUndo).toBe(true);
 		expect(h.canRedo).toBe(false);
 	});
 
 	it('undo/redo cycles', () => {
-		const store = new ObjectStore();
 		const h = new HistoryManager();
 		let count = 0;
 		h.execute({
 			description: 'test',
-			undo: () => { count--; },
-			redo: () => { count++; }
+			undo: () => {
+				count--;
+			},
+			redo: () => {
+				count++;
+			}
 		});
 		expect(count).toBe(1);
 		h.undo();
@@ -35,10 +43,15 @@ describe('HistoryManager', () => {
 	});
 
 	it('push adds without executing', () => {
-		const store = new ObjectStore();
 		const h = new HistoryManager();
 		let executed = false;
-		h.push({ description: 'test', undo: () => {}, redo: () => { executed = true; } });
+		h.push({
+			description: 'test',
+			undo: () => {},
+			redo: () => {
+				executed = true;
+			}
+		});
 		expect(executed).toBe(false);
 		expect(h.canUndo).toBe(true);
 	});
@@ -79,8 +92,12 @@ describe('HistoryManager transactions', () => {
 	function counterCommand(counter: { value: number }, delta: number) {
 		return {
 			description: 'count',
-			undo: () => { counter.value -= delta; },
-			redo: () => { counter.value += delta; }
+			undo: () => {
+				counter.value -= delta;
+			},
+			redo: () => {
+				counter.value += delta;
+			}
 		};
 	}
 
@@ -148,8 +165,12 @@ describe('UpdateTransformCommand', () => {
 		const store = new ObjectStore();
 		const obj = createShape(0, 0, 100, 100, 'rect');
 		store.add(obj);
-		const before = new Map([[obj.id, { transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, scaleX: 1, scaleY: 1 } }]]);
-		const after = new Map([[obj.id, { transform: { x: 50, y: 50, width: 60, height: 60, rotation: 0.5, scaleX: 1, scaleY: 1 } }]]);
+		const before = new Map([
+			[obj.id, { transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, scaleX: 1, scaleY: 1 } }]
+		]);
+		const after = new Map([
+			[obj.id, { transform: { x: 50, y: 50, width: 60, height: 60, rotation: 0.5, scaleX: 1, scaleY: 1 } }]
+		]);
 		const cmd = new UpdateTransformCommand(store, before, after);
 		cmd.redo();
 		expect(obj.transform.x).toBe(50);

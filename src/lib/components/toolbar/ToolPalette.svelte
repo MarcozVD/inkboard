@@ -39,7 +39,7 @@
 	<div class="tool-palette">
 		{#if activeTool === 'shape'}
 			<div class="shape-palette">
-				{#each SHAPE_TYPES as shape}
+				{#each SHAPE_TYPES as shape (shape)}
 					<button class:active={currentShape === shape} title={shape} onclick={() => onShape(shape)}>
 						{icons[shape]}
 					</button>
@@ -47,11 +47,14 @@
 			</div>
 		{:else if activeTool === 'sticky'}
 			<div class="shape-palette">
-				{#each stickyNoteColors() as color, i}
+				{#each stickyNoteColors() as color, i (color)}
 					<button
 						class:active={stickyColor === color}
 						title={'Color ' + i}
-						style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {stickyColor === color ? '#ffffff' : 'transparent'};"
+						style="background: {color}; width: 26px; height: 26px; border-radius: 6px; border: 2px solid {stickyColor ===
+						color
+							? '#ffffff'
+							: 'transparent'};"
 						onclick={() => onStickyColor(i)}
 					></button>
 				{/each}

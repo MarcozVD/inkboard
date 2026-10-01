@@ -2,7 +2,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
-import type { Board, CameraState, GridConfig } from '$lib/objects/types';
+import type { Board, CameraState, CanvasObject, GridConfig } from '$lib/objects/types';
 import { createText } from '$lib/objects/factory';
 import { AddObjectsCommand } from '$lib/canvas/commands';
 import { serializeBoard } from '$lib/io/InternalFormat';
@@ -107,6 +107,19 @@ export async function exportBoard(ctx: TransferContext, format: ExportFormat): P
 	}
 }
 
+/** Export the current selection as a PNG download (§M1-11). */
+export async function exportSelectionPng(engine: CanvasEngine): Promise<void> {
+	const objects = engine.selectionManager.selected.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
+	if (objects.length === 0) return;
+	try {
+		const dataUrl = await boardToPngDataUrl(objects, { scale: 2 });
+		const res = await fetch(dataUrl);
+		downloadBlob(`inkboard-selection-${Date.now()}.png`, await res.blob());
+	} catch (err) {
+		console.error('export selection failed', err);
+	}
+}
+
 // ── images via clipboard / drag & drop ──
 
 /** Paste an image from the system clipboard, centered in the viewport. */
@@ -201,11 +214,7 @@ export async function importFile(ctx: TransferContext): Promise<void> {
 }
 
 /** Import texts as one undoable step (B13) through the mutation API. */
-export function insertImportedTexts(
-	engine: CanvasEngine,
-	title: string | null | undefined,
-	texts: string[]
-): void {
+export function insertImportedTexts(engine: CanvasEngine, title: string | null | undefined, texts: string[]): void {
 	const lines = [...(title ? [title] : []), ...texts];
 	if (lines.length === 0) return;
 	const objs = lines.map((line, i) => createText(40 + (i % 4) * 30, 40 + i * 60, line, { fontSize: 18 }));

@@ -4,7 +4,8 @@
 	import type { CameraState } from '$lib/canvas/Camera';
 	import type { CanvasEngine, ToolId } from '$lib/canvas/CanvasEngine';
 	import { handleCanvasKeyDown, type KeyboardContext, type ReorderMode } from '$lib/input/shortcuts';
-	import { cancelTextContent, commitTextContent, deleteObjects, duplicateObjects, reorderObjects } from '$lib/canvas/commands';
+	import { deleteObjects, duplicateObjects, reorderObjects } from '$lib/canvas/commands';
+	import { createTextEditing } from '$lib/board/textEditing.svelte';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
@@ -12,16 +13,12 @@
 	import { resolveDoubleClick, groupSelection, ungroupSelection } from '$lib/board/groups';
 	import { toggleLockSelection } from '$lib/board/lock';
 	import { nudgeSelection } from '$lib/board/nudge';
-	import {
-		buildContextMenu,
-		buildPaletteCommands,
-		buildSelectionToolbar,
-		type BoardActionDeps
-	} from '$lib/board/boardInteractions';
-	import { createTransferHandlers, dropImage, type ExportFormat } from '$lib/io/transfer';
+	import { buildContextMenu, buildPaletteCommands, buildSelectionToolbar, type BoardActionDeps } from '$lib/board/boardInteractions';
+	import { createTransferHandlers, dropImage, exportSelectionPng, type ExportFormat } from '$lib/io/transfer';
 	import type { EditableObj, GridConfig, ShapeType } from '$lib/objects/types';
 	import { ui, uiActions } from '$lib/stores/ui.svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import TextEditor from '$lib/components/TextEditor.svelte';
 	import CanvasHint from '$lib/components/board/CanvasHint.svelte';
 	import BoardChrome from '$lib/components/board/BoardChrome.svelte';
@@ -29,12 +26,11 @@
 	import ContextMenu, { type MenuItem } from '$lib/components/menus/ContextMenu.svelte';
 	import CommandPalette from '$lib/components/menus/CommandPalette.svelte';
 	import ContextToolbar, { type CtxAction } from '$lib/components/toolbar/ContextToolbar.svelte';
+	import ShortcutsOverlay from '$lib/components/menus/ShortcutsOverlay.svelte';
 	let { boardId }: { boardId: string } = $props();
-
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
 	let activeTool = $state<ToolId>('select');
 	let currentShape = $state<ShapeType>('rect');
-	let editingTextId = $state<string | null>(null);
 	let saveState = $state<'idle' | 'saving' | 'saved'>('idle');
 	let boardName = $state('Untitled');
 	let showExportMenu = $state(false);
@@ -43,6 +39,7 @@
 	let showPalette = $state(false);
 	let ctxBar = $state<{ x: number; y: number; actions: CtxAction[] } | null>(null);
 	let showSettings = $state(false);
+	let showShortcuts = $state(false);
 	let theme = $state<'dark' | 'light' | 'system'>('dark');
 	let objectCount = $state(0);
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
@@ -52,18 +49,12 @@
 	let runtime: BoardRuntime | null = null;
 	let destroyed = false;
 	let spaceDown = false;
-	const editingObj = $derived.by(() => {
-		const eng = engine;
-		if (!eng || !editingTextId) return null;
-		return (eng.store.get(editingTextId) as unknown as EditableObj) ?? null;
-	});
 	const transfer = createTransferHandlers({
 		getBoardId: () => boardId,
 		getEngine: () => engine,
 		onDirty: () => markDirty(),
 		getMeta: transferMeta
 	});
-
 	const styles = createStyleBridge({ getEngine: () => engine, onDirty: () => markDirty() });
 	const clipboard = createClipboard({
 		getEngine: () => engine,
@@ -80,9 +71,8 @@
 		onDirty: () => markDirty()
 	});
 	const { zoomIn, zoomOut, zoomReset, zoomFit } = zoom;
-	function markDirty() {
-		runtime?.markDirty();
-	}
+	const markDirty = () => runtime?.markDirty();
+	const textEdit = createTextEditing({ getEngine: () => engine, onShellChange: () => syncShell(), onDirty: () => markDirty() });
 	function syncShell() {
 		if (destroyed) return; // B14: no writes to the ui store after unmount
 		ui.boardName = boardName;
@@ -99,19 +89,26 @@
 			view: { width: canvasRect.width, height: canvasRect.height }
 		};
 	}
+	const gridChanged = (g: GridConfig) => {
+		grid = g;
+		markDirty();
+	};
+	const themeChanged = (t: 'dark' | 'light' | 'system') => {
+		theme = t;
+		document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+	};
 	function setTool(t: ToolId) {
-		// B10: UI follows only when the engine accepted the tool
 		const accepted = engine?.setTool(t) ?? false;
 		if (!accepted) return;
 		activeTool = t;
-		if (t !== 'select') editingTextId = null;
+		if (t !== 'select') textEdit.close();
 		showCreatePanel = false;
 		styles.touch();
 	}
-	function handleCreate(id: string) {
+	const handleCreate = (id: string) => {
 		showCreatePanel = false;
 		if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
-	}
+	};
 	function setShape(shape: ShapeType) {
 		if (!engine) return;
 		engine.shapeTool.config.shape = shape;
@@ -143,23 +140,6 @@
 		ctxBar = engine ? buildSelectionToolbar(engine, camera, deps) : null;
 		styles.touch();
 	}
-	function openTextEditor(obj: EditableObj) {
-		editingTextId = obj.id;
-	}
-	function commitTextEdit(content: string) {
-		const id = editingTextId;
-		editingTextId = null;
-		if (engine && id) commitTextContent(engine, id, content);
-		syncShell();
-		markDirty();
-	}
-	function cancelTextEdit() {
-		const id = editingTextId;
-		editingTextId = null;
-		if (engine && id) cancelTextContent(engine, id);
-		syncShell();
-		markDirty();
-	}
 	function onDblClick(e: MouseEvent) {
 		if (!engine || !runtime || activeTool !== 'select') return;
 		const p = runtime.input.toCanvasPoint(e);
@@ -170,7 +150,7 @@
 			updateCtxBar();
 		} else {
 			const obj = engine.store.get(action.objectId);
-			if (obj) openTextEditor(obj as unknown as EditableObj);
+			if (obj) textEdit.open(obj as unknown as EditableObj);
 		}
 		markDirty();
 	}
@@ -186,7 +166,6 @@
 			y: (p.y - camera.y) / camera.zoom
 		});
 	}
-
 	function onCanvasContextMenu(e: MouseEvent) {
 		e.preventDefault();
 		if (!engine || !runtime) return;
@@ -205,11 +184,10 @@
 		spaceDown = false;
 		if (canvasEl) canvasEl.style.cursor = 'default';
 	}
-
 	const deps = {
 		getEngine: () => engine,
-		isEditingText: () => editingTextId !== null,
-		isModalOpen: () => showPalette || showSettings,
+		isEditingText: () => textEdit.editingId !== null,
+		isModalOpen: () => showPalette || showSettings || showShortcuts,
 		setSpaceDown: (down: boolean) => {
 			spaceDown = down;
 			if (canvasEl) canvasEl.style.cursor = down ? 'grab' : 'default';
@@ -219,11 +197,16 @@
 		resetZoom: zoomReset,
 		setTool,
 		setShape,
-		openPalette: () => { showPalette = true; },
+		openPalette: () => {
+			showPalette = true;
+		},
 		selectAll: () => {
 			if (!engine) return;
 			engine.selectionManager.selectMany(
-				engine.store.getAll().filter((o) => o.type !== 'group').map((o) => o.id)
+				engine.store
+					.getAll()
+					.filter((o) => o.type !== 'group')
+					.map((o) => o.id)
 			);
 			updateCtxBar();
 			markDirty();
@@ -238,16 +221,61 @@
 		reorderSelection,
 		copySelection: () => void clipboard.copySelection(),
 		cutSelection: () => clipboard.cutSelection(),
-		pasteClipboard: (at?: { x: number; y: number } | null) => { void clipboard.paste(at); },
-		groupSelection: () => { if (engine) { groupSelection(engine); syncShell(); markDirty(); } },
-		ungroupSelection: () => { if (engine) { ungroupSelection(engine); syncShell(); markDirty(); } },
-		toggleLockSelection: () => { if (engine) { toggleLockSelection(engine); syncShell(); markDirty(); } },
-		nudgeSelection: (dx: number, dy: number) => { if (engine) { nudgeSelection(engine, dx, dy); syncShell(); markDirty(); } },
-		undo: () => { engine?.history.undo(); syncShell(); markDirty(); },
-		redo: () => { engine?.history.redo(); syncShell(); markDirty(); },
+		pasteClipboard: (at?: { x: number; y: number } | null) => {
+			void clipboard.paste(at);
+		},
+		groupSelection: () => {
+			if (engine) {
+				groupSelection(engine);
+				syncShell();
+				markDirty();
+			}
+		},
+		ungroupSelection: () => {
+			if (engine) {
+				ungroupSelection(engine);
+				syncShell();
+				markDirty();
+			}
+		},
+		toggleLockSelection: () => {
+			if (engine) {
+				toggleLockSelection(engine);
+				syncShell();
+				markDirty();
+			}
+		},
+		nudgeSelection: (dx: number, dy: number) => {
+			if (engine) {
+				nudgeSelection(engine, dx, dy);
+				syncShell();
+				markDirty();
+			}
+		},
+		toggleShortcutsOverlay: () => {
+			showShortcuts = !showShortcuts;
+		},
+		exportSelection: () => {
+			if (engine) void exportSelectionPng(engine);
+		},
+		undo: () => {
+			engine?.history.undo();
+			syncShell();
+			markDirty();
+		},
+		redo: () => {
+			engine?.history.redo();
+			syncShell();
+			markDirty();
+		},
 		zoomFit,
-		onExport: (format: ExportFormat) => { showExportMenu = false; transfer.export(format); },
-		openSettings: () => { showSettings = true; },
+		onExport: (format: ExportFormat) => {
+			showExportMenu = false;
+			transfer.export(format);
+		},
+		openSettings: () => {
+			showSettings = true;
+		},
 		onDirty: markDirty
 	} satisfies KeyboardContext & BoardActionDeps;
 	const paletteCommands = buildPaletteCommands(deps);
@@ -281,7 +309,7 @@
 				syncShell();
 			},
 			onPointerUp: updateCtxBar,
-			onEditingRequest: openTextEditor,
+			onEditingRequest: textEdit.open,
 			onShellChange: syncShell,
 			onKeyDown,
 			onKeyUp,
@@ -299,9 +327,8 @@
 		uiActions.share = () => console.log('share (future)');
 		uiActions.back = async () => {
 			await runtime?.session.flushSave();
-			goto('/');
+			goto(resolve('/'));
 		};
-
 		const detach = runtime.attach();
 		return () => {
 			destroyed = true;
@@ -310,68 +337,37 @@
 		};
 	});
 </script>
-<div class="canvas-wrap">
-	<canvas
-		bind:this={canvasEl}
-		class="board-canvas"
-		ondblclick={onDblClick}
-		ondragover={(e) => e.preventDefault()}
-		ondrop={onDrop}
-		oncontextmenu={onCanvasContextMenu}
-	></canvas>
 
-	<CanvasHint visible={objectCount === 0 && !editingObj} />
+<div class="canvas-wrap">
+	<canvas bind:this={canvasEl} class="board-canvas" ondblclick={onDblClick} ondragover={(e) => e.preventDefault()} ondrop={onDrop} oncontextmenu={onCanvasContextMenu}></canvas>
+
+	<CanvasHint visible={objectCount === 0 && !textEdit.editingObj} />
 
 	<BoardChrome
-		{activeTool}
-		{currentShape}
-		stickyColor={engine?.stickyTool.currentColor}
-		styleControls={styles.toolControls}
-		{showCreatePanel}
-		{showExportMenu}
-		{showSettings}
-		{grid}
-		{theme}
-		onSelectTool={(t) => setTool(t as ToolId)}
-		onToggleCreate={() => (showCreatePanel = !showCreatePanel)}
-		onToggleExport={() => (showExportMenu = !showExportMenu)}
-		onShape={setShape}
-		onStickyColor={(i) => engine?.stickyTool.setColor(i)}
-		onCreate={handleCreate}
-		onExport={deps.onExport}
-		onImport={() => void transfer.import()}
-		onCloseSettings={() => (showSettings = false)}
-		onGridChange={(g) => {
-			grid = g;
-			markDirty();
-		}}
-		onThemeChange={(t) => {
-			theme = t;
-			document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
+		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme }}
+		actions={{
+			onSelectTool: (t) => setTool(t as ToolId),
+			onToggleCreate: () => (showCreatePanel = !showCreatePanel),
+			onToggleExport: () => (showExportMenu = !showExportMenu),
+			onShape: setShape,
+			onStickyColor: (i) => engine?.stickyTool.setColor(i),
+			onCreate: handleCreate,
+			onExport: deps.onExport,
+			onImport: () => void transfer.import(),
+			onCloseSettings: () => (showSettings = false),
+			onGridChange: gridChanged,
+			onThemeChange: themeChanged
 		}}
 	/>
 
 	<ZoomControls zoom={camera.zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={zoomReset} onFit={zoomFit} />
 
-	{#if editingObj}
-		<TextEditor
-			obj={editingObj}
-			camera={{ x: camera.x, y: camera.y, zoom: camera.zoom }}
-			offset={{ x: canvasRect.left, y: canvasRect.top }}
-			onCommit={commitTextEdit}
-			onCancel={cancelTextEdit}
-		/>
+	{#if textEdit.editingObj}
+		<TextEditor obj={textEdit.editingObj} camera={{ x: camera.x, y: camera.y, zoom: camera.zoom }} offset={{ x: canvasRect.left, y: canvasRect.top }} onCommit={textEdit.commit} onCancel={textEdit.cancel} />
 	{/if}
 
 	{#if ctxBar}
-		<ContextToolbar
-			x={ctxBar.x}
-			y={ctxBar.y}
-			offsetX={canvasRect.left}
-			offsetY={canvasRect.top}
-			actions={ctxBar.actions}
-			style={styles.selectionControls}
-		/>
+		<ContextToolbar x={ctxBar.x} y={ctxBar.y} offsetX={canvasRect.left} offsetY={canvasRect.top} actions={ctxBar.actions} style={styles.selectionControls} />
 	{/if}
 
 	{#if ctxMenu}
@@ -379,6 +375,10 @@
 	{/if}
 
 	<CommandPalette open={showPalette} commands={paletteCommands} onClose={() => (showPalette = false)} />
+
+	{#if showShortcuts}
+		<ShortcutsOverlay onClose={() => (showShortcuts = false)} />
+	{/if}
 </div>
 
 <style>

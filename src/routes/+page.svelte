@@ -2,6 +2,8 @@
 	// Home — Board Picker per DESIGN.md § Multi-board UI.
 	// Grid of boards with thumbnails, search, favorites, empty state.
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
 	import { listBoards, freshBoard } from '$lib/io/persistence';
 	import { saveBoard } from '$lib/io/persistence';
@@ -11,15 +13,16 @@
 	let boards = $state<BoardMeta[]>([]);
 	let loading = $state(true);
 	let query = $state('');
-	let favs = $state<Set<string>>(new Set());
+	const favs = new SvelteSet<string>();
 
 	const FAV_KEY = 'inkboard:favorites';
 
 	function loadFavs() {
+		favs.clear();
 		try {
-			favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]'));
+			for (const id of JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]')) favs.add(id);
 		} catch {
-			favs = new Set();
+			// corrupted favorites — start empty
 		}
 	}
 	function persistFavs() {
@@ -29,14 +32,11 @@
 		e.stopPropagation();
 		if (favs.has(id)) favs.delete(id);
 		else favs.add(id);
-		favs = new Set(favs);
 		persistFavs();
 	}
 
 	const filtered = $derived(
-		query.trim()
-			? boards.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
-			: boards
+		query.trim() ? boards.filter((b) => b.name.toLowerCase().includes(query.toLowerCase())) : boards
 	);
 
 	onMount(async () => {
@@ -63,7 +63,7 @@
 		} catch {
 			// localStorage/tauri fallback — still navigate
 		}
-		goto(`/board/${id}`);
+		goto(resolve('/board/[id]', { id }));
 	}
 
 	function formatDate(ts: number): string {
@@ -133,15 +133,17 @@
 					</div>
 				{:else}
 					<ul class="board-grid" data-testid="board-list">
-						{#each filtered as board}
+						{#each filtered as board (board.id)}
 							<li>
 								<div
 									class="board-card"
 									data-testid="board-{board.id}"
 									role="button"
 									tabindex="0"
-									onclick={() => goto(`/board/${board.id}`)}
-									onkeydown={(e) => { if (e.key === 'Enter') goto(`/board/${board.id}`); }}
+									onclick={() => goto(resolve('/board/[id]', { id: board.id }))}
+									onkeydown={(e) => {
+										if (e.key === 'Enter') goto(resolve('/board/[id]', { id: board.id }));
+									}}
 								>
 									<span class="board-thumb" style="background: {thumbTint(board.id)}"></span>
 									<span class="board-meta">
@@ -156,8 +158,8 @@
 										class:faved={favs.has(board.id)}
 										aria-label={favs.has(board.id) ? 'Remove favorite' : 'Add favorite'}
 										aria-pressed={favs.has(board.id)}
-										onclick={(e) => toggleFav(board.id, e)}
-									>★</button>
+										onclick={(e) => toggleFav(board.id, e)}>★</button
+									>
 								</div>
 							</li>
 						{/each}
@@ -312,7 +314,7 @@
 		aspect-ratio: 16 / 10;
 		border-radius: var(--radius-md);
 		background-size: 24px 24px;
-		background-image: radial-gradient(circle, rgba(255,255,255,0.14) 1px, transparent 1px);
+		background-image: radial-gradient(circle, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
 	}
 
 	.board-meta {
@@ -354,7 +356,7 @@
 		justify-content: center;
 		border-radius: var(--radius-sm);
 		font-size: 14px;
-		color: rgba(255,255,255,0.7);
+		color: rgba(255, 255, 255, 0.7);
 		opacity: 0;
 		transition: opacity var(--dur-micro) var(--ease-out);
 	}
@@ -363,7 +365,7 @@
 		opacity: 1;
 	}
 	.fav-btn:hover {
-		background: rgba(255,255,255,0.2);
+		background: rgba(255, 255, 255, 0.2);
 	}
 	.fav-btn.faved {
 		opacity: 1;

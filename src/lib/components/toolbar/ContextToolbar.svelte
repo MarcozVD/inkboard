@@ -49,14 +49,8 @@
 			<StyleControls controls={style} />
 			<span class="ctx-divider"></span>
 		{/if}
-		{#each actions as a}
-			<button
-				class="ctx-btn"
-				class:active={a.active}
-				title={a.label}
-				aria-label={a.label}
-				onclick={a.onClick}
-			>
+		{#each actions as a (a.id)}
+			<button class="ctx-btn" class:active={a.active} title={a.label} aria-label={a.label} onclick={a.onClick}>
 				<Icon name={a.icon} size={15} />
 			</button>
 		{/each}

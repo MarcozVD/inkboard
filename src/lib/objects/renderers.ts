@@ -8,8 +8,7 @@ import type {
 	TextObject,
 	StickyNoteObject,
 	ImageObject,
-	ConnectorObject,
-	GroupObject
+	ConnectorObject
 } from '$lib/objects/types';
 
 /**
@@ -190,7 +189,14 @@ function renderShape(ctx: CanvasRenderingContext2D, s: ShapeObject) {
 	}
 }
 
-function starPath(ctx: CanvasRenderingContext2D, cx: number, cy: number, r: number, points: number, innerRatio: number) {
+function starPath(
+	ctx: CanvasRenderingContext2D,
+	cx: number,
+	cy: number,
+	r: number,
+	points: number,
+	innerRatio: number
+) {
 	for (let i = 0; i < points * 2; i++) {
 		const radius = i % 2 === 0 ? r : r * innerRatio;
 		const angle = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
@@ -242,7 +248,12 @@ function renderText(ctx: CanvasRenderingContext2D, t: TextObject) {
 
 	if (style.backgroundColor) {
 		ctx.fillStyle = style.backgroundColor;
-		ctx.fillRect(-style.padding, -style.padding, t.transform.width + style.padding * 2, t.transform.height + style.padding * 2);
+		ctx.fillRect(
+			-style.padding,
+			-style.padding,
+			t.transform.width + style.padding * 2,
+			t.transform.height + style.padding * 2
+		);
 		ctx.fillStyle = style.color;
 	}
 
@@ -301,7 +312,11 @@ function renderStickyNote(ctx: CanvasRenderingContext2D, n: StickyNoteObject) {
 
 // ── Image ──
 
-function renderImage(ctx: CanvasRenderingContext2D, img: ImageObject, getImage?: (src: string) => HTMLImageElement | undefined) {
+function renderImage(
+	ctx: CanvasRenderingContext2D,
+	img: ImageObject,
+	getImage?: (src: string) => HTMLImageElement | undefined
+) {
 	const { width: w, height: h } = img.transform;
 	if (w <= 0 || h <= 0) return;
 

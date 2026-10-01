@@ -162,9 +162,9 @@ export function createClipboard(deps: ClipboardDeps) {
 		const target = targetWorld(at);
 		let text: string | null = null;
 		try {
-			text = await navigator.clipboard?.readText();
+			text = (await navigator.clipboard?.readText()) ?? null;
 		} catch {
-			text = null;
+			// clipboard unavailable — the internal fallback below still works
 		}
 		const parsed = text ? parseClipboard(text) : null;
 		if (parsed) {

@@ -35,10 +35,20 @@ export const COMMAND_SHORTCUTS: Readonly<Record<string, string>> = {
 	undo: 'Ctrl+Z',
 	redo: 'Ctrl+Shift+Z',
 	'zoom-reset': 'Ctrl+0',
+	copy: 'Ctrl+C',
+	cut: 'Ctrl+X',
+	paste: 'Ctrl+V',
+	duplicate: 'Ctrl+D',
+	delete: 'Del',
+	lock: 'Ctrl+Shift+L',
+	group: 'Ctrl+G',
+	ungroup: 'Ctrl+Shift+G',
+	'select-all': 'Ctrl+A',
 	'bring-forward': ']',
 	'send-backward': '[',
 	'bring-to-front': 'Ctrl+]',
-	'send-to-back': 'Ctrl+['
+	'send-to-back': 'Ctrl+[',
+	'shortcuts-overlay': '?'
 };
 
 export type ReorderMode = 'front' | 'back' | 'forward' | 'backward';
@@ -65,6 +75,56 @@ export function reorderShortcutFor(key: string, mod: boolean): ReorderShortcut |
 	return REORDER_SHORTCUTS.find((s) => s.key === key && s.ctrl === mod);
 }
 
+// ── Shortcut overlay data (§M1-12) ──
+
+export interface ShortcutGroup {
+	title: string;
+	items: { keys: string; label: string }[];
+}
+
+/** Grouped shortcut list shown by the `?` overlay (same tables as the keydown). */
+export function shortcutGroups(): ShortcutGroup[] {
+	const toolKeys = new Map<string, string[]>();
+	for (const shortcut of TOOL_SHORTCUTS) {
+		const keys = toolKeys.get(shortcut.tool) ?? [];
+		keys.push(shortcut.label);
+		toolKeys.set(shortcut.tool, keys);
+	}
+	const tools = [...toolKeys].map(([tool, keys]) => ({
+		keys: keys.join(' / '),
+		label: tool[0].toUpperCase() + tool.slice(1)
+	}));
+	const edit = [
+		{ id: 'copy', label: 'Copy' },
+		{ id: 'cut', label: 'Cut' },
+		{ id: 'paste', label: 'Paste' },
+		{ id: 'duplicate', label: 'Duplicate' },
+		{ id: 'delete', label: 'Delete' },
+		{ id: 'undo', label: 'Undo' },
+		{ id: 'redo', label: 'Redo' },
+		{ id: 'select-all', label: 'Select all' }
+	].map((item) => ({ keys: COMMAND_SHORTCUTS[item.id], label: item.label }));
+	const selection = [
+		{ id: 'group', label: 'Group' },
+		{ id: 'ungroup', label: 'Ungroup' },
+		{ id: 'lock', label: 'Lock / unlock' },
+		{ id: 'bring-to-front', label: 'Bring to front' },
+		{ id: 'bring-forward', label: 'Bring forward' },
+		{ id: 'send-backward', label: 'Send backward' },
+		{ id: 'send-to-back', label: 'Send to back' }
+	].map((item) => ({ keys: COMMAND_SHORTCUTS[item.id], label: item.label }));
+	const view = [
+		{ id: 'zoom-reset', label: 'Reset zoom' },
+		{ id: 'shortcuts-overlay', label: 'Shortcuts' }
+	].map((item) => ({ keys: COMMAND_SHORTCUTS[item.id], label: item.label }));
+	return [
+		{ title: 'Tools', items: tools },
+		{ title: 'Edit', items: edit },
+		{ title: 'Selection', items: selection },
+		{ title: 'View', items: view }
+	];
+}
+
 /** Look up the tool binding for a pressed key (case-insensitive). */
 export function toolShortcutForKey(key: string): ToolShortcut | undefined {
 	const k = key.toLowerCase();
@@ -83,10 +143,7 @@ export function shortcutLabelFor(id: string): string | undefined {
  * open modal. Placeholders `input`, `textarea`, `contenteditable` and modal
  * shortcuts never reach the canvas.
  */
-export function shouldIgnoreShortcut(
-	e: { target: unknown },
-	opts: { modalOpen?: boolean } = {}
-): boolean {
+export function shouldIgnoreShortcut(e: { target: unknown }, opts: { modalOpen?: boolean } = {}): boolean {
 	if (opts.modalOpen) return true;
 	const target = e.target as { tagName?: unknown; isContentEditable?: unknown } | null;
 	if (!target) return false;
@@ -120,6 +177,7 @@ export interface KeyboardContext {
 	ungroupSelection: () => void;
 	toggleLockSelection: () => void;
 	nudgeSelection: (dx: number, dy: number) => void;
+	toggleShortcutsOverlay: () => void;
 	undo: () => void;
 	redo: () => void;
 }
@@ -210,6 +268,10 @@ export function handleCanvasKeyDown(e: KeyboardEvent, ctx: KeyboardContext): voi
 		e.preventDefault();
 		const step = e.shiftKey ? 10 : 1;
 		ctx.nudgeSelection(nudge.x * step, nudge.y * step);
+	}
+	if (e.key === '?' && !mod) {
+		e.preventDefault();
+		ctx.toggleShortcutsOverlay();
 	}
 	if (e.key === 'Escape') ctx.clearSelection();
 

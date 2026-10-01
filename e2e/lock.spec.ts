@@ -24,9 +24,7 @@ test.describe('M1-06 — lock', () => {
 		// marquee over both: only the unlocked one is selected
 		await dragMouse(page, { x: 260, y: 160 }, { x: 620, y: 360 });
 		await page.keyboard.press('Delete');
-		await expect
-			.poll(async () => shapes(await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(1);
+		await expect.poll(async () => shapes(await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(1);
 		const remaining = shapes(await storedObjects(page, id))[0];
 		expect(Math.round(remaining.transform.x)).toBe(300);
 		expect(remaining.style).toBeTruthy();
@@ -61,13 +59,8 @@ test.describe('M1-06 — lock', () => {
 		const box = await canvasBox(page);
 		await selectTool(page, 'select');
 		await page.mouse.click(box.x + 350, box.y + 250, { button: 'right' });
-		await page.getByRole('menuitem', { name: 'Lock', exact: true }).click();
+		await page.getByRole('menuitem', { name: /^Lock/ }).click();
 
-		await expect
-			.poll(
-				async () => (await storedObjects(page, id))[0]?.locked ?? null,
-				{ timeout: TIMEOUT }
-			)
-			.toBe(true);
+		await expect.poll(async () => (await storedObjects(page, id))[0]?.locked ?? null, { timeout: TIMEOUT }).toBe(true);
 	});
 });

@@ -1,6 +1,6 @@
 // ShapeTool — drag from corner to corner to create a shape (§7).
 // Shift keeps the aspect ratio (proportional).
-import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
+import { BaseTool, type ToolPointerEvent } from './BaseTool';
 import { createShape } from '$lib/objects/factory';
 import type { ShapeType, ShapeStyle } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';

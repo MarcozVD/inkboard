@@ -3,11 +3,7 @@ import type { CanvasObject } from '$lib/objects/types';
 import { getObjectBounds } from '$lib/objects/bounds';
 
 function esc(s: string): string {
-	return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;');
+	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /** SVG rotate() around the box center — same convention as the canvas (§M0-10). */
@@ -54,7 +50,9 @@ export function boardToSvg(
 			`font-family="Segoe UI, sans-serif">`
 	);
 	if (opts.background) {
-		parts.push(`<rect x="${minX - pad}" y="${minY - pad}" width="${width}" height="${height}" fill="${opts.background}"/>`);
+		parts.push(
+			`<rect x="${minX - pad}" y="${minY - pad}" width="${width}" height="${height}" fill="${opts.background}"/>`
+		);
 	}
 	for (const o of objects) {
 		parts.push(objectToSvg(o));
@@ -65,7 +63,6 @@ export function boardToSvg(
 
 function objectToSvg(o: CanvasObject): string {
 	const t = o.transform;
-	const attrs = `x="${t.x}" y="${t.y}"`;
 	const opacity = o.style?.opacity ?? 1;
 
 	switch (o.type) {
@@ -74,25 +71,34 @@ function objectToSvg(o: CanvasObject): string {
 			const h = t.height;
 			const s = o.style;
 			const rot = rotationAttr(o);
-			const common = `x="${t.x}" y="${t.y}" width="${w}" height="${h}" ` +
+			const common =
+				`x="${t.x}" y="${t.y}" width="${w}" height="${h}" ` +
 				`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" ` +
 				`opacity="${opacity}" ${s.strokeDash?.length ? `stroke-dasharray="${s.strokeDash.join(' ')}"` : ''}`;
 			switch (o.shape) {
 				case 'rect':
 					return `<rect ${common} rx="${s.cornerRadius ?? 0}"${rot}/>`;
 				case 'ellipse':
-					return `<ellipse cx="${t.x + w / 2}" cy="${t.y + h / 2}" rx="${w / 2}" ry="${h / 2}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
+					return (
+						`<ellipse cx="${t.x + w / 2}" cy="${t.y + h / 2}" rx="${w / 2}" ry="${h / 2}" ` +
+						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+					);
 				case 'line':
 				case 'arrow':
-					return `<line x1="${t.x}" y1="${t.y}" x2="${t.x + w}" y2="${t.y + h}" ` +
-						`stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
+					return (
+						`<line x1="${t.x}" y1="${t.y}" x2="${t.x + w}" y2="${t.y + h}" ` +
+						`stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+					);
 				case 'triangle':
-					return `<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h} ${t.x},${t.y + h}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
+					return (
+						`<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h} ${t.x},${t.y + h}" ` +
+						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+					);
 				case 'diamond':
-					return `<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h / 2} ${t.x + w / 2},${t.y + h} ${t.x},${t.y + h / 2}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`;
+					return (
+						`<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h / 2} ${t.x + w / 2},${t.y + h} ${t.x},${t.y + h / 2}" ` +
+						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+					);
 				default:
 					return `<rect ${common}${rot}/>`;
 			}
@@ -101,17 +107,25 @@ function objectToSvg(o: CanvasObject): string {
 			const lines = o.content.split('\n');
 			const lh = o.style.fontSize * (o.style.lineHeight ?? 1.3);
 			const body = lines
-				.map((line, i) => `<text x="${t.x}" y="${t.y + o.style.fontSize + i * lh}" ` +
-					`font-size="${o.style.fontSize}" fill="${o.style.color}" opacity="${opacity}">${esc(line)}</text>`)
+				.map(
+					(line, i) =>
+						`<text x="${t.x}" y="${t.y + o.style.fontSize + i * lh}" ` +
+						`font-size="${o.style.fontSize}" fill="${o.style.color}" opacity="${opacity}">${esc(line)}</text>`
+				)
 				.join('\n');
 			return `<g${rotationAttr(o)}>${body}</g>`;
 		}
 		case 'sticky_note': {
 			return `<g opacity="${opacity}"${rotationAttr(o)}>
 				<rect x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" rx="4" fill="${o.style.backgroundColor}"/>
-				${o.content.split('\n').map((line, i) =>
-					`<text x="${t.x + (o.style.padding ?? 12)}" y="${t.y + (o.style.padding ?? 12) + o.style.fontSize + i * o.style.fontSize * 1.3}" ` +
-					`font-size="${o.style.fontSize}" fill="${o.style.textColor}">${esc(line)}</text>`).join('\n')}
+				${o.content
+					.split('\n')
+					.map(
+						(line, i) =>
+							`<text x="${t.x + (o.style.padding ?? 12)}" y="${t.y + (o.style.padding ?? 12) + o.style.fontSize + i * o.style.fontSize * 1.3}" ` +
+							`font-size="${o.style.fontSize}" fill="${o.style.textColor}">${esc(line)}</text>`
+					)
+					.join('\n')}
 			</g>`;
 		}
 		case 'stroke': {
@@ -125,16 +139,20 @@ function objectToSvg(o: CanvasObject): string {
 				}
 				return acc;
 			}, '');
-			return `<path d="${d}" stroke="${o.style.color}" stroke-width="${o.style.width}" ` +
-				`fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`;
+			return (
+				`<path d="${d}" stroke="${o.style.color}" stroke-width="${o.style.width}" ` +
+				`fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`
+			);
 		}
 		case 'connector': {
 			const pts = [o.startPoint, ...(o.waypoints ?? []), o.endPoint];
 			const d = pts
 				.map((p, i) => (i === 0 ? `M${p.x.toFixed(2)} ${p.y.toFixed(2)}` : `L${p.x.toFixed(2)} ${p.y.toFixed(2)}`))
 				.join(' ');
-			return `<path d="${d}" stroke="${o.style.stroke}" stroke-width="${o.style.strokeWidth ?? 2}" ` +
-				`fill="none" stroke-linecap="round" opacity="${opacity}"/>`;
+			return (
+				`<path d="${d}" stroke="${o.style.stroke}" stroke-width="${o.style.strokeWidth ?? 2}" ` +
+				`fill="none" stroke-linecap="round" opacity="${opacity}"/>`
+			);
 		}
 		case 'image': {
 			return `<image href="${o.src}" x="${t.x}" y="${t.y}" width="${t.width}" height="${t.height}" opacity="${opacity}"${rotationAttr(o)}/>`;

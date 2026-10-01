@@ -1,6 +1,6 @@
 // EraserTool — object-based erasure (§5). Click/drag over objects → remove.
 // Removals in one drag become a single undo step (composite command).
-import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
+import { BaseTool, type ToolPointerEvent } from './BaseTool';
 import { SelectionManager } from '$lib/canvas/SelectionManager';
 import type { CanvasObject } from '$lib/objects/types';
 import { RemoveObjectsCommand } from '$lib/canvas/commands';

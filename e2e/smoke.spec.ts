@@ -3,8 +3,7 @@ import type { Page } from '@playwright/test';
 import { storedObjects, waitForObjectCount } from './helpers';
 
 const STORAGE_KEY = 'inkboard:boards';
-const PNG_1X1 =
-	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 async function createBoard(page: Page): Promise<string> {
 	await page.goto('/');
@@ -12,11 +11,6 @@ async function createBoard(page: Page): Promise<string> {
 	await page.waitForURL(/\/board\/[0-9a-f-]{36,}/);
 	const url = page.url();
 	return url.split('/board/')[1].replace(/\/$/, '').split('?')[0];
-}
-
-async function openBoard(page: Page, id: string) {
-	await page.goto(`/board/${id}/`);
-	await page.locator('canvas.board-canvas').waitFor({ state: 'visible' });
 }
 
 test.describe('home', () => {
@@ -146,14 +140,10 @@ test.describe('B13 — insert undo', () => {
 		// move focus away from the hidden file input before using shortcuts
 		await page.locator('canvas.board-canvas').click({ position: { x: 600, y: 400 } });
 		await page.keyboard.press('Control+z');
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: 8000 })
-			.toBe(0);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: 8000 }).toBe(0);
 
 		await page.keyboard.press('Control+Shift+z');
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: 8000 })
-			.toBe(1);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: 8000 }).toBe(1);
 	});
 });
 

@@ -11,6 +11,36 @@
 	import type { ExportFormat } from '$lib/io/transfer';
 
 	let {
+		state,
+		actions
+	}: {
+		state: {
+			activeTool: string;
+			currentShape: ShapeType;
+			stickyColor: string | undefined;
+			styleControls?: StyleControl[];
+			showCreatePanel: boolean;
+			showExportMenu: boolean;
+			showSettings: boolean;
+			grid: GridConfig;
+			theme: 'dark' | 'light' | 'system';
+		};
+		actions: {
+			onSelectTool: (id: string) => void;
+			onToggleCreate: () => void;
+			onToggleExport: () => void;
+			onShape: (shape: ShapeType) => void;
+			onStickyColor: (index: number) => void;
+			onCreate: (id: string) => void;
+			onExport: (format: ExportFormat) => void;
+			onImport: () => void;
+			onCloseSettings: () => void;
+			onGridChange: (grid: GridConfig) => void;
+			onThemeChange: (theme: 'dark' | 'light' | 'system') => void;
+		};
+	} = $props();
+
+	const {
 		activeTool,
 		currentShape,
 		stickyColor,
@@ -19,7 +49,9 @@
 		showExportMenu,
 		showSettings,
 		grid,
-		theme,
+		theme
+	} = $derived(state);
+	const {
 		onSelectTool,
 		onToggleCreate,
 		onToggleExport,
@@ -31,28 +63,7 @@
 		onCloseSettings,
 		onGridChange,
 		onThemeChange
-	}: {
-		activeTool: string;
-		currentShape: ShapeType;
-		stickyColor: string | undefined;
-		styleControls?: StyleControl[];
-		showCreatePanel: boolean;
-		showExportMenu: boolean;
-		showSettings: boolean;
-		grid: GridConfig;
-		theme: 'dark' | 'light' | 'system';
-		onSelectTool: (id: string) => void;
-		onToggleCreate: () => void;
-		onToggleExport: () => void;
-		onShape: (shape: ShapeType) => void;
-		onStickyColor: (index: number) => void;
-		onCreate: (id: string) => void;
-		onExport: (format: ExportFormat) => void;
-		onImport: () => void;
-		onCloseSettings: () => void;
-		onGridChange: (grid: GridConfig) => void;
-		onThemeChange: (theme: 'dark' | 'light' | 'system') => void;
-	} = $props();
+	} = $derived(actions);
 </script>
 
 <ToolBar
@@ -75,7 +86,7 @@
 	onClose={onCloseSettings}
 	{grid}
 	{onGridChange}
-	background={'#0f1013'}
+	background="#0f1013"
 	onBgChange={() => {}}
 	{theme}
 	{onThemeChange}

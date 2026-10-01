@@ -43,7 +43,7 @@
 			</button>
 		</div>
 		<div class="cp-items">
-			{#each items as item}
+			{#each items as item (item.id)}
 				<button class="cp-item" onclick={() => onSelect(item.id)}>
 					<Icon name={item.icon} size={16} />
 					<span>{item.label}</span>

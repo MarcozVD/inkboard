@@ -20,24 +20,22 @@ export function createStyleBridge(deps: StyleBridgeDeps) {
 
 	/** Remember the last style per tool so the next object uses it. */
 	function syncToolConfig(engine: CanvasEngine, patch: Record<string, unknown>): void {
-		const objs = engine.selectionManager.selected
-			.map((id) => engine.store.get(id))
-			.filter(Boolean) as CanvasObject[];
+		const objs = engine.selectionManager.selected.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
 		if (objs.length === 0) return;
-		const types = new Set(objs.map((o) => o.type));
+		const only = (type: CanvasObject['type']) => objs.every((o) => o.type === type);
 
-		if (types.size === 1 && types.has('stroke')) {
+		if (only('stroke')) {
 			const first = objs[0];
 			const cfg = first.type === 'stroke' && first.style.isHighlighter ? engine.highlighterConfig : engine.penConfig;
 			if (typeof patch.color === 'string') cfg.color = patch.color;
 			if (typeof patch.width === 'number') cfg.width = patch.width;
-		} else if (types.size === 1 && types.has('shape')) {
+		} else if (only('shape')) {
 			Object.assign(engine.shapeTool.config.style, patch);
-		} else if (types.size === 1 && types.has('text')) {
+		} else if (only('text')) {
 			Object.assign(engine.textTool.config, patch);
-		} else if (types.size === 1 && types.has('connector')) {
+		} else if (only('connector')) {
 			Object.assign(engine.connectorTool.config, patch);
-		} else if (types.size === 1 && types.has('sticky_note')) {
+		} else if (only('sticky_note')) {
 			const index = stickyNoteColors().indexOf(String(patch.backgroundColor));
 			if (index >= 0) engine.stickyTool.setColor(index);
 		}
@@ -52,13 +50,13 @@ export function createStyleBridge(deps: StyleBridgeDeps) {
 	};
 
 	const selectionControls = $derived.by<StyleControl[]>(() => {
-		version;
+		void version;
 		const engine = deps.getEngine();
 		return engine ? buildSelectionStyleControls(engine, applySelectionPatch) : [];
 	});
 
 	const toolControls = $derived.by<StyleControl[]>(() => {
-		version;
+		void version;
 		const engine = deps.getEngine();
 		return engine ? buildToolStyleControls(engine, touch) : [];
 	});

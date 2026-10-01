@@ -1,13 +1,11 @@
 // Selection manager — hit-testing, multi-select, selection bounds & handles (§14)
 import type { Rect, Vec2 } from '$lib/utils/math';
-import { pointInEllipse, pointInRect, distSqToSegment, worldToLocal, toBBox } from '$lib/utils/math';
+import { pointInEllipse, pointInRect, distSqToSegment, worldToLocal } from '$lib/utils/math';
 import type { CanvasObject, ShapeObject, StrokeObject, ConnectorObject } from '$lib/objects/types';
 import { getObjectBounds } from '$lib/objects/bounds';
 import type { ObjectStore } from './ObjectStore';
 
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rotate';
-
-const HANDLE_SIZE = 8;
 
 export interface SelectionHandle {
 	id: HandleId;
@@ -196,7 +194,12 @@ function pointNearConnector(c: ConnectorObject, world: Vec2): boolean {
 
 function objectBoundsIntersectRect(obj: CanvasObject, rect: Rect): boolean {
 	const b = getObjectBounds(obj);
-	return !(b.x + b.width < rect.x || rect.x + rect.width < b.x || b.y + b.height < rect.y || rect.y + rect.height < b.y);
+	return !(
+		b.x + b.width < rect.x ||
+		rect.x + rect.width < b.x ||
+		b.y + b.height < rect.y ||
+		rect.y + rect.height < b.y
+	);
 }
 
 function unionRects(a: Rect, b: Rect): Rect {

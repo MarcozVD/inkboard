@@ -39,7 +39,10 @@ export class SelectTool extends BaseTool {
 	/** group the user has entered with a double click (one nesting level) */
 	private enteredGroupId: string | null = null;
 
-	constructor(ctx: ToolContext, private cb: SelectToolCallbacks = {}) {
+	constructor(
+		ctx: ToolContext,
+		private cb: SelectToolCallbacks = {}
+	) {
 		super(ctx);
 		this.sel = new SelectionManager(ctx.store);
 	}
@@ -253,9 +256,7 @@ export class SelectTool extends BaseTool {
 			newH = sb.height * scale;
 			// keep the opposite corner fixed
 			if (id.includes('w')) newLeft = newRight - newW;
-			else newRight = newLeft + newW;
 			if (id.includes('n')) newTop = newBottom - newH;
-			else newBottom = newTop + newH;
 		}
 
 		const scaleX = sb.width > 0 ? newW / sb.width : 1;

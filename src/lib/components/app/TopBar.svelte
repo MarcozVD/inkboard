@@ -25,12 +25,17 @@
 	}
 
 	// window controls (Tauri decorations: false)
-	async function minimize() { getCurrentWindow().minimize(); }
+	async function minimize() {
+		getCurrentWindow().minimize();
+	}
 	async function toggleMaximize() {
 		const w = getCurrentWindow();
-		(await w.isMaximized()) ? w.unmaximize() : w.maximize();
+		if (await w.isMaximized()) await w.unmaximize();
+		else await w.maximize();
 	}
-	async function close() { getCurrentWindow().close(); }
+	async function close() {
+		getCurrentWindow().close();
+	}
 </script>
 
 <header class="topbar">
@@ -42,14 +47,22 @@
 				class="name-input"
 				value={ui.boardName}
 				onblur={commitEdit}
-				onkeydown={(e) => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') editing = false; }}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') commitEdit();
+					if (e.key === 'Escape') editing = false;
+				}}
 			/>
 		{:else}
 			<button class="name-display" onclick={() => (editing = true)} title="Rename board">
 				{ui.boardName}
 			</button>
 		{/if}
-		<span class="save-status" class:saving={ui.saveState === 'saving'} class:saved={ui.saveState === 'saved'} data-testid="save-indicator">
+		<span
+			class="save-status"
+			class:saving={ui.saveState === 'saving'}
+			class:saved={ui.saveState === 'saved'}
+			data-testid="save-indicator"
+		>
 			{ui.saveState === 'saving' ? '●' : ui.saveState === 'saved' ? '✓' : ''}
 		</span>
 	</div>
@@ -64,8 +77,22 @@
 				<span class="avatar ghost">+</span>
 			</div>
 			<span class="divider"></span>
-			<ToolButton icon="undo" label="Undo" shortcut="Ctrl+Z" testid="undo" disabled={!ui.canUndo} onclick={() => uiActions.undo?.()} />
-			<ToolButton icon="redo" label="Redo" shortcut="Ctrl+Shift+Z" testid="redo" disabled={!ui.canRedo} onclick={() => uiActions.redo?.()} />
+			<ToolButton
+				icon="undo"
+				label="Undo"
+				shortcut="Ctrl+Z"
+				testid="undo"
+				disabled={!ui.canUndo}
+				onclick={() => uiActions.undo?.()}
+			/>
+			<ToolButton
+				icon="redo"
+				label="Redo"
+				shortcut="Ctrl+Shift+Z"
+				testid="redo"
+				disabled={!ui.canRedo}
+				onclick={() => uiActions.redo?.()}
+			/>
 			<span class="divider"></span>
 		{/if}
 		<ToolButton icon="share" label="Share" disabled />
@@ -158,8 +185,13 @@
 	}
 
 	@keyframes pulse {
-		0%, 100% { opacity: 1; }
-		50% { opacity: 0.3; }
+		0%,
+		100% {
+			opacity: 1;
+		}
+		50% {
+			opacity: 0.3;
+		}
 	}
 
 	.center {

@@ -39,7 +39,7 @@
 			<ToolButton icon="plus" label="Create" testid="create" active={false} onclick={onCreate} />
 			<span class="strip-divider"></span>
 		{/if}
-		{#each tools as tool}
+		{#each tools as tool (tool.id)}
 			<ToolButton
 				icon={tool.icon}
 				label={tool.label}
@@ -51,13 +51,7 @@
 		{/each}
 		{#if onExport}
 			<span class="strip-divider"></span>
-			<ToolButton
-				icon="export"
-				label="Export / Import"
-				testid="export"
-				active={exportActive}
-				onclick={onExport}
-			/>
+			<ToolButton icon="export" label="Export / Import" testid="export" active={exportActive} onclick={onExport} />
 		{/if}
 	</div>
 	{#if children}

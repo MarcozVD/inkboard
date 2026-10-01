@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog) and M2. See [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. M2 has started: M2-01 moved the heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations) and M2-02 brought board management to Home. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog). See [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -27,7 +27,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Export** — PNG, SVG, JSON (client-side)
 - **Import** — images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)
 - **UI** — floating ToolBar, ContextToolbar, ContextMenu, Command palette (`Ctrl+K`), Create panel, Settings
-- **Multi-board** — home picker with search, favorites, grid view
+- **Multi-board** — home picker with search, favorites, grid view, rename and duplicate, sort by date or name, and a trash you can restore from or purge (M2-02)
 - **Desktop** — custom titlebar, window controls (capabilities granted in M0-09 and verified by hand — B08)
 
 ## Current status
@@ -83,13 +83,13 @@ pnpm tauri build      # Desktop distributable
 
 ```bash
 pnpm test                           # Unit (Vitest) — 144/144
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 54/54
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 57/57
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
 pnpm lint:fix                       # ESLint autofix
 pnpm format                         # Prettier write
 pnpm format:check                   # Prettier check
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 14/14
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 21/21
 ```
 
 **Line endings:** the repo is **LF everywhere** — `.gitattributes` sets `* text=auto eol=lf` (and marks binaries `binary`), and Prettier is pinned to `endOfLine: "lf"`. Without both halves, `format:check` fails on `windows-latest` with CRLF checkouts while passing on Linux.

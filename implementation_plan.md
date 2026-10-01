@@ -67,7 +67,7 @@
 
 ### 0.4 Parcial o no implementado
 
-Conectores (tipo + renderer, sin tool) · smart guides, alinear y distribuir · minimap · PDF / JPG / `.inkboard` · versiones y backup (tabla sin uso) · thumbnails reales · borrar, renombrar o duplicar boards desde Home · workers / OffscreenCanvas · colaboración.
+Conectores (tipo + renderer, sin tool) · smart guides, alinear y distribuir · minimap · PDF / JPG / `.inkboard` · versiones y backup (tabla sin uso) · thumbnails reales · workers / OffscreenCanvas · colaboración.
 
 ### 0.5 Layout del repo y comandos
 
@@ -83,7 +83,7 @@ cargo test --manifest-path src-tauri/Cargo.toml   # tests Rust
 pnpm tauri build                               # instaladores
 ```
 
-Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `inspect_import`, `read_file_bytes`.
+Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `inspect_import`, `read_file_bytes`.
 
 ---
 
@@ -368,7 +368,7 @@ tokio = { version = "1", features = ["full"] }
 
 ### Tauri Commands expuestos al frontend
 
-> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `inspect_import`, `read_file_bytes`. Los de abajo son el diseño objetivo: la gestión de boards y los assets llegan en M2 (§24.6); PNG y JPG se exportan desde TypeScript y PDF desde Rust (M2-10).
+> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `inspect_import`, `read_file_bytes`. Los de abajo son el diseño objetivo: los assets llegan en M2 (§24.6); PNG y JPG se exportan desde TypeScript y PDF desde Rust (M2-10).
 
 ```rust
 #[tauri::command]
@@ -1478,7 +1478,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-13 ✅ | **B14** · Resetear `ui` y `uiActions` al desmontar el board. La TopBar decide el modo board/home por la ruta (`page.route.id`). | `stores/ui.svelte.ts`, `app/TopBar.svelte`, `BoardCanvas.svelte` | E2E: en Home no aparecen undo/redo ni avatares | S |
 | M0-14 ✅ | **B15** · `count_objects` lee `board.objects`, con test Rust. | `src-tauri/src/db/mod.rs` | `cargo test` cubre el conteo | S |
 | M0-15 ✅\* | **B16** · `read_file_bytes` devuelve `tauri::ipc::Response` (bytes crudos → `ArrayBuffer`) y el front construye un `Blob` que lee con `FileReader`. | `commands/import.rs`, `BoardCanvas.svelte` | Manual: importar un PNG de 10 MB por el diálogo nativo | S |
-| M0-16 ✅ | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. **Ejecutada en GitHub con éxito** (ya incluye `lint` y `format:check` desde M1-12). | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
+| M0-16 ✅ | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. **Ejecutada en GitHub con éxito** (ya incluye `lint` y `format:check` desde M1-12). Estuvo en rojo una vez: `format:check` fallaba solo en `windows-latest` por finales de línea CRLF. Fix en M2-01 (`.gitattributes` con `eol=lf` + `endOfLine: "lf"` en `.prettierrc`); desde entonces verde en Windows y Linux. | `.github/workflows/ci.yml`, `.gitattributes`, `.prettierrc`, `package.json` | Un push con cualquier suite en rojo falla | S |
 | M0-17 ✅ | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
 
 \* M0-15 está implementada (`read_file_bytes` ya devuelve bytes crudos) pero su aceptación sigue sin verificar: necesita importar un PNG de 10 MB por el diálogo nativo en `pnpm tauri dev`. Trátala como abierta hasta cerrar esa comprobación.
@@ -1512,7 +1512,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | ID | Tarea | Aceptación | Tam. |
 |----|-------|------------|------|
 | M2-01 ✅ | Rust: comandos pesados `async` o con `spawn_blocking`. SQLite con `journal_mode=WAL`, `foreign_keys=ON` y `busy_timeout` en cada conexión. Runner de migraciones con `PRAGMA user_version`: `MIGRATIONS` es una lista ordenada y el índice es la versión, así que añadir una migración es añadir una entrada; la migración inicial se extrajo a `db/migrations/001_initial.sql` y se incluye con `include_str!`. Una DB de v0.1 (esquema presente pero `user_version = 0`) se detecta como versión 1 y solo se marca, sin volver a ejecutar el SQL y sin tocar datos. | Abrir una DB de v0.1 la migra sin pérdida; test Rust | M |
-| M2-02 | Gestión de boards en Home: renombrar, duplicar, borrar (papelera restaurable) y ordenar por fecha o nombre; favoritos en SQLite (hoy en localStorage). Comandos `rename_board`, `duplicate_board`, `delete_board` y `restore_board`. | E2E | M |
+| M2-02 ✅ | Gestión de boards en Home: renombrar, duplicar, borrar (papelera restaurable, con restaurar y purgar) y ordenar por fecha o nombre; favoritos en SQLite, migrados desde localStorage. Comandos `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board` y `set_favorite`, con `list_boards(trash, sort)`. Borrado blando con `deleted_at` + índice, migración `002_board_management.sql`. Fallback completo en localStorage (`inkboard:trash`, `inkboard:favorites`) para el modo browser. | E2E (`e2e/home-boards.spec.ts`); `cargo test` 21/21 | M |
 | M2-03 | Thumbnails reales: render offscreen de 320×200 → PNG → `boards.thumbnail`, con debounce largo (≥ 10 s). Home los muestra y usa el tinte actual como fallback. | E2E: el thumbnail aparece tras editar | M |
 | M2-04 | Historial de versiones (la tabla `board_versions` existe sin uso): snapshot cada N minutos de edición activa, antes de importar o restaurar, y manual ("Guardar versión"). Retención de 50 versiones o 30 días; UI en Settings → Datos. Restaurar crea una versión nueva y nunca destruye. | Test Rust de retención; E2E de restaurar | M |
 | M2-05 | Almacén de assets: las imágenes salen del JSON del board a una tabla `assets(hash sha256, mime, bytes, w, h)`; `ImageObject.src = "asset:<hash>"`; carga como Blob/object URL; deduplicación. Migración de los boards con data URLs (schema 1.1.0) con snapshot previo. En el browser, IndexedDB (D3). Hacerlo después de M1-01 (toca `renderers.ts` e `ImageTool`). | El autosave de un board con 20 MB de imágenes envía < 100 KB por guardado | L |
@@ -1600,7 +1600,7 @@ Candidatos, a priorizar con el uso real de la beta:
 | PDF / JPG / `.inkboard` | Alta | No | M2-06, M2-09, M2-10 |
 | Colaboración en tiempo real | Alta (largo plazo) | Solo stub de UI | M6 |
 | Agrupación | Media | **Hecho (M1-05)** — `Ctrl+G`/`Ctrl+Shift+G`, clic selecciona el grupo, doble clic entra, un nivel de anidamiento | M1-05 |
-| Gestión de boards (renombrar, duplicar, borrar) | Media | Solo crear, listar, buscar y favoritos | M2-02 |
+| Gestión de boards (renombrar, duplicar, borrar) ✅ M2-02 | Media | Solo crear, listar, buscar y favoritos | M2-02 — **hecho**: Home con renombrar, duplicar, papelera (restaurar/purgar), ordenar por fecha o nombre y favoritos en SQLite |
 | Versiones / backup | Media | Tabla sin uso | M2-04 |
 | Snap a grid / smart guides | Media | **Grid snap hecho (M1-07)** (toggle en Settings, `grid.snap` persistido, Shift a un eje, rotación de 15°); smart guides, alinear y distribuir siguen en M5 | M1-07 (grid), M5 (guías) |
 | Minimap | Media | No | M5 |

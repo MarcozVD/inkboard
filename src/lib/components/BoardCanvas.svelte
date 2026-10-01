@@ -11,6 +11,7 @@
 	import { createZoomActions } from '$lib/board/zoomActions';
 	import { resolveDoubleClick, groupSelection, ungroupSelection } from '$lib/board/groups';
 	import { toggleLockSelection } from '$lib/board/lock';
+	import { nudgeSelection } from '$lib/board/nudge';
 	import {
 		buildContextMenu,
 		buildPaletteCommands,
@@ -47,7 +48,6 @@
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
 	let grid: GridConfig = $state({ enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 });
 	let canvasRect = $state({ left: 0, top: 0, width: 0, height: 0 });
-
 	let engine: CanvasEngine | null = $state(null);
 	let runtime: BoardRuntime | null = null;
 	let destroyed = false;
@@ -160,7 +160,6 @@
 		syncShell();
 		markDirty();
 	}
-
 	function onDblClick(e: MouseEvent) {
 		if (!engine || !runtime || activeTool !== 'select') return;
 		const p = runtime.input.toCanvasPoint(e);
@@ -243,6 +242,7 @@
 		groupSelection: () => { if (engine) { groupSelection(engine); syncShell(); markDirty(); } },
 		ungroupSelection: () => { if (engine) { ungroupSelection(engine); syncShell(); markDirty(); } },
 		toggleLockSelection: () => { if (engine) { toggleLockSelection(engine); syncShell(); markDirty(); } },
+		nudgeSelection: (dx: number, dy: number) => { if (engine) { nudgeSelection(engine, dx, dy); syncShell(); markDirty(); } },
 		undo: () => { engine?.history.undo(); syncShell(); markDirty(); },
 		redo: () => { engine?.history.redo(); syncShell(); markDirty(); },
 		zoomFit,

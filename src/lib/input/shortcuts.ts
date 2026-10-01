@@ -118,9 +118,18 @@ export interface KeyboardContext {
 	groupSelection: () => void;
 	ungroupSelection: () => void;
 	toggleLockSelection: () => void;
+	nudgeSelection: (dx: number, dy: number) => void;
 	undo: () => void;
 	redo: () => void;
 }
+
+/** Arrow-key nudge directions (§M1-07): 1 px, ×10 with Shift. */
+const NUDGE_DIRECTIONS: Readonly<Record<string, { x: number; y: number }>> = {
+	ArrowLeft: { x: -1, y: 0 },
+	ArrowRight: { x: 1, y: 0 },
+	ArrowUp: { x: 0, y: -1 },
+	ArrowDown: { x: 0, y: 1 }
+};
 
 /** Canvas keydown handler: editor guard, modal/input guard, tools and commands. */
 export function handleCanvasKeyDown(e: KeyboardEvent, ctx: KeyboardContext): void {
@@ -193,6 +202,13 @@ export function handleCanvasKeyDown(e: KeyboardEvent, ctx: KeyboardContext): voi
 	if (mod && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
 		e.preventDefault();
 		ctx.toggleLockSelection();
+	}
+	// nudge with the arrow keys (§M1-07)
+	const nudge = NUDGE_DIRECTIONS[e.key];
+	if (nudge && !mod) {
+		e.preventDefault();
+		const step = e.shiftKey ? 10 : 1;
+		ctx.nudgeSelection(nudge.x * step, nudge.y * step);
 	}
 	if (e.key === 'Escape') ctx.clearSelection();
 

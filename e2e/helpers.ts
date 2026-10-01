@@ -29,6 +29,7 @@ export interface StoredBoard {
 	name: string;
 	objects: StoredObject[];
 	camera: { x: number; y: number; zoom: number };
+	grid?: { enabled: boolean; size: number; snap?: boolean };
 	createdAt?: number;
 	updatedAt?: number;
 }

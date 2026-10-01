@@ -2,6 +2,7 @@
 import type { ObjectStore } from '$lib/canvas/ObjectStore';
 import type { CameraState } from '$lib/canvas/Camera';
 import type { Command } from '$lib/canvas/HistoryManager';
+import type { GridConfig } from '$lib/objects/types';
 
 export interface ToolPointerEvent {
 	screenX: number;
@@ -22,6 +23,8 @@ export interface ToolContext {
 	execute: (cmd: Command) => void;
 	/** remove an object and its creation step (discarded drafts) */
 	discardAdded: (id: string) => void;
+	/** current grid config (snap, §M1-07) */
+	grid?: () => GridConfig;
 }
 
 export abstract class BaseTool {

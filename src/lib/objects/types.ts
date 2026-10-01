@@ -59,6 +59,8 @@ export interface GridConfig {
 	size: number; // px in world coords
 	color: string;
 	opacity: number;
+	/** snap movement/creation to the grid (§M1-07) */
+	snap?: boolean;
 }
 
 export interface BoardMetadata {

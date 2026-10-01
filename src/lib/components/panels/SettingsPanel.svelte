@@ -17,7 +17,7 @@
 	}: {
 		open: boolean;
 		onClose: () => void;
-		grid: { enabled: boolean; size: number; color: string; opacity: number };
+		grid: { enabled: boolean; size: number; color: string; opacity: number; snap?: boolean };
 		onGridChange: (g: typeof grid) => void;
 		background: string;
 		onBgChange: (bg: string) => void;
@@ -82,6 +82,13 @@
 							<label class="sp-label" for="sp-grid-opacity">Grid opacity</label>
 							<input id="sp-grid-opacity" type="range" class="sp-range" value={grid.opacity * 100} min="0" max="100" oninput={(e) => onGridChange({ ...grid, opacity: parseInt((e.target as HTMLInputElement).value) / 100 })} />
 							<span class="sp-value">{Math.round(grid.opacity * 100)}%</span>
+						</div>
+						<div class="sp-row">
+							<label class="sp-label" for="sp-snap-toggle">Snap to grid</label>
+							<label class="sp-toggle">
+								<input id="sp-snap-toggle" type="checkbox" checked={grid.snap ?? false} onchange={(e) => onGridChange({ ...grid, snap: (e.target as HTMLInputElement).checked })} />
+								<span class="sp-toggle-track"></span>
+							</label>
 						</div>
 					{/if}
 					<div class="sp-row">

@@ -67,7 +67,7 @@
 		font-weight: {obj.style.fontWeight ?? 'normal'}; font-style: {obj.style.fontStyle ?? 'normal'};
 		text-align: {obj.style.textAlign ?? 'left'}; color: {fgColor};
 		background: {obj.style.backgroundColor ?? 'transparent'};
-		padding: {(obj.style.padding ?? 4) * camera.zoom}px; line-height: 1.3;"
+		padding: {(obj.style.padding ?? 4) * camera.zoom}px; line-height: {obj.style.lineHeight ?? 1.3};"
 	class="text-editor"
 	onblur={commit}
 	onkeydown={(e) => {

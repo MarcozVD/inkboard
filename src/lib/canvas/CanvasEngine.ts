@@ -12,7 +12,7 @@ import type { BaseTool } from '$lib/tools/BaseTool';
 import type { CameraState } from '$lib/canvas/Camera';
 import { HistoryManager, type Command } from '$lib/canvas/HistoryManager';
 import { dropLastAddCommand } from '$lib/canvas/commands';
-import type { CanvasObject } from '$lib/objects/types';
+import type { CanvasObject, GridConfig } from '$lib/objects/types';
 
 export type ToolId = 'select' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'sticky' | 'shape' | 'image' | 'connector';
 
@@ -32,7 +32,12 @@ export class CanvasEngine {
 	readonly imageTool: ImageTool;
 	readonly stickyTool: StickyNoteTool;
 
-	constructor(opts: { camera: () => CameraState; onDirty: () => void; onGestureEnd?: () => void }) {
+	constructor(opts: {
+		camera: () => CameraState;
+		onDirty: () => void;
+		onGestureEnd?: () => void;
+		grid?: () => GridConfig;
+	}) {
 		this.cameraFn = opts.camera;
 		this.onDirty = opts.onDirty;
 		this.onGestureEnd = opts.onGestureEnd ?? opts.onDirty;
@@ -43,7 +48,8 @@ export class CanvasEngine {
 			onDirty: this.onDirty,
 			onGestureEnd: this.onGestureEnd,
 			execute: (cmd: Command) => this.execute(cmd),
-			discardAdded: (id: string) => this.discardAdded(id)
+			discardAdded: (id: string) => this.discardAdded(id),
+			grid: opts.grid
 		};
 
 		this.selectTool = new SelectTool(ctx);

@@ -11,6 +11,7 @@ import type {
 	Transform
 } from '$lib/objects/types';
 import { applyGeometry, type GeometrySnapshot } from '$lib/objects/geometry';
+import { fitBox } from '$lib/objects/textLayout';
 import { getObjectBounds } from '$lib/objects/bounds';
 import type { Rect } from '$lib/utils/math';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
@@ -452,19 +453,17 @@ export function duplicateObjects(engine: CanvasEngine): string[] {
 
 // ── In-canvas text editing (B03) ──
 
-/** Fit the box to the committed content (single source of truth). */
+/** Fit the box to the committed content (single source of truth, §M1-08). */
 export function fitContentBox(
 	obj: TextObject | StickyNoteObject,
-	content: string
+	content: string,
+	maxWidth?: number
 ): { width: number; height: number } {
-	const lines = content.split('\n');
-	const longest = Math.max(1, ...lines.map((l) => l.length));
-	const pad = obj.style.padding ?? 4;
-	const lh = obj.type === 'text' ? obj.style.lineHeight : 1.3;
-	return {
-		width: Math.max(40, longest * obj.style.fontSize * 0.6 + pad * 2),
-		height: Math.max(30, lines.length * obj.style.fontSize * lh + pad * 2)
-	};
+	return fitBox(
+		{ ...obj.style, lineHeight: obj.type === 'text' ? obj.style.lineHeight : 1.3 },
+		content,
+		maxWidth
+	);
 }
 
 function isEditableContent(obj: CanvasObject | undefined): obj is TextObject | StickyNoteObject {

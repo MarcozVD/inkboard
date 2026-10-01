@@ -47,7 +47,8 @@ export class BoardRuntime {
 		this.engine = new CanvasEngine({
 			camera: host.getCamera,
 			onDirty: host.onDirty,
-			onGestureEnd: host.onGestureEnd
+			onGestureEnd: host.onGestureEnd,
+			grid: host.getGrid
 		});
 		this.engine.textTool.onEditRequest = host.onEditingRequest;
 		this.engine.stickyTool.onEditRequest = (o) => host.onEditingRequest(o as unknown as EditableObj);

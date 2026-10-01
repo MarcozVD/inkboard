@@ -1,5 +1,6 @@
 // Object renderers — Canvas 2D drawing for every object type (§3).
 import { getStroke } from 'perfect-freehand';
+import { wrapText } from '$lib/objects/textLayout';
 import type {
 	CanvasObject,
 	ShapeObject,
@@ -245,7 +246,7 @@ function renderText(ctx: CanvasRenderingContext2D, t: TextObject) {
 		ctx.fillStyle = style.color;
 	}
 
-	const lines = t.content.split('\n');
+	const lines = wrapText(t.content, t.transform.width - (style.padding ?? 0) * 2, style);
 	const lineHeight = size * (style.lineHeight || 1.3);
 	const align = style.textAlign || 'left';
 	lines.forEach((line, i) => {
@@ -291,7 +292,7 @@ function renderStickyNote(ctx: CanvasRenderingContext2D, n: StickyNoteObject) {
 	ctx.fillStyle = style.textColor;
 	ctx.textBaseline = 'top';
 	ctx.textAlign = 'left';
-	const lines = n.content.split('\n');
+	const lines = wrapText(n.content, w - style.padding * 2, { ...style, lineHeight: 1.3 });
 	lines.forEach((line, i) => {
 		ctx.fillText(line, style.padding, style.padding + i * style.fontSize * 1.3);
 	});

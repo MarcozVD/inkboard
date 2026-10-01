@@ -2,6 +2,9 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { SelectionManager, type HandleId } from '$lib/canvas/SelectionManager';
 import { expandSelection, groupMembers } from '$lib/board/groups';
+import { constrainToAxis, snapAngle, snapOffset } from '$lib/board/snapping';
+import { fitBox } from '$lib/objects/textLayout';
+import { getObjectBounds } from '$lib/objects/bounds';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
 import { UpdateTransformCommand } from '$lib/canvas/commands';
@@ -116,14 +119,12 @@ export class SelectTool extends BaseTool {
 		const sy = e.screenY;
 		const shift = e.shift;
 		const world = this.screenToWorld(sx, sy);
-		const dxWorld = world.x - this.lastWorld.x;
-		const dyWorld = world.y - this.lastWorld.y;
 		this.lastWorld = { ...world };
 		if (Math.hypot(sx - this.dragStartScreen.x, sy - this.dragStartScreen.y) > 2) this.moved = true;
 
 		switch (this.mode) {
 			case 'move':
-				this.applyMove(dxWorld, dyWorld, shift);
+				this.applyMove(world, shift);
 				break;
 			case 'resize':
 				this.applyResize(world, shift);
@@ -205,14 +206,21 @@ export class SelectTool extends BaseTool {
 
 	// ── Gesture implementations ──
 
-	private applyMove(dx: number, dy: number, shift: boolean): void {
-		if (!shift) {
-			// snap to grid if shift held (16px grid snap when holding Shift)
-		}
+	private applyMove(world: Vec2, shift: boolean): void {
+		const delta = constrainToAxis(world.x - this.dragStartWorld.x, world.y - this.dragStartWorld.y, shift);
+		const grid = this.ctx.grid?.();
+		const snapSize = grid?.snap ? grid.size : 0;
 		for (const id of this.sel.selected) {
 			const obj = this.ctx.store.get(id);
-			if (!obj || obj.locked) continue;
-			translateObject(obj, dx, dy);
+			const start = this.startGeometries.get(id);
+			if (!obj || !start || obj.locked) continue;
+			applyGeometry(obj, start);
+			translateObject(obj, delta.x, delta.y);
+			if (snapSize > 0) {
+				const bounds = getObjectBounds(obj);
+				const offset = snapOffset(bounds.x, bounds.y, snapSize);
+				translateObject(obj, offset.x, offset.y);
+			}
 			obj.updatedAt = Date.now();
 		}
 		this.ctx.store.notifyMoved(this.sel.selected);
@@ -261,17 +269,27 @@ export class SelectTool extends BaseTool {
 			applyGeometry(obj, snap);
 			scaleObject(obj, origin, scaleX, scaleY);
 			translateObject(obj, newLeft - sb.x, newTop - sb.y);
+			// re-wrap text/sticky to the new width (§M1-08)
+			if (obj.type === 'text' || obj.type === 'sticky_note') {
+				const box = fitBox(
+					{ ...obj.style, lineHeight: obj.type === 'text' ? obj.style.lineHeight : 1.3 },
+					obj.content,
+					obj.transform.width
+				);
+				obj.transform.height = Math.max(30, box.height);
+			}
 			obj.updatedAt = Date.now();
 		}
 		this.ctx.store.notifyMoved(this.sel.selected);
 	}
 
-	private applyRotate(world: Vec2, _shift: boolean): void {
+	private applyRotate(world: Vec2, shift: boolean): void {
 		if (!this.startBounds) return;
 		const c = this.center(this.startBounds);
 		const angle = Math.atan2(world.y - c.y, world.x - c.x);
 		const startAngle = Math.atan2(this.dragStartWorld.y - c.y, this.dragStartWorld.x - c.x);
-		const delta = angle - startAngle;
+		let delta = angle - startAngle;
+		if (shift) delta = snapAngle(delta); // 15° steps
 		for (const selId of this.sel.selected) {
 			const obj = this.ctx.store.get(selId);
 			const snap = this.startGeometries.get(selId);

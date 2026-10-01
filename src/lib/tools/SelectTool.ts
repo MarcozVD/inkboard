@@ -5,6 +5,8 @@ import { expandSelection, groupMembers } from '$lib/board/groups';
 import { constrainToAxis, snapAngle, snapOffset } from '$lib/board/snapping';
 import { fitBox } from '$lib/objects/textLayout';
 import { getObjectBounds } from '$lib/objects/bounds';
+import { localVectorToWorld, resizeLocalBox, worldToLocalVector } from '$lib/objects/geometry';
+import type { CanvasObject, Transform } from '$lib/objects/types';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
 import { UpdateTransformCommand } from '$lib/canvas/commands';
@@ -231,6 +233,17 @@ export class SelectTool extends BaseTool {
 
 	private applyResize(world: Vec2, shift: boolean): void {
 		if (!this.startBounds || !this.activeHandle) return;
+		// single transform-based object: resize in its own (possibly rotated) frame
+		if (this.sel.selected.length === 1) {
+			const selId = this.sel.selected[0];
+			const obj = this.ctx.store.get(selId);
+			const start = this.startGeometries.get(selId);
+			if (obj && start && !obj.locked && obj.type !== 'stroke' && obj.type !== 'connector') {
+				this.applySingleResize(obj, start.transform, world, shift);
+				this.ctx.store.notifyMoved(this.sel.selected);
+				return;
+			}
+		}
 		const sb = this.startBounds;
 		const id = this.activeHandle;
 		let newLeft = sb.x;
@@ -282,6 +295,44 @@ export class SelectTool extends BaseTool {
 			obj.updatedAt = Date.now();
 		}
 		this.ctx.store.notifyMoved(this.sel.selected);
+	}
+
+	/** Resize a single object along its local axes; crossing an edge flips it (§M1-13). */
+	private applySingleResize(
+		obj: CanvasObject & { content?: string },
+		start: Transform,
+		world: Vec2,
+		shift: boolean
+	): void {
+		const center = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+		const rotation = start.rotation ?? 0;
+		const pointer = worldToLocalVector(world, center, rotation);
+		const local = resizeLocalBox({
+			handle: this.activeHandle!,
+			box: { width: start.width, height: start.height },
+			pointer,
+			shift
+		});
+		const nextCenter = localVectorToWorld(local.center, center, rotation);
+
+		obj.transform.width = local.width;
+		obj.transform.height = local.height;
+		obj.transform.rotation = rotation;
+		obj.transform.scaleX = (start.scaleX ?? 1) * local.signX;
+		obj.transform.scaleY = (start.scaleY ?? 1) * local.signY;
+		obj.transform.x = nextCenter.x - local.width / 2;
+		obj.transform.y = nextCenter.y - local.height / 2;
+
+		// re-wrap text/sticky to the new width (§M1-08)
+		if (obj.type === 'text' || obj.type === 'sticky_note') {
+			const box = fitBox(
+				{ ...obj.style, lineHeight: obj.type === 'text' ? obj.style.lineHeight : 1.3 },
+				obj.content ?? '',
+				obj.transform.width
+			);
+			obj.transform.height = Math.max(30, box.height);
+		}
+		obj.updatedAt = Date.now();
 	}
 
 	private applyRotate(world: Vec2, shift: boolean): void {

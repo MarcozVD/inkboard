@@ -1,8 +1,71 @@
 import { describe, expect, it } from 'vitest';
-import { applyGeometry, captureGeometry, rotateObject, scaleObject, translateObject } from './geometry';
+import {
+	applyGeometry,
+	captureGeometry,
+	localVectorToWorld,
+	resizeLocalBox,
+	rotateObject,
+	scaleObject,
+	translateObject,
+	worldToLocalVector
+} from './geometry';
 import { getObjectBounds, transformBounds } from './bounds';
 import { createConnector, createShape, createStickyNote, createStroke } from './factory';
 import { worldToLocal } from '$lib/utils/math';
+
+describe('geometry — local resize (§M1-13)', () => {
+	const BOX = { width: 100, height: 100 };
+
+	it('resizes along local axes keeping the opposite edge fixed', () => {
+		const r = resizeLocalBox({ handle: 'e', box: BOX, pointer: { x: 80, y: 0 } });
+		expect(r.width).toBe(130);
+		expect(r.signX).toBe(1);
+		expect(r.center.x).toBeCloseTo(15);
+		expect(r.center.y).toBe(0);
+	});
+
+	it('flips when the pointer crosses the opposite edge', () => {
+		const r = resizeLocalBox({ handle: 'e', box: BOX, pointer: { x: -80, y: 0 } });
+		expect(r.width).toBe(30);
+		expect(r.signX).toBe(-1);
+		expect(r.center.x).toBeCloseTo(-65);
+	});
+
+	it('clamps to the minimum size keeping the flip sign', () => {
+		const r = resizeLocalBox({ handle: 'e', box: BOX, pointer: { x: -51, y: 0 } });
+		expect(r.width).toBe(4);
+		expect(r.signX).toBe(-1);
+		expect(r.center.x).toBeCloseTo(-52);
+	});
+
+	it('keeps the aspect ratio with Shift on corners', () => {
+		const r = resizeLocalBox({
+			handle: 'se',
+			box: { width: 100, height: 50 },
+			pointer: { x: 100, y: 10 },
+			shift: true
+		});
+		expect(r.width).toBeCloseTo(150);
+		expect(r.height).toBeCloseTo(75);
+		expect(r.center.x).toBeCloseTo(-50 + 75);
+		expect(r.center.y).toBeCloseTo(-25 + 37.5);
+	});
+
+	it('maps a 45° rotated resize to world coordinates', () => {
+		const center = { x: 10, y: 20 };
+		const rotation = Math.PI / 4;
+		const local = resizeLocalBox({ handle: 'e', box: BOX, pointer: { x: 80, y: 0 } });
+		const worldCenter = localVectorToWorld(local.center, center, rotation);
+		expect(local.width).toBe(130);
+		expect(worldCenter.x).toBeCloseTo(10 + 15 * Math.SQRT1_2);
+		expect(worldCenter.y).toBeCloseTo(20 + 15 * Math.SQRT1_2);
+
+		// pointer round-trip through the local frame
+		const back = worldToLocalVector(worldCenter, center, rotation);
+		expect(back.x).toBeCloseTo(15);
+		expect(back.y).toBeCloseTo(0);
+	});
+});
 
 describe('geometry — translate', () => {
 	it('moves transform-based objects', () => {

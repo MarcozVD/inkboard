@@ -51,6 +51,86 @@ export function rotatePointAround(p: Vec2, center: Vec2, angle: number): Vec2 {
 	return { x: center.x + dx * cos - dy * sin, y: center.y + dx * sin + dy * cos };
 }
 
+/** World vector → object-local axes (relative to its box center, §M1-13). */
+export function worldToLocalVector(point: Vec2, center: Vec2, rotation: number): Vec2 {
+	const cos = Math.cos(-rotation);
+	const sin = Math.sin(-rotation);
+	const dx = point.x - center.x;
+	const dy = point.y - center.y;
+	return { x: dx * cos - dy * sin, y: dx * sin + dy * cos };
+}
+
+/** Object-local vector (relative to its box center) → world. */
+export function localVectorToWorld(vector: Vec2, center: Vec2, rotation: number): Vec2 {
+	const cos = Math.cos(rotation);
+	const sin = Math.sin(rotation);
+	return {
+		x: center.x + vector.x * cos - vector.y * sin,
+		y: center.y + vector.x * sin + vector.y * cos
+	};
+}
+
+export interface LocalResizeInput {
+	/** active handle id: nw | n | ne | e | se | s | sw | w */
+	handle: string;
+	box: { width: number; height: number };
+	/** pointer in local coords relative to the box center (u right, v down) */
+	pointer: Vec2;
+	/** keep aspect ratio (Shift) */
+	shift?: boolean;
+	/** minimum width/height */
+	min?: number;
+}
+
+export interface LocalResizeResult {
+	width: number;
+	height: number;
+	signX: 1 | -1;
+	signY: 1 | -1;
+	/** new local center relative to the start center */
+	center: Vec2;
+}
+
+/**
+ * Resize a box in its own rotated frame (§M1-13): the opposite edge stays fixed
+ * and crossing it flips the axis (negative sign → mirrored scale).
+ */
+export function resizeLocalBox(input: LocalResizeInput): LocalResizeResult {
+	const { handle, box, pointer, shift = false, min = 4 } = input;
+	const halfW = box.width / 2;
+	const halfH = box.height / 2;
+	const movingU = handle.includes('e') || handle.includes('w');
+	const movingV = handle.includes('n') || handle.includes('s');
+
+	const fixedU = handle.includes('w') ? halfW : -halfW;
+	const fixedV = handle.includes('n') ? halfH : -halfH;
+
+	let spanU = movingU ? pointer.x - fixedU : box.width;
+	let spanV = movingV ? pointer.y - fixedV : box.height;
+
+	if (shift && movingU && movingV) {
+		const scale = Math.max(Math.abs(spanU) / box.width, Math.abs(spanV) / box.height);
+		spanU = Math.sign(spanU || 1) * scale * box.width;
+		spanV = Math.sign(spanV || 1) * scale * box.height;
+	}
+
+	const signX: 1 | -1 = spanU < 0 ? -1 : 1;
+	const signY: 1 | -1 = spanV < 0 ? -1 : 1;
+	const width = Math.max(min, Math.abs(spanU));
+	const height = Math.max(min, Math.abs(spanV));
+
+	return {
+		width,
+		height,
+		signX,
+		signY,
+		center: {
+			x: movingU ? fixedU + (signX * width) / 2 : 0,
+			y: movingV ? fixedV + (signY * height) / 2 : 0
+		}
+	};
+}
+
 /** Move an object by a world-space delta. */
 export function translateObject(obj: CanvasObject, dx: number, dy: number): void {
 	switch (obj.type) {

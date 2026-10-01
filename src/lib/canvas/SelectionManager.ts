@@ -1,6 +1,7 @@
 // Selection manager — hit-testing, multi-select, selection bounds & handles (§14)
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { pointInEllipse, pointInRect, distSqToSegment, worldToLocal } from '$lib/utils/math';
+import { localVectorToWorld } from '$lib/objects/geometry';
 import type { CanvasObject, ShapeObject, StrokeObject, ConnectorObject } from '$lib/objects/types';
 import { getObjectBounds } from '$lib/objects/bounds';
 import type { ObjectStore } from './ObjectStore';
@@ -97,8 +98,17 @@ export class SelectionManager {
 		return union;
 	}
 
-	/** Compute screen-space handles for the selection */
+	/** Compute screen-space handles for the selection.
+	 * A single rotated object gets handles aligned to its own rotated box (§M1-13). */
 	getHandles(vpTransform: (wx: number, wy: number) => [number, number]): SelectionHandle[] {
+		if (this.selectedIds.size === 1) {
+			const [id] = [...this.selectedIds];
+			const obj = this.store.get(id);
+			const t = obj?.transform;
+			if (obj && t && (t.rotation ?? 0) !== 0 && obj.type !== 'stroke' && obj.type !== 'connector') {
+				return this.rotatedHandles(t, vpTransform);
+			}
+		}
 		const bounds = this.getSelectionBounds();
 		if (!bounds) return [];
 		const { x, y, width: w, height: h } = bounds;
@@ -120,6 +130,35 @@ export class SelectionManager {
 		});
 		// rotation handle: centered above the top edge
 		const [rx, ry] = sx({ x: mid(x, x + w), y: y - 40 });
+		handles.push({ id: 'rotate', position: { x: rx, y: ry }, cursor: 'grab' });
+		return handles;
+	}
+
+	private rotatedHandles(
+		t: { x: number; y: number; width: number; height: number; rotation?: number },
+		vpTransform: (wx: number, wy: number) => [number, number]
+	): SelectionHandle[] {
+		const rotation = t.rotation ?? 0;
+		const center = { x: t.x + t.width / 2, y: t.y + t.height / 2 };
+		const halfW = t.width / 2;
+		const halfH = t.height / 2;
+		const local: [HandleId, number, number][] = [
+			['nw', -halfW, -halfH],
+			['ne', halfW, -halfH],
+			['se', halfW, halfH],
+			['sw', -halfW, halfH],
+			['n', 0, -halfH],
+			['e', halfW, 0],
+			['s', 0, halfH],
+			['w', -halfW, 0]
+		];
+		const handles = local.map(([id, lx, ly]) => {
+			const p = localVectorToWorld({ x: lx, y: ly }, center, rotation);
+			const [sx, sy] = vpTransform(p.x, p.y);
+			return { id, position: { x: sx, y: sy }, cursor: cursorForHandle(id) };
+		});
+		const r = localVectorToWorld({ x: 0, y: -halfH - 40 }, center, rotation);
+		const [rx, ry] = vpTransform(r.x, r.y);
 		handles.push({ id: 'rotate', position: { x: rx, y: ry }, cursor: 'grab' });
 		return handles;
 	}

@@ -20,8 +20,8 @@ export const TOOLBAR_TOOLS: ToolItem[] = [
 	{ id: 'text', icon: 'text', label: 'Text' },
 	{ id: 'sticky', icon: 'sticky', label: 'Sticky Note' },
 	{ id: 'shape', icon: 'shapes', label: 'Shapes' },
-	{ id: 'image', icon: 'image', label: 'Image' }
-	// 'connector' stays hidden until M1-09 (B10)
+	{ id: 'image', icon: 'image', label: 'Image' },
+	{ id: 'connector', icon: 'connector', label: 'Connector' }
 ];
 
 export const CREATE_ITEMS: CreateItem[] = [

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { CanvasEngine } from './CanvasEngine';
+import { CanvasEngine, type ToolId } from './CanvasEngine';
 import { DEFAULT_CAMERA } from './Camera';
 
 function makeEngine() {
@@ -8,9 +8,9 @@ function makeEngine() {
 }
 
 describe('CanvasEngine — setTool (B10)', () => {
-	it('rejects unimplemented tools and keeps the active tool', () => {
+	it('rejects unknown tools and keeps the active tool', () => {
 		const engine = makeEngine();
-		expect(engine.setTool('connector')).toBe(false);
+		expect(engine.setTool('nope' as ToolId)).toBe(false);
 		expect(engine.activeTool).toBe('select');
 		expect(engine.tool).toBe(engine.selectTool);
 	});
@@ -19,6 +19,9 @@ describe('CanvasEngine — setTool (B10)', () => {
 		const engine = makeEngine();
 		expect(engine.setTool('pen')).toBe(true);
 		expect(engine.activeTool).toBe('pen');
+		expect(engine.setTool('connector')).toBe(true);
+		expect(engine.activeTool).toBe('connector');
+		expect(engine.tool).toBe(engine.connectorTool);
 		expect(engine.setTool('select')).toBe(true);
 		expect(engine.activeTool).toBe('select');
 	});

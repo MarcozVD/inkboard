@@ -347,17 +347,36 @@ function renderConnector(ctx: CanvasRenderingContext2D, c: ConnectorObject) {
 	ctx.stroke();
 	ctx.restore();
 
-	if (style.endArrow === 'arrow') {
-		const angle = Math.atan2(end.y - (waypoints.at(-1)?.y ?? start.y), end.x - (waypoints.at(-1)?.x ?? start.x));
-		const headLen = 12;
-		ctx.save();
-		ctx.fillStyle = style.stroke;
-		ctx.beginPath();
-		ctx.moveTo(end.x, end.y);
-		ctx.lineTo(end.x - headLen * Math.cos(angle - Math.PI / 6), end.y - headLen * Math.sin(angle - Math.PI / 6));
-		ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 6), end.y - headLen * Math.sin(angle + Math.PI / 6));
+	const first = waypoints[0] ?? end;
+	const last = waypoints.at(-1) ?? start;
+	if (style.endArrow !== 'none') drawConnectorEnd(ctx, style, end, last, false);
+	if (style.startArrow !== 'none') drawConnectorEnd(ctx, style, start, first, true);
+}
+
+/** Arrow/dot at one end of a connector (`reverse`: the start end). */
+function drawConnectorEnd(
+	ctx: CanvasRenderingContext2D,
+	style: ConnectorObject['style'],
+	tip: { x: number; y: number },
+	from: { x: number; y: number },
+	reverse: boolean
+) {
+	const angle = Math.atan2(tip.y - from.y, tip.x - from.x);
+	const headLen = 12;
+
+	ctx.save();
+	ctx.fillStyle = style.stroke;
+	ctx.strokeStyle = style.stroke;
+	ctx.beginPath();
+	if ((reverse ? style.startArrow : style.endArrow) === 'dot') {
+		ctx.arc(tip.x, tip.y, (style.strokeWidth || 2) * 1.6, 0, Math.PI * 2);
+		ctx.fill();
+	} else {
+		ctx.moveTo(tip.x, tip.y);
+		ctx.lineTo(tip.x - headLen * Math.cos(angle - Math.PI / 6), tip.y - headLen * Math.sin(angle - Math.PI / 6));
+		ctx.lineTo(tip.x - headLen * Math.cos(angle + Math.PI / 6), tip.y - headLen * Math.sin(angle + Math.PI / 6));
 		ctx.closePath();
 		ctx.fill();
-		ctx.restore();
 	}
+	ctx.restore();
 }

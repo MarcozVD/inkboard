@@ -8,6 +8,7 @@ import { TextTool } from '$lib/tools/TextTool';
 import { ShapeTool } from '$lib/tools/ShapeTool';
 import { ImageTool } from '$lib/tools/ImageTool';
 import { StickyNoteTool } from '$lib/tools/StickyNoteTool';
+import { ConnectorTool } from '$lib/tools/ConnectorTool';
 import type { BaseTool } from '$lib/tools/BaseTool';
 import type { CameraState } from '$lib/canvas/Camera';
 import { HistoryManager, type Command } from '$lib/canvas/HistoryManager';
@@ -31,6 +32,7 @@ export class CanvasEngine {
 	readonly shapeTool: ShapeTool;
 	readonly imageTool: ImageTool;
 	readonly stickyTool: StickyNoteTool;
+	readonly connectorTool: ConnectorTool;
 
 	constructor(opts: {
 		camera: () => CameraState;
@@ -57,6 +59,7 @@ export class CanvasEngine {
 		this.shapeTool = new ShapeTool(ctx);
 		this.imageTool = new ImageTool(ctx);
 		this.stickyTool = new StickyNoteTool(ctx);
+		this.connectorTool = new ConnectorTool(ctx);
 		this.tools.set('select', this.selectTool);
 		this.tools.set('pen', new PenTool(ctx));
 		this.tools.set('highlighter', new HighlighterTool(ctx));
@@ -65,6 +68,7 @@ export class CanvasEngine {
 		this.tools.set('shape', this.shapeTool);
 		this.tools.set('image', this.imageTool);
 		this.tools.set('sticky', this.stickyTool);
+		this.tools.set('connector', this.connectorTool);
 	}
 
 	get activeTool(): ToolId {

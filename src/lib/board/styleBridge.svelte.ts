@@ -35,6 +35,8 @@ export function createStyleBridge(deps: StyleBridgeDeps) {
 			Object.assign(engine.shapeTool.config.style, patch);
 		} else if (types.size === 1 && types.has('text')) {
 			Object.assign(engine.textTool.config, patch);
+		} else if (types.size === 1 && types.has('connector')) {
+			Object.assign(engine.connectorTool.config, patch);
 		} else if (types.size === 1 && types.has('sticky_note')) {
 			const index = stickyNoteColors().indexOf(String(patch.backgroundColor));
 			if (index >= 0) engine.stickyTool.setColor(index);

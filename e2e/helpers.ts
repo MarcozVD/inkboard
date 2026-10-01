@@ -21,6 +21,10 @@ export interface StoredObject {
 	style?: Record<string, unknown>;
 	locked?: boolean;
 	groupId?: string;
+	startPoint?: { x: number; y: number };
+	endPoint?: { x: number; y: number };
+	startObjectId?: string;
+	endObjectId?: string;
 	transform: StoredTransform;
 }
 

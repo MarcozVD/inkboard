@@ -44,8 +44,8 @@ test.describe('home', () => {
 		await expect(page.getByTestId('redo')).toBeVisible();
 		await expect(page.locator('.presence')).toHaveCount(1);
 
-		// B10 — connector button hidden until M1-09
-		await expect(page.getByTestId('tool-connector')).toHaveCount(0);
+		// M1-09 — the connector tool is available again
+		await expect(page.getByTestId('tool-connector')).toBeVisible();
 	});
 });
 

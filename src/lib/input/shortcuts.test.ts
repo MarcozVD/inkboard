@@ -33,7 +33,8 @@ describe('shortcuts — tool bindings', () => {
 		expect(shortcutLabelFor('sticky')).toBe('S');
 		expect(shortcutLabelFor('shape')).toBe('R');
 		expect(shortcutLabelFor('image')).toBe('I');
-		expect(shortcutLabelFor('connector')).toBeUndefined();
+		expect(shortcutLabelFor('connector')).toBe('C');
+		expect(shortcutLabelFor('nope')).toBeUndefined();
 	});
 
 	it('exposes command labels for the palette', () => {

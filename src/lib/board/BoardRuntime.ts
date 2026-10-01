@@ -4,6 +4,7 @@ import { InputController } from '$lib/input/InputController';
 import { Renderer } from '$lib/canvas/Renderer';
 import { RenderLoop } from '$lib/canvas/RenderLoop';
 import { BoardSession, type SaveState } from './BoardSession';
+import { syncConnectors } from './connectors';
 import type { CameraState } from '$lib/canvas/Camera';
 import type { Board, EditableObj, GridConfig } from '$lib/objects/types';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -104,6 +105,11 @@ export class BoardRuntime {
 			this.session.scheduleAutosave();
 		});
 		this.engine.store.onChange(this.host.onShellChange);
+		// connectors follow their attached objects (§M1-09)
+		this.engine.store.onChange(() => {
+			const changed = syncConnectors(this.engine.store);
+			if (changed.length) this.engine.store.notifyMoved(changed);
+		});
 		this.session.startForceSave();
 
 		// load existing board (or empty canvas for a fresh one)

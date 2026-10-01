@@ -14,6 +14,7 @@ export const FILL_COLORS = ['none', ...INK_COLORS];
 
 export const PEN_WIDTHS = [1, 3, 6, 12];
 export const SHAPE_WIDTHS = [1, 2, 4, 8];
+export const CONNECTOR_WIDTHS = [1, 2, 4];
 export const FONT_SIZES = [14, 18, 24, 36, 48];
 
 export const STICKY_TEXT_COLOR = '#3a2d00';

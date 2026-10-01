@@ -2,6 +2,7 @@
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import type {
 	CanvasObject,
+	ConnectorObject,
 	ShapeObject,
 	ShapeStyle,
 	StickyNoteObject,
@@ -11,6 +12,7 @@ import type {
 } from '$lib/objects/types';
 import { stickyNoteColors } from '$lib/objects/renderers';
 import {
+	CONNECTOR_WIDTHS,
 	DASH_PATTERN,
 	FILL_COLORS,
 	FONT_SIZES,
@@ -90,6 +92,23 @@ function textControls(first: TextObject, apply: (patch: Record<string, unknown>)
 	return controls;
 }
 
+function connectorControls(
+	style: Pick<ConnectorObject['style'], 'stroke' | 'strokeWidth' | 'startArrow' | 'endArrow'>,
+	prefix: string,
+	apply: (patch: Record<string, unknown>) => void
+): StyleControl[] {
+	const controls: StyleControl[] = [];
+	controls.push(...INK_COLORS.map((color, i) => swatch(`${prefix}-color`, i, color, style.stroke === color, () => apply({ stroke: color }))));
+	controls.push(...CONNECTOR_WIDTHS.map((w, i) => choice(`${prefix}-width`, i, `${w}px`, String(w), style.strokeWidth === w, () => apply({ strokeWidth: w }))));
+	controls.push(choice(`${prefix}-start`, 0, 'Start: none', '⊢', style.startArrow === 'none', () => apply({ startArrow: 'none' })));
+	controls.push(choice(`${prefix}-start`, 1, 'Start: arrow', '◀', style.startArrow === 'arrow', () => apply({ startArrow: 'arrow' })));
+	controls.push(choice(`${prefix}-start`, 2, 'Start: dot', '●', style.startArrow === 'dot', () => apply({ startArrow: 'dot' })));
+	controls.push(choice(`${prefix}-end`, 0, 'End: none', '⊣', style.endArrow === 'none', () => apply({ endArrow: 'none' })));
+	controls.push(choice(`${prefix}-end`, 1, 'End: arrow', '▶', style.endArrow === 'arrow', () => apply({ endArrow: 'arrow' })));
+	controls.push(choice(`${prefix}-end`, 2, 'End: dot', '●', style.endArrow === 'dot', () => apply({ endArrow: 'dot' })));
+	return controls;
+}
+
 /** Controls for the current selection, adapting to the selected object types. */
 export function buildSelectionStyleControls(
 	engine: CanvasEngine,
@@ -112,6 +131,8 @@ export function buildSelectionStyleControls(
 		controls.push(...shapeControls(first.style, first.shape === 'rect', 'shape', apply));
 	} else if (types.size === 1 && types.has('text')) {
 		controls.push(...textControls(objects[0] as TextObject, apply));
+	} else if (types.size === 1 && types.has('connector')) {
+		controls.push(...connectorControls((objects[0] as ConnectorObject).style, 'connector', apply));
 	} else if (types.size === 1 && types.has('sticky_note')) {
 		const first = objects[0] as StickyNoteObject;
 		controls.push(...stickyNoteColors().map((color, i) =>
@@ -141,6 +162,13 @@ export function buildToolStyleControls(engine: CanvasEngine, refresh: () => void
 			...INK_COLORS.map((color, i) => swatch('highlighter-color', i, color, cfg.color === color, () => { cfg.color = color; refresh(); })),
 			...PEN_WIDTHS.map((w, i) => choice('highlighter-width', i, `${w * 3}px`, String(w * 3), cfg.width === w * 3, () => { cfg.width = w * 3; refresh(); }))
 		];
+	}
+
+	if (tool === 'connector') {
+		return connectorControls(engine.connectorTool.config, 'connector', (patch) => {
+			Object.assign(engine.connectorTool.config, patch);
+			refresh();
+		});
 	}
 
 	if (tool === 'shape') {

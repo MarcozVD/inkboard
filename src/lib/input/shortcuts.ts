@@ -26,6 +26,7 @@ export const TOOL_SHORTCUTS: readonly ToolShortcut[] = [
 	{ tool: 'shape', key: 'o', label: 'O', shape: 'ellipse' },
 	{ tool: 'shape', key: 'l', label: 'L', shape: 'line' },
 	{ tool: 'shape', key: 'a', label: 'A', shape: 'arrow' },
+	{ tool: 'connector', key: 'c', label: 'C' },
 	{ tool: 'image', key: 'i', label: 'I' }
 ];
 

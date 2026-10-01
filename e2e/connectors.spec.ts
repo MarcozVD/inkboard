@@ -60,9 +60,7 @@ test.describe('M1-09 — connectors', () => {
 
 		// undo/redo of the creation
 		await page.keyboard.press('Control+z');
-		await expect
-			.poll(async () => connectorOf(await storedObjects(page, id)) ?? null, { timeout: TIMEOUT })
-			.toBeNull();
+		await expect.poll(async () => connectorOf(await storedObjects(page, id)) ?? null, { timeout: TIMEOUT }).toBeNull();
 		await page.keyboard.press('Control+Shift+z');
 		await expect
 			.poll(async () => connectorOf(await storedObjects(page, id))?.endObjectId ?? null, { timeout: TIMEOUT })

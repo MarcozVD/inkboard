@@ -80,8 +80,7 @@
 			e.preventDefault();
 			cancel();
 		}
-	}}
-></textarea>
+	}}></textarea>
 
 <style>
 	.text-editor {

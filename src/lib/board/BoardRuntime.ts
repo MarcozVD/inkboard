@@ -61,8 +61,7 @@ export class BoardRuntime {
 			setCamera: host.setCamera,
 			onToolPointerDown: (p, e) =>
 				this.engine.pointerDown(p.x, p.y, { shift: e.shiftKey, button: e.button, pressure: e.pressure }),
-			onToolPointerMove: (p, e) =>
-				this.engine.pointerMove(p.x, p.y, { shift: e.shiftKey, pressure: e.pressure }),
+			onToolPointerMove: (p, e) => this.engine.pointerMove(p.x, p.y, { shift: e.shiftKey, pressure: e.pressure }),
 			onToolPointerUp: (e) => {
 				this.engine.pointerUp({ button: e.button, pressure: e.pressure });
 				host.onPointerUp();
@@ -123,13 +122,17 @@ export class BoardRuntime {
 			.catch(() => this.host.onDirty());
 
 		// ── Flush on exit paths (B05) ──
-		const onPageHide = () => { void this.session.flushSave(); };
+		const onPageHide = () => {
+			void this.session.flushSave();
+		};
 		const onVisibilityChange = () => {
 			if (document.visibilityState === 'hidden') void this.session.flushSave();
 		};
 		if ('__TAURI_INTERNALS__' in window) {
 			getCurrentWindow()
-				.onCloseRequested(async () => { await this.session.flushSave(); })
+				.onCloseRequested(async () => {
+					await this.session.flushSave();
+				})
 				.then((u) => (this.unlistenClose = u))
 				.catch(() => {});
 		}

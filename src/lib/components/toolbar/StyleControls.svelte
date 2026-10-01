@@ -2,7 +2,8 @@
 	// StyleControls — renders style descriptors (swatches, choices, ranges).
 	import type { StyleControl } from '$lib/board/styleControls';
 
-	let { controls, orientation = 'horizontal' }: { controls: StyleControl[]; orientation?: 'horizontal' | 'vertical' } = $props();
+	let { controls, orientation = 'horizontal' }: { controls: StyleControl[]; orientation?: 'horizontal' | 'vertical' } =
+		$props();
 </script>
 
 {#if controls.length > 0}
@@ -10,7 +11,14 @@
 		{#each controls as c (c.testid)}
 			{#if c.kind === 'swatch'}
 				{#if c.color === 'none'}
-					<button class="style-choice" class:active={c.active} title={c.label} aria-label={c.label} data-testid={c.testid} onclick={c.onPick}>∅</button>
+					<button
+						class="style-choice"
+						class:active={c.active}
+						title={c.label}
+						aria-label={c.label}
+						data-testid={c.testid}
+						onclick={c.onPick}>∅</button
+					>
 				{:else}
 					<button
 						class="style-swatch"
@@ -23,7 +31,14 @@
 					></button>
 				{/if}
 			{:else if c.kind === 'choice'}
-				<button class="style-choice" class:active={c.active} title={c.label} aria-label={c.label} data-testid={c.testid} onclick={c.onClick}>
+				<button
+					class="style-choice"
+					class:active={c.active}
+					title={c.label}
+					aria-label={c.label}
+					data-testid={c.testid}
+					onclick={c.onClick}
+				>
 					{c.text}
 				</button>
 			{:else}

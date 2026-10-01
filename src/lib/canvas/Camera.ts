@@ -35,12 +35,7 @@ export function clampZoom(zoom: number, camera: CameraState): number {
  * This is the correct zoom-at-cursor math: the world point under the cursor
  * must map to the same screen pixel before and after the zoom change.
  */
-export function zoomAt(
-	camera: CameraState,
-	screenX: number,
-	screenY: number,
-	factor: number
-): CameraState {
+export function zoomAt(camera: CameraState, screenX: number, screenY: number, factor: number): CameraState {
 	const newZoom = clampZoom(camera.zoom * factor, camera);
 	const worldX = (screenX - camera.x) / camera.zoom;
 	const worldY = (screenY - camera.y) / camera.zoom;

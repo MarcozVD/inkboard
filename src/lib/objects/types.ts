@@ -101,7 +101,8 @@ export interface BaseStyle {
 	opacity: number;
 }
 
-export type CanvasObject = StrokeObject | TextObject | ShapeObject | ImageObject | StickyNoteObject | ConnectorObject | GroupObject;
+export type CanvasObject =
+	StrokeObject | TextObject | ShapeObject | ImageObject | StickyNoteObject | ConnectorObject | GroupObject;
 
 // ── Stroke ──
 export interface StrokeObject extends BaseObject {

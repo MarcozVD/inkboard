@@ -61,7 +61,12 @@ export class ObjectStore {
 		Object.assign(obj, patch);
 		obj.updatedAt = Date.now();
 		const newBounds = getObjectBounds(obj);
-		if (oldBounds.x !== newBounds.x || oldBounds.y !== newBounds.y || oldBounds.width !== newBounds.width || oldBounds.height !== newBounds.height) {
+		if (
+			oldBounds.x !== newBounds.x ||
+			oldBounds.y !== newBounds.y ||
+			oldBounds.width !== newBounds.width ||
+			oldBounds.height !== newBounds.height
+		) {
 			this.spatial.update(id, oldBounds, newBounds);
 		}
 		this.emit({ added: [], modified: [id], removed: [] });
@@ -114,11 +119,17 @@ export class ObjectStore {
 
 	/** Candidates for point hit-testing (§14) */
 	queryPoint(point: Vec2, padding = 0): CanvasObject[] {
-		return this.spatial.queryPoint(point, padding).map((id) => this.objects.get(id)!).filter(Boolean);
+		return this.spatial
+			.queryPoint(point, padding)
+			.map((id) => this.objects.get(id)!)
+			.filter(Boolean);
 	}
 
 	queryRect(rect: Rect): CanvasObject[] {
-		return this.spatial.queryRect(rect).map((id) => this.objects.get(id)!).filter(Boolean);
+		return this.spatial
+			.queryRect(rect)
+			.map((id) => this.objects.get(id)!)
+			.filter(Boolean);
 	}
 
 	// ── Z-order ──
@@ -139,9 +150,7 @@ export class ObjectStore {
 		for (const obj of this.objects.values()) {
 			if (!ids.includes(obj.id)) top = Math.max(top, obj.zIndex ?? 0);
 		}
-		const sorted = [...ids].sort(
-			(a, b) => (this.objects.get(a)?.zIndex ?? 0) - (this.objects.get(b)?.zIndex ?? 0)
-		);
+		const sorted = [...ids].sort((a, b) => (this.objects.get(a)?.zIndex ?? 0) - (this.objects.get(b)?.zIndex ?? 0));
 		const modified: string[] = [];
 		sorted.forEach((id, i) => {
 			const obj = this.objects.get(id);

@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	applyGeometry,
-	captureGeometry,
-	rotateObject,
-	scaleObject,
-	translateObject
-} from './geometry';
+import { applyGeometry, captureGeometry, rotateObject, scaleObject, translateObject } from './geometry';
 import { getObjectBounds, transformBounds } from './bounds';
 import { createConnector, createShape, createStickyNote, createStroke } from './factory';
 import { worldToLocal } from '$lib/utils/math';

@@ -6,9 +6,7 @@ import { expandSelection } from './groups';
 
 export function nudgeSelection(engine: CanvasEngine, dx: number, dy: number): boolean {
 	const store = engine.store;
-	const ids = expandSelection(store, engine.selectionManager.selected).filter(
-		(id) => !store.get(id)?.locked
-	);
+	const ids = expandSelection(store, engine.selectionManager.selected).filter((id) => !store.get(id)?.locked);
 	if (ids.length === 0) return false;
 
 	const before = new Map<string, GeometrySnapshot>();

@@ -177,11 +177,7 @@ export class Renderer {
 		).getActiveRectSelect?.();
 		if (marquee) {
 			const [mx0, my0] = this.worldToScreen(camera, marquee.x, marquee.y);
-			const [mx1, my1] = this.worldToScreen(
-				camera,
-				marquee.x + marquee.width,
-				marquee.y + marquee.height
-			);
+			const [mx1, my1] = this.worldToScreen(camera, marquee.x + marquee.width, marquee.y + marquee.height);
 			ctx.save();
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 			ctx.fillStyle = 'rgba(255,255,255,0.12)';

@@ -43,26 +43,20 @@ test.describe('B03 — in-canvas text editing', () => {
 		const id = await createBoard(page);
 		await createEditable(page, 'text', { x: 500, y: 250 }, 'Hello board');
 
-		await expect
-			.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT })
-			.toBe('Hello board');
+		await expect.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT }).toBe('Hello board');
 	});
 
 	test('sticky tool: typing and Enter persists the content', async ({ page }) => {
 		const id = await createBoard(page);
 		await createEditable(page, 'sticky', { x: 600, y: 250 }, 'Note');
 
-		await expect
-			.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT })
-			.toBe('Note');
+		await expect.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT }).toBe('Note');
 	});
 
 	test('text: double click edits; undo reverts the edit', async ({ page }) => {
 		const id = await createBoard(page);
 		await createEditable(page, 'text', { x: 500, y: 250 }, 'Hello');
-		await expect
-			.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT })
-			.toBe('Hello');
+		await expect.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT }).toBe('Hello');
 
 		await selectTool(page, 'select');
 		await dblclickCanvas(page, { x: 505, y: 265 });
@@ -74,14 +68,10 @@ test.describe('B03 — in-canvas text editing', () => {
 		await page.keyboard.type('Hello world');
 		await page.keyboard.press('Enter');
 		await expect(editor).toBeHidden();
-		await expect
-			.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT })
-			.toBe('Hello world');
+		await expect.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT }).toBe('Hello world');
 
 		await page.keyboard.press('Control+z');
-		await expect
-			.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT })
-			.toBe('Hello');
+		await expect.poll(async () => storedContent(page, id, 'text'), { timeout: TIMEOUT }).toBe('Hello');
 	});
 
 	test('text: Esc cancels and discards the empty text (and its history entry)', async ({ page }) => {
@@ -114,9 +104,7 @@ test.describe('B03 — in-canvas text editing', () => {
 	test('sticky: double click edits; undo reverts the edit', async ({ page }) => {
 		const id = await createBoard(page);
 		await createEditable(page, 'sticky', { x: 600, y: 250 }, 'Note');
-		await expect
-			.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT })
-			.toBe('Note');
+		await expect.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT }).toBe('Note');
 
 		await selectTool(page, 'select');
 		await dblclickCanvas(page, { x: 610, y: 265 });
@@ -128,14 +116,10 @@ test.describe('B03 — in-canvas text editing', () => {
 		await page.keyboard.type('Note 2');
 		await page.keyboard.press('Enter');
 		await expect(editor).toBeHidden();
-		await expect
-			.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT })
-			.toBe('Note 2');
+		await expect.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT }).toBe('Note 2');
 
 		await page.keyboard.press('Control+z');
-		await expect
-			.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT })
-			.toBe('Note');
+		await expect.poll(async () => storedContent(page, id, 'sticky_note'), { timeout: TIMEOUT }).toBe('Note');
 	});
 
 	test('sticky: Esc cancels and discards the empty sticky', async ({ page }) => {

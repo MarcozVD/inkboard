@@ -35,7 +35,12 @@ function computeBounds(objects: CanvasObject[]): Bounds | null {
  */
 export async function boardToPngDataUrl(
 	objects: CanvasObject[],
-	opts: { scale?: number; background?: string; grid?: GridConfig; getImage?: (src: string) => HTMLImageElement | undefined } = {}
+	opts: {
+		scale?: number;
+		background?: string;
+		grid?: GridConfig;
+		getImage?: (src: string) => HTMLImageElement | undefined;
+	} = {}
 ): Promise<string> {
 	const scale = opts.scale ?? 2;
 	const bounds = computeBounds(objects);

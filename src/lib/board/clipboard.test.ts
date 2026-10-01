@@ -90,9 +90,7 @@ describe('createClipboard', () => {
 		expect(first.transform.x).toBeCloseTo(-5);
 
 		await clipboard.paste({ x: 0, y: 0 });
-		const second = engine.store
-			.getAll()
-			.find((o) => o.id !== rect.id && o.id !== first.id)!;
+		const second = engine.store.getAll().find((o) => o.id !== rect.id && o.id !== first.id)!;
 		expect(second.transform.x).toBeCloseTo(15);
 	});
 });

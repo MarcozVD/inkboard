@@ -36,14 +36,10 @@ test.describe('M1-04 — clipboard', () => {
 		await selectTool(page, 'select');
 		await page.mouse.click(box.x + 400, box.y + 275);
 		await page.keyboard.press('Control+x');
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(0);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(0);
 
 		await page.keyboard.press('Control+z');
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(1);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(1);
 	});
 
 	test('plain text pastes as a text object', async ({ page }) => {
@@ -55,10 +51,9 @@ test.describe('M1-04 — clipboard', () => {
 		await page.keyboard.press('Control+v');
 
 		await expect
-			.poll(
-				async () => (await storedObjects(page, id)).find((o) => o.type === 'text')?.content ?? null,
-				{ timeout: TIMEOUT }
-			)
+			.poll(async () => (await storedObjects(page, id)).find((o) => o.type === 'text')?.content ?? null, {
+				timeout: TIMEOUT
+			})
 			.toBe('hola mundo');
 	});
 });

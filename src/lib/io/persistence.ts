@@ -40,18 +40,20 @@ function lsPut(id: string, json: string): void {
 
 function lsList(): Array<{ id: string; name: string; updated_at: number }> {
 	const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-	return Object.entries(all).map(([id, json]) => {
-		try {
-			const board = JSON.parse(json as string) as { board?: { name?: string; updatedAt?: number } };
-			return {
-				id,
-				name: board.board?.name ?? 'Untitled',
-				updated_at: board.board?.updatedAt ?? 0
-			};
-		} catch {
-			return { id, name: 'Untitled', updated_at: 0 };
-		}
-	}).sort((a, b) => b.updated_at - a.updated_at);
+	return Object.entries(all)
+		.map(([id, json]) => {
+			try {
+				const board = JSON.parse(json as string) as { board?: { name?: string; updatedAt?: number } };
+				return {
+					id,
+					name: board.board?.name ?? 'Untitled',
+					updated_at: board.board?.updatedAt ?? 0
+				};
+			} catch {
+				return { id, name: 'Untitled', updated_at: 0 };
+			}
+		})
+		.sort((a, b) => b.updated_at - a.updated_at);
 }
 
 // ── Public API ──

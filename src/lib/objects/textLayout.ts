@@ -88,11 +88,7 @@ export function layoutText(content: string, style: MeasurableStyle, maxWidth?: n
 }
 
 /** Box that fits the content (with padding and the 40×30 minimums). */
-export function fitBox(
-	style: MeasurableStyle,
-	content: string,
-	maxWidth?: number
-): { width: number; height: number } {
+export function fitBox(style: MeasurableStyle, content: string, maxWidth?: number): { width: number; height: number } {
 	const pad = style.padding ?? 4;
 	const layout = layoutText(content, style, maxWidth ? Math.max(1, maxWidth - pad * 2) : undefined);
 	return {

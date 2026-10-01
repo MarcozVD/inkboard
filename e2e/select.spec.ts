@@ -133,9 +133,7 @@ test.describe('B01 — selection and transforms', () => {
 		await dragMouse(page, { x: 260, y: 180 }, { x: 620, y: 360 });
 		await page.keyboard.press('Delete');
 
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(0);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(0);
 	});
 });
 
@@ -194,15 +192,11 @@ test.describe('B06 — eraser undo', () => {
 		await dragMouse(page, { x: 330, y: 270 }, { x: 530, y: 270 }, 5);
 		// wait until the erasure is actually persisted before undoing,
 		// otherwise the stored board still holds the pre-erase state
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(0);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(0);
 
 		await page.keyboard.press('Control+z');
 
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(2);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(2);
 	});
 });
 
@@ -256,10 +250,7 @@ test.describe('B07 — z-order', () => {
 			.poll(
 				async () => {
 					const objs = await storedObjects(page, id);
-					return (
-						objs.findIndex((o) => o.content === 'AAAA') >
-						objs.findIndex((o) => o.content === 'BBBB')
-					);
+					return objs.findIndex((o) => o.content === 'AAAA') > objs.findIndex((o) => o.content === 'BBBB');
 				},
 				{ timeout: TIMEOUT }
 			)
@@ -336,8 +327,6 @@ test.describe('B12 — rotation convention', () => {
 		await expect(page.locator('.ctx-toolbar')).toHaveCount(1);
 
 		await page.keyboard.press('Delete');
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(0);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(0);
 	});
 });

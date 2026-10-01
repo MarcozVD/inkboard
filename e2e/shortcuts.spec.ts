@@ -32,12 +32,8 @@ test.describe('B09 — tool shortcuts', () => {
 		await expect(page.getByTestId('tool-shape').locator('kbd')).toHaveText('R');
 
 		await page.keyboard.press('Control+k');
-		await expect(
-			page.locator('.palette-item').filter({ hasText: 'Sticky note' }).locator('.pi-hint')
-		).toHaveText('S');
-		await expect(
-			page.locator('.palette-item').filter({ hasText: 'Shapes' }).locator('.pi-hint')
-		).toHaveText('R');
+		await expect(page.locator('.palette-item').filter({ hasText: 'Sticky note' }).locator('.pi-hint')).toHaveText('S');
+		await expect(page.locator('.palette-item').filter({ hasText: 'Shapes' }).locator('.pi-hint')).toHaveText('R');
 	});
 });
 

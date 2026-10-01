@@ -3,13 +3,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { Command, HistoryManager } from './HistoryManager';
 import type { ObjectStore } from './ObjectStore';
-import type {
-	CanvasObject,
-	GroupObject,
-	StickyNoteObject,
-	TextObject,
-	Transform
-} from '$lib/objects/types';
+import type { CanvasObject, GroupObject, StickyNoteObject, TextObject, Transform } from '$lib/objects/types';
 import { applyGeometry, type GeometrySnapshot } from '$lib/objects/geometry';
 import { fitBox } from '$lib/objects/textLayout';
 import { getObjectBounds } from '$lib/objects/bounds';
@@ -369,11 +363,7 @@ export function dropLastAddCommand(history: HistoryManager, id: string): boolean
 // ── Selection actions (undoable, through engine.execute) ──
 
 /** Apply one style patch to objects as a single undo step (§M1-03). */
-export function updateStyles(
-	engine: CanvasEngine,
-	ids: string[],
-	patch: Record<string, unknown>
-): void {
+export function updateStyles(engine: CanvasEngine, ids: string[], patch: Record<string, unknown>): void {
 	const store = engine.store;
 	const before = new Map<string, CanvasObject['style']>();
 	const after = new Map<string, CanvasObject['style']>();
@@ -417,9 +407,7 @@ export function reorderObjects(engine: CanvasEngine, mode: ReorderMode): boolean
  * Locked objects are skipped; group shells left without children are removed too. */
 export function deleteObjects(engine: CanvasEngine, ids = engine.selectionManager.selected): void {
 	const store = engine.store;
-	const objs = ids
-		.map((id) => store.get(id))
-		.filter((obj): obj is CanvasObject => !!obj && !obj.locked);
+	const objs = ids.map((id) => store.get(id)).filter((obj): obj is CanvasObject => !!obj && !obj.locked);
 	if (objs.length === 0) return;
 	const removedIds = new Set(objs.map((o) => o.id));
 	// group shells whose children are all going away
@@ -459,11 +447,7 @@ export function fitContentBox(
 	content: string,
 	maxWidth?: number
 ): { width: number; height: number } {
-	return fitBox(
-		{ ...obj.style, lineHeight: obj.type === 'text' ? obj.style.lineHeight : 1.3 },
-		content,
-		maxWidth
-	);
+	return fitBox({ ...obj.style, lineHeight: obj.type === 'text' ? obj.style.lineHeight : 1.3 }, content, maxWidth);
 }
 
 function isEditableContent(obj: CanvasObject | undefined): obj is TextObject | StickyNoteObject {

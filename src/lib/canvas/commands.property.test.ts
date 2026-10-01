@@ -18,13 +18,7 @@ import {
 	UpdateTransformCommand,
 	fitContentBox
 } from './commands';
-import {
-	createConnector,
-	createShape,
-	createStickyNote,
-	createStroke,
-	createText
-} from '$lib/objects/factory';
+import { createConnector, createShape, createStickyNote, createStroke, createText } from '$lib/objects/factory';
 import { captureGeometry, rotateObject, scaleObject, translateObject } from '$lib/objects/geometry';
 import type { CanvasObject, StickyNoteObject, TextObject } from '$lib/objects/types';
 
@@ -43,8 +37,7 @@ function stripTimestamps(value: unknown): unknown {
 	return value;
 }
 
-const snapshot = (store: ObjectStore): unknown =>
-	stripTimestamps(JSON.parse(JSON.stringify(store.toJSON())));
+const snapshot = (store: ObjectStore): unknown => stripTimestamps(JSON.parse(JSON.stringify(store.toJSON())));
 
 function makeObject(kind: number, i: number): CanvasObject {
 	switch (kind % 5) {
@@ -251,7 +244,12 @@ describe('commands — invariants (fast-check)', () => {
 					};
 
 					// exercises GroupCommand on a real selection first
-					run(new GroupCommand(store, objects.slice(0, Math.max(1, Math.floor(objects.length / 2))).map((o) => o.id)));
+					run(
+						new GroupCommand(
+							store,
+							objects.slice(0, Math.max(1, Math.floor(objects.length / 2))).map((o) => o.id)
+						)
+					);
 
 					for (const op of ops) {
 						const cmd = buildCommand(store, op);

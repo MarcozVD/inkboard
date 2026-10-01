@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-	clampZoom,
-	DEFAULT_CAMERA,
-	pan,
-	resetZoom,
-	screenToWorld,
-	worldToScreen,
-	zoomAt
-} from './Camera';
+import { clampZoom, DEFAULT_CAMERA, pan, resetZoom, screenToWorld, worldToScreen, zoomAt } from './Camera';
 
 describe('Camera', () => {
 	it('worldToScreen / screenToWorld are inverse at zoom 1, no pan', () => {

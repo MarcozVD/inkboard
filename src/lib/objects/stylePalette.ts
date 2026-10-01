@@ -1,14 +1,5 @@
 // Content palettes (One Color Rule: UI stays monochrome, only content is colored).
-export const INK_COLORS = [
-	'#e8e9ec',
-	'#ffd666',
-	'#ff9f66',
-	'#ff7a7a',
-	'#7acc7a',
-	'#66b3ff',
-	'#b08cff',
-	'#ff8cbf'
-];
+export const INK_COLORS = ['#e8e9ec', '#ffd666', '#ff9f66', '#ff7a7a', '#7acc7a', '#66b3ff', '#b08cff', '#ff8cbf'];
 
 export const FILL_COLORS = ['none', ...INK_COLORS];
 

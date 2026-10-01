@@ -20,26 +20,13 @@
 </script>
 
 <div class="zoom-controls">
-	<button
-		class="zc-btn"
-		aria-label="Zoom out"
-		onclick={onZoomOut}
-	><Icon name="zoom-out" /></button>
+	<button class="zc-btn" aria-label="Zoom out" onclick={onZoomOut}><Icon name="zoom-out" /></button>
 	<button class="zc-label" title="Reset zoom to 100%" onclick={onReset}>
 		{Math.round(zoom * 100)}%
 	</button>
-	<button
-		class="zc-btn"
-		aria-label="Zoom in"
-		onclick={onZoomIn}
-	><Icon name="zoom-in" /></button>
+	<button class="zc-btn" aria-label="Zoom in" onclick={onZoomIn}><Icon name="zoom-in" /></button>
 	<span class="zc-divider"></span>
-	<button
-		class="zc-btn"
-		aria-label="Fit view"
-		title="Fit view"
-		onclick={onFit}
-	><Icon name="fit" /></button>
+	<button class="zc-btn" aria-label="Fit view" title="Fit view" onclick={onFit}><Icon name="fit" /></button>
 </div>
 
 <style>

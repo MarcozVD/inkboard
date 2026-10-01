@@ -11,9 +11,7 @@ test.describe('B05 — changes must survive leaving the board', () => {
 		await page.goto('/');
 		await expect(page.getByTestId('new-board')).toBeVisible();
 
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(1);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(1);
 	});
 
 	test('reloading right after an edit keeps the change', async ({ page }) => {
@@ -22,9 +20,7 @@ test.describe('B05 — changes must survive leaving the board', () => {
 		await page.reload();
 		await page.locator('canvas.board-canvas').waitFor({ state: 'visible' });
 
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(1);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(1);
 	});
 
 	test('B17 — createdAt survives save/load cycles', async ({ page }) => {
@@ -35,9 +31,7 @@ test.describe('B05 — changes must survive leaving the board', () => {
 		await drawShape(page, 'rect', { x: 300, y: 200 }, { x: 500, y: 350 });
 		await page.reload();
 		await page.locator('canvas.board-canvas').waitFor({ state: 'visible' });
-		await expect
-			.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT })
-			.toBe(1);
+		await expect.poll(async () => (await storedObjects(page, id)).length, { timeout: TIMEOUT }).toBe(1);
 
 		const after = await readStoredBoard(page, id);
 		expect(after?.createdAt).toBe(before?.createdAt);

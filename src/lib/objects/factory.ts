@@ -20,7 +20,15 @@ function transform(x: number, y: number, width: number, height: number, rotation
 }
 
 function base<T extends CanvasObject['type']>(id: string, type: T, t: Transform) {
-	return { id: id ?? uuidv4(), type, transform: t, locked: false, visible: true, createdAt: Date.now(), updatedAt: Date.now() };
+	return {
+		id: id ?? uuidv4(),
+		type,
+		transform: t,
+		locked: false,
+		visible: true,
+		createdAt: Date.now(),
+		updatedAt: Date.now()
+	};
 }
 
 export function createStroke(points: number[], style: Partial<StrokeStyle> = {}, t?: Transform): StrokeObject {
@@ -30,7 +38,15 @@ export function createStroke(points: number[], style: Partial<StrokeStyle> = {},
 	const minY = Math.min(...ys);
 	const maxX = Math.max(...xs);
 	const maxY = Math.max(...ys);
-	const s: StrokeStyle = { color: '#e8e9ec', width: 3, lineCap: 'round', lineJoin: 'round', isHighlighter: false, opacity: 1, ...style };
+	const s: StrokeStyle = {
+		color: '#e8e9ec',
+		width: 3,
+		lineCap: 'round',
+		lineJoin: 'round',
+		isHighlighter: false,
+		opacity: 1,
+		...style
+	};
 	return {
 		...base(uuidv4(), 'stroke', t ?? transform(minX, minY, maxX - minX, maxY - minY)),
 		points,
@@ -58,12 +74,24 @@ export function createText(x: number, y: number, content: string, style: Partial
 	return { ...base(uuidv4(), 'text', transform(x, y, width, height)), content, style: s };
 }
 
-export function createShape(x: number, y: number, width: number, height: number, shape: ShapeType, style: Partial<ShapeStyle> = {}): ShapeObject {
+export function createShape(
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	shape: ShapeType,
+	style: Partial<ShapeStyle> = {}
+): ShapeObject {
 	const s: ShapeStyle = { fill: 'none', stroke: '#e8e9ec', strokeWidth: 2, opacity: 1, ...style };
 	return { ...base(uuidv4(), 'shape', transform(x, y, width, height)), shape, style: s };
 }
 
-export function createStickyNote(x: number, y: number, content: string, style: Partial<StickyNoteObject['style']> = {}): StickyNoteObject {
+export function createStickyNote(
+	x: number,
+	y: number,
+	content: string,
+	style: Partial<StickyNoteObject['style']> = {}
+): StickyNoteObject {
 	const s = {
 		backgroundColor: '#FFD666',
 		textColor: '#3a2d00',
@@ -76,7 +104,13 @@ export function createStickyNote(x: number, y: number, content: string, style: P
 	return { ...base(uuidv4(), 'sticky_note', transform(x, y, 220, 200)), content, style: s };
 }
 
-export function createImage(x: number, y: number, src: string, originalWidth: number, originalHeight: number): ImageObject {
+export function createImage(
+	x: number,
+	y: number,
+	src: string,
+	originalWidth: number,
+	originalHeight: number
+): ImageObject {
 	const aspect = originalHeight / Math.max(1, originalWidth);
 	const width = Math.min(400, originalWidth || 400);
 	const height = width * aspect;
@@ -89,8 +123,20 @@ export function createImage(x: number, y: number, src: string, originalWidth: nu
 	};
 }
 
-export function createConnector(start: { x: number; y: number }, end: { x: number; y: number }, style: Partial<ConnectorObject['style']> = {}): ConnectorObject {
-	const s = { stroke: '#e8e9ec', strokeWidth: 2, startArrow: 'none', endArrow: 'none', routing: 'straight', opacity: 1, ...style } as ConnectorObject['style'];
+export function createConnector(
+	start: { x: number; y: number },
+	end: { x: number; y: number },
+	style: Partial<ConnectorObject['style']> = {}
+): ConnectorObject {
+	const s = {
+		stroke: '#e8e9ec',
+		strokeWidth: 2,
+		startArrow: 'none',
+		endArrow: 'none',
+		routing: 'straight',
+		opacity: 1,
+		...style
+	} as ConnectorObject['style'];
 	const minX = Math.min(start.x, end.x);
 	const minY = Math.min(start.y, end.y);
 	return {

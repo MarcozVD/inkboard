@@ -28,13 +28,13 @@
 	class="tool-btn"
 	class:active
 	class:disabled
-	disabled={disabled}
+	{disabled}
 	aria-label={label}
 	aria-pressed={active}
 	data-testid={testid}
-	onclick={onclick}
+	{onclick}
 >
-	<Icon name={icon} size={size} />
+	<Icon name={icon} {size} />
 	{#if !disabled}
 		<span class="tooltip" role="tooltip">
 			{label}{#if shortcut}<kbd>{shortcut}</kbd>{/if}

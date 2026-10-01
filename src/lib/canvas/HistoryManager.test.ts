@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HistoryManager } from './HistoryManager';
-import { AddObjectCommand, RemoveObjectCommand, UpdateTransformCommand } from './commands';
+import { AddObjectsCommand, RemoveObjectsCommand, UpdateTransformCommand } from './commands';
 import { ObjectStore } from './ObjectStore';
 import { createShape, createStroke, createText } from '$lib/objects/factory';
 import { captureGeometry, translateObject } from '$lib/objects/geometry';
@@ -75,13 +75,52 @@ describe('HistoryManager', () => {
 	});
 });
 
-describe('AddObjectCommand', () => {
+describe('HistoryManager transactions', () => {
+	function counterCommand(counter: { value: number }, delta: number) {
+		return {
+			description: 'count',
+			undo: () => { counter.value -= delta; },
+			redo: () => { counter.value += delta; }
+		};
+	}
+
+	it('commitTransaction groups commands into one undo step', () => {
+		const h = new HistoryManager();
+		const counter = { value: 0 };
+		h.beginTransaction('tx');
+		h.execute(counterCommand(counter, 1));
+		h.execute(counterCommand(counter, 2));
+		h.commitTransaction();
+
+		expect(counter.value).toBe(3);
+		expect(h.canUndo).toBe(true);
+		h.undo();
+		expect(counter.value).toBe(0);
+		h.redo();
+		expect(counter.value).toBe(3);
+	});
+
+	it('rollbackTransaction undoes executed commands and leaves history untouched', () => {
+		const h = new HistoryManager();
+		const counter = { value: 0 };
+		h.beginTransaction('tx');
+		h.execute(counterCommand(counter, 5));
+		h.execute(counterCommand(counter, 5));
+		expect(counter.value).toBe(10);
+		h.rollbackTransaction();
+
+		expect(counter.value).toBe(0);
+		expect(h.canUndo).toBe(false);
+	});
+});
+
+describe('AddObjectsCommand', () => {
 	it('adds then removes on undo/redo', () => {
 		const store = new ObjectStore();
 		const obj = createShape(0, 0, 10, 10, 'rect');
-		store.add(obj);
+		const cmd = new AddObjectsCommand(store, [obj]);
+		cmd.redo();
 		expect(store.size()).toBe(1);
-		const cmd = new AddObjectCommand(store, obj);
 		cmd.undo();
 		expect(store.size()).toBe(0);
 		cmd.redo();
@@ -89,13 +128,14 @@ describe('AddObjectCommand', () => {
 	});
 });
 
-describe('RemoveObjectCommand', () => {
+describe('RemoveObjectsCommand', () => {
 	it('removes then restores on undo/redo', () => {
 		const store = new ObjectStore();
 		const obj = createShape(0, 0, 10, 10, 'rect');
 		store.add(obj);
-		store.remove(obj.id);
-		const cmd = new RemoveObjectCommand(store, obj);
+		const cmd = new RemoveObjectsCommand(store, [obj]);
+		cmd.redo();
+		expect(store.size()).toBe(0);
 		cmd.undo();
 		expect(store.size()).toBe(1);
 		cmd.redo();

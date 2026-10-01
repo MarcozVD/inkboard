@@ -23,7 +23,8 @@ function makeTool() {
 		store,
 		camera: () => DEFAULT_CAMERA,
 		onDirty: () => {},
-		pushHistory: (cmd: Command) => history.push(cmd)
+		execute: (cmd: Command) => history.execute(cmd),
+		discardAdded: (id: string) => store.remove(id)
 	});
 	return { store, history, tool };
 }

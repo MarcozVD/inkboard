@@ -7,17 +7,71 @@ export interface Command {
 	redo(): void;
 }
 
+/** Several commands as one undo step. */
+export class CompositeCommand implements Command {
+	constructor(
+		public description: string,
+		private commands: Command[]
+	) {}
+
+	undo(): void {
+		for (let i = this.commands.length - 1; i >= 0; i--) this.commands[i].undo();
+	}
+
+	redo(): void {
+		for (const cmd of this.commands) cmd.redo();
+	}
+}
+
 export class HistoryManager {
 	private undoStack: Command[] = [];
 	private redoStack: Command[] = [];
 	private listeners = new Set<(canUndo: boolean, canRedo: boolean) => void>();
+	private transaction: { description: string; commands: Command[] } | null = null;
 
 	constructor(private maxSize = 200) {}
 
-	/** Execute a command and push it onto the undo stack. */
+	/** Execute a command and record it (or collect it into the open transaction). */
 	execute(command: Command): void {
 		command.redo();
+		if (this.transaction) {
+			this.transaction.commands.push(command);
+			return;
+		}
 		this.push(command);
+	}
+
+	/** Commands grouped as one undo step. */
+	batch(commands: Command[], description = 'Batch'): Command {
+		return new CompositeCommand(description, commands);
+	}
+
+	/** Open a transaction: everything executed until commit is one undo step. */
+	beginTransaction(description = 'Transaction'): void {
+		if (this.transaction) throw new Error('HistoryManager: transaction already open');
+		this.transaction = { description, commands: [] };
+	}
+
+	/** Close the transaction and push it as a single command (if anything ran). */
+	commitTransaction(): void {
+		const tx = this.transaction;
+		if (!tx) return;
+		this.transaction = null;
+		if (tx.commands.length === 0) return;
+		if (tx.commands.length === 1) {
+			this.push(tx.commands[0]);
+			return;
+		}
+		this.push(new CompositeCommand(tx.description, tx.commands));
+	}
+
+	/** Abort the transaction, undoing every command executed inside it. */
+	rollbackTransaction(): void {
+		const tx = this.transaction;
+		if (!tx) return;
+		this.transaction = null;
+		for (let i = tx.commands.length - 1; i >= 0; i--) tx.commands[i].undo();
+		this.notify();
 	}
 
 	/**
@@ -61,6 +115,7 @@ export class HistoryManager {
 	clear(): void {
 		this.undoStack.length = 0;
 		this.redoStack.length = 0;
+		this.transaction = null;
 		this.notify();
 	}
 

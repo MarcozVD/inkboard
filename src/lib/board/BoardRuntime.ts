@@ -109,11 +109,7 @@ export class BoardRuntime {
 		this.session
 			.load()
 			.then((board: Board) => {
-				if (board.objects.length > 0) {
-					this.engine.store.clear();
-					this.engine.store.addMany(board.objects);
-					this.engine.history.clear();
-				}
+				this.engine.load(board.objects);
 				this.host.onBoardLoaded(board);
 				this.host.onDirty();
 			})

@@ -2,11 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { ShapeTool } from './ShapeTool';
 import { ObjectStore } from '$lib/canvas/ObjectStore';
 import { DEFAULT_CAMERA } from '$lib/canvas/Camera';
+import { HistoryManager, type Command } from '$lib/canvas/HistoryManager';
 
 function makeShape() {
 	const store = new ObjectStore();
-	const tool = new ShapeTool({ store, camera: () => DEFAULT_CAMERA, onDirty: () => {} });
-	return { store, tool };
+	const history = new HistoryManager();
+	const tool = new ShapeTool({
+		store,
+		camera: () => DEFAULT_CAMERA,
+		onDirty: () => {},
+		execute: (cmd: Command) => history.execute(cmd),
+		discardAdded: (id: string) => {
+			store.remove(id);
+		}
+	});
+	return { store, history, tool };
 }
 
 function ev(x: number, y: number, shift = false) {

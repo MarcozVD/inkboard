@@ -3,7 +3,7 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createShape } from '$lib/objects/factory';
 import type { ShapeType, ShapeStyle } from '$lib/objects/types';
-import { AddObjectCommand } from '$lib/canvas/commands';
+import { AddObjectsCommand } from '$lib/canvas/commands';
 
 export interface ShapeConfig {
 	shape: ShapeType;
@@ -27,7 +27,7 @@ export class ShapeTool extends BaseTool {
 		this.start = { x: (e.screenX - c.x) / c.zoom, y: (e.screenY - c.y) / c.zoom };
 		// seed a zero-size shape so the user sees the draft live
 		const obj = createShape(this.start.x, this.start.y, 0.01, 0.01, this.config.shape, this.config.style);
-		this.ctx.store.add(obj);
+		this.ctx.execute(new AddObjectsCommand(this.ctx.store, [obj]));
 		this.draft = obj.id;
 		this.ctx.onDirty();
 	}
@@ -68,11 +68,8 @@ export class ShapeTool extends BaseTool {
 		if (!this.draft) return;
 		const obj = this.ctx.store.get(this.draft);
 		if (obj && obj.transform.width < 4 && obj.transform.height < 4) {
-			// accidental click — discard the tiny shape
-			this.ctx.store.remove(this.draft);
-		} else if (obj) {
-			// register undo command (shape already applied to store)
-			this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, obj));
+			// accidental click — discard the tiny shape and its history entry
+			this.ctx.discardAdded(this.draft);
 		}
 		this.ctx.onGestureEnd?.();
 		this.ctx.onDirty();

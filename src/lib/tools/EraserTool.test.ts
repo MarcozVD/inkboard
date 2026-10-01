@@ -13,7 +13,8 @@ function makeTool() {
 		camera: () => DEFAULT_CAMERA,
 		onDirty: () => {},
 		onGestureEnd: () => {},
-		pushHistory: (cmd: Command) => history.push(cmd)
+		execute: (cmd: Command) => history.execute(cmd),
+		discardAdded: (id: string) => store.remove(id)
 	});
 	return { store, history, tool };
 }

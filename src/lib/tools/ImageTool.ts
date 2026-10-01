@@ -2,7 +2,7 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createImage } from '$lib/objects/factory';
 import type { CanvasObject } from '$lib/objects/types';
-import { AddObjectCommand } from '$lib/canvas/commands';
+import { AddObjectsCommand } from '$lib/canvas/commands';
 
 export class ImageTool extends BaseTool {
 	private hiddenInput: HTMLInputElement | null = null;
@@ -37,10 +37,9 @@ export class ImageTool extends BaseTool {
 
 	private clickWorld: { x: number; y: number } = { x: 0, y: 0 };
 
-	/** Add the image and register it as a single undo step (B13). */
+	/** Add the image as a single undo step (B13) through the mutation API. */
 	private commit(obj: CanvasObject): void {
-		this.ctx.store.add(obj);
-		this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, obj));
+		this.ctx.execute(new AddObjectsCommand(this.ctx.store, [obj]));
 		this.ctx.onDirty();
 	}
 

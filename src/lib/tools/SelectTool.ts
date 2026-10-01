@@ -152,7 +152,7 @@ export class SelectTool extends BaseTool {
 			after.set(id, captureGeometry(obj));
 		}
 		if (before.size === 0) return;
-		this.ctx.pushHistory?.(new UpdateTransformCommand(this.ctx.store, before, after));
+		this.ctx.execute(new UpdateTransformCommand(this.ctx.store, before, after));
 	}
 
 	// ── Coordinate helpers ──

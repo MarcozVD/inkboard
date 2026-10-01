@@ -18,8 +18,10 @@ export interface ToolContext {
 	onDirty: () => void;
 	/** called after a gesture ends that should be a single undo step */
 	onGestureEnd?: () => void;
-	/** register an undo command for the finished gesture (already-applied state) */
-	pushHistory?: (cmd: Command) => void;
+	/** single mutation API (§M1-02): applies the command and records it */
+	execute: (cmd: Command) => void;
+	/** remove an object and its creation step (discarded drafts) */
+	discardAdded: (id: string) => void;
 }
 
 export abstract class BaseTool {

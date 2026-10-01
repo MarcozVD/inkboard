@@ -10,7 +10,9 @@ import { ImageTool } from '$lib/tools/ImageTool';
 import { StickyNoteTool } from '$lib/tools/StickyNoteTool';
 import type { BaseTool } from '$lib/tools/BaseTool';
 import type { CameraState } from '$lib/canvas/Camera';
-import { HistoryManager } from '$lib/canvas/HistoryManager';
+import { HistoryManager, type Command } from '$lib/canvas/HistoryManager';
+import { dropLastAddCommand } from '$lib/canvas/commands';
+import type { CanvasObject } from '$lib/objects/types';
 
 export type ToolId = 'select' | 'pen' | 'highlighter' | 'eraser' | 'text' | 'sticky' | 'shape' | 'image' | 'connector';
 
@@ -40,7 +42,8 @@ export class CanvasEngine {
 			camera: this.cameraFn,
 			onDirty: this.onDirty,
 			onGestureEnd: this.onGestureEnd,
-			pushHistory: (cmd: import('$lib/canvas/HistoryManager').Command) => this.history.push(cmd)
+			execute: (cmd: Command) => this.execute(cmd),
+			discardAdded: (id: string) => this.discardAdded(id)
 		};
 
 		this.selectTool = new SelectTool(ctx);
@@ -74,6 +77,27 @@ export class CanvasEngine {
 
 	get tool(): BaseTool {
 		return this.tools.get(this._activeTool)!;
+	}
+
+	// ── Single mutation API (§M1-02) ──
+
+	/** Execute a command: applies it and records it in the history. */
+	execute(command: Command): void {
+		this.history.execute(command);
+	}
+
+	/** Remove an object and drop its creation step (discarded drafts). */
+	discardAdded(id: string): void {
+		this.store.remove(id);
+		dropLastAddCommand(this.history, id);
+	}
+
+	/** Replace all objects (board load — not an undoable mutation). */
+	load(objects: CanvasObject[]): void {
+		if (objects.length === 0) return;
+		this.store.clear();
+		this.store.addMany(objects);
+		this.history.clear();
 	}
 
 	// ── Pointer routing ──

@@ -3,7 +3,7 @@ import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createStickyNote } from '$lib/objects/factory';
 import type { StickyNoteObject } from '$lib/objects/types';
 import { stickyNoteColors } from '$lib/objects/renderers';
-import { AddObjectCommand } from '$lib/canvas/commands';
+import { AddObjectsCommand } from '$lib/canvas/commands';
 
 export class StickyNoteTool extends BaseTool {
 	/** Called when the tool created a note that should open the editor. */
@@ -34,8 +34,7 @@ export class StickyNoteTool extends BaseTool {
 		const wy = (e.screenY - c.y) / c.zoom;
 
 		const obj = createStickyNote(wx, wy, '', { backgroundColor: this.currentColor });
-		this.ctx.store.add(obj);
-		this.ctx.pushHistory?.(new AddObjectCommand(this.ctx.store, obj));
+		this.ctx.execute(new AddObjectsCommand(this.ctx.store, [obj]));
 		this.ctx.onDirty();
 		this.onEditRequest?.(obj);
 	}

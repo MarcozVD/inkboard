@@ -4,6 +4,7 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import type { Board, CameraState, GridConfig } from '$lib/objects/types';
 import { createText } from '$lib/objects/factory';
+import { AddObjectsCommand } from '$lib/canvas/commands';
 import { serializeBoard } from '$lib/io/InternalFormat';
 import { boardToSvg } from '$lib/io/SvgExporter';
 import { boardToPngDataUrl } from '$lib/io/PngExporter';
@@ -199,7 +200,7 @@ export async function importFile(ctx: TransferContext): Promise<void> {
 	ctx.onDirty?.();
 }
 
-/** Import texts as one undoable step (B13). */
+/** Import texts as one undoable step (B13) through the mutation API. */
 export function insertImportedTexts(
 	engine: CanvasEngine,
 	title: string | null | undefined,
@@ -208,14 +209,7 @@ export function insertImportedTexts(
 	const lines = [...(title ? [title] : []), ...texts];
 	if (lines.length === 0) return;
 	const objs = lines.map((line, i) => createText(40 + (i % 4) * 30, 40 + i * 60, line, { fontSize: 18 }));
-	engine.store.addMany(objs);
-	const store = engine.store;
-	const ids = objs.map((o) => o.id);
-	engine.history.push({
-		description: 'Import',
-		undo: () => store.removeMany(ids),
-		redo: () => store.addMany(objs.map((o) => structuredClone(o)))
-	});
+	engine.execute(new AddObjectsCommand(engine.store, objs));
 }
 
 function pickFileFallback(): Promise<File | null> {

@@ -2,12 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { PenTool, simplifyStroke } from './PenTool';
 import { ObjectStore } from '$lib/canvas/ObjectStore';
 import { DEFAULT_CAMERA } from '$lib/canvas/Camera';
+import { HistoryManager, type Command } from '$lib/canvas/HistoryManager';
 import type { StrokeObject } from '$lib/objects/types';
 
 function makePen() {
 	const store = new ObjectStore();
-	const pen = new PenTool({ store, camera: () => DEFAULT_CAMERA, onDirty: () => {} });
-	return { store, pen };
+	const history = new HistoryManager();
+	const pen = new PenTool({
+		store,
+		camera: () => DEFAULT_CAMERA,
+		onDirty: () => {},
+		execute: (cmd: Command) => history.execute(cmd),
+		discardAdded: (id: string) => store.remove(id)
+	});
+	return { store, history, pen };
 }
 
 function stroke(x: number, y: number, p: number) {

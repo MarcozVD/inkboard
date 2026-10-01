@@ -3,20 +3,18 @@
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { SelectionManager } from '$lib/canvas/SelectionManager';
 import type { CanvasObject } from '$lib/objects/types';
+import { RemoveObjectsCommand } from '$lib/canvas/commands';
 
 export class EraserTool extends BaseTool {
 	private sel = new SelectionManager(this.ctx.store);
 	private erasing = false;
-	private removed: CanvasObject[] = [];
+	/** one command collects every object erased during this gesture */
+	private command: RemoveObjectsCommand | null = null;
 
 	pointerDown(e: ToolPointerEvent): void {
 		const world = this.screenToWorld(e.screenX, e.screenY);
 		const hit = this.sel.hitTest(world);
-		if (hit && !hit.locked) {
-			this.ctx.store.remove(hit.id);
-			this.removed.push(hit);
-			this.ctx.onDirty();
-		}
+		if (hit && !hit.locked) this.erase(hit);
 		this.erasing = true;
 	}
 
@@ -24,27 +22,22 @@ export class EraserTool extends BaseTool {
 		if (!this.erasing) return;
 		const world = this.screenToWorld(e.screenX, e.screenY);
 		const hit = this.sel.hitTest(world);
-		if (hit && !hit.locked) {
-			this.ctx.store.remove(hit.id);
-			this.removed.push(hit);
-			this.ctx.onDirty();
-		}
+		if (hit && !hit.locked) this.erase(hit);
 	}
 
 	pointerUp(_e: ToolPointerEvent): void {
-		if (this.removed.length > 0) {
-			// composite: one command restoring all objects erased in this gesture.
-			// capture the removed list now — `this.removed` is reset right after
-			const removed = this.removed;
-			const store = this.ctx.store;
-			this.ctx.pushHistory?.({
-				description: 'Erase',
-				undo: () => store.addMany(removed.map((o) => structuredClone(o))),
-				redo: () => removed.forEach((o) => store.remove(o.id))
-			});
-		}
 		this.erasing = false;
-		this.removed = [];
+		this.command = null;
+	}
+
+	private erase(obj: CanvasObject): void {
+		if (!this.command) {
+			this.command = new RemoveObjectsCommand(this.ctx.store, [obj]);
+			this.ctx.execute(this.command);
+		} else {
+			this.command.removeNow(obj);
+		}
+		this.ctx.onDirty();
 	}
 
 	private screenToWorld(sx: number, sy: number) {

@@ -41,7 +41,7 @@
 | B05 | ~~Se pierden los cambios si se sale del board o se cierra la ventana antes de 2 s desde la última edición.~~ **Corregido (M0-06).** | El cleanup hacía `clearTimeout(autosaveTimer)` sin guardar (`BoardCanvas.svelte:932`), y no había `onCloseRequested`. Fix: `flushSave()` en el unmount, antes de `goto('/')`, en `pagehide` y en `visibilitychange` → hidden, y en `getCurrentWindow().onCloseRequested`; además, guardado forzado cada 30 s de edición continua. | Sonda → fix |
 | B06 | ~~Deshacer un borrado del eraser no restaura nada.~~ **Corregido (M0-07).** | El comando leía `this.removed` en el momento de deshacer, y para entonces `pointerUp` ya lo había reasignado a `[]` (`src/lib/tools/EraserTool.ts:41`). Fix: `pointerUp` captura `const removed = this.removed` y el closure usa esa copia; el eraser además ignora los objetos `locked`. | Sonda → fix |
 | B07 | ~~Bring to front / send to back no cambian lo que se ve: queda encima lo último que se movió.~~ **Corregido (M0-08).** | `render()` pintaba en el orden que devuelve RBush (`queryViewport`), no por `zIndex`, y reordenar tampoco se podía deshacer (`ReorderCommand` existía pero no se usaba). Fix: `queryViewport` devuelve el paint order por `zIndex`; las acciones de la ContextToolbar pasan por `reorderSelection()`, que empuja `ReorderCommand`; `]`/`[` mueven un paso y `Ctrl+]`/`Ctrl+[` van al frente/al fondo, con sus atajos en la tabla de M0-05. | Sonda → fix |
-| B08 | ~~Los botones de minimizar, maximizar y cerrar del titlebar no hacen nada en la app de escritorio.~~ **Corregido (M0-09); falta la verificación manual.** | `capabilities/default.json` solo concede `core:window:default`, que no incluye `allow-minimize`, `allow-maximize`, `allow-unmaximize`, `allow-close` ni `allow-destroy` (este último lo usa el flush de M0-06). Fix: los cinco permisos añadidos; queda comprobar en `pnpm tauri dev`. | `src-tauri/gen/schemas/acl-manifests.json` |
+| B08 | ~~Los botones de minimizar, maximizar y cerrar del titlebar no hacen nada en la app de escritorio.~~ **Corregido (M0-09), verificado a mano.** | `capabilities/default.json` solo concede `core:window:default`, que no incluye `allow-minimize`, `allow-maximize`, `allow-unmaximize`, `allow-close` ni `allow-destroy` (este último lo usa el flush de M0-06). Fix: los cinco permisos añadidos; minimizar, maximizar/restaurar y cerrar comprobados en `pnpm tauri dev`. | `src-tauri/gen/schemas/acl-manifests.json` + `tauri dev` |
 | B09 | ~~`S`, el atajo que muestran toolbar y palette, no activa sticky. `R/O/L/A` activan formas, pero no la forma indicada.~~ **Corregido (M0-05).** | El mapa `toolKey` usaba `n` para sticky y mapeaba `r/o/l/a` al mismo tool sin fijar la forma (`BoardCanvas.svelte:489`). Fix: tabla única en `lib/input/shortcuts.ts` con `S`/`N` ⇒ sticky y `R`/`O`/`L`/`A` ⇒ la forma concreta; toolbar y palette leen la misma tabla. | Sonda → fix |
 | B10 | ~~El botón Connector se marca como activo, pero el engine sigue con la tool anterior.~~ **Corregido (M0-11).** | `engine.setTool('connector')` retornaba sin hacer nada porque no hay ConnectorTool, y la UI no se enteraba (`CanvasEngine.ts:71`). Fix: `setTool` devuelve `boolean` y la UI solo cambia si el engine aceptó; el botón Connector se oculta hasta M1-09. | Sonda → fix |
 | B11 | ~~*(Latente, tapado por B01.)* Mover o escalar un trazo o un conector no cambia lo que se ve.~~ **Corregido (M0-10).** | Se actualizaba `transform`, pero el renderer y los bounds usan `points` / `startPoint` / `endPoint` en coordenadas de mundo. Fix: `objects/geometry.ts` con `translateObject`, `scaleObject` y `rotateObject` que mueven los puntos de trazos y conectores; `UpdateTransformCommand` guarda `GeometrySnapshot` (transform + puntos) en vez de solo el transform. | Sonda → fix |
@@ -54,7 +54,7 @@
 
 ### 0.3 Deuda técnica que condiciona el plan
 
-- **`BoardCanvas.svelte` tiene 1235 líneas:** render, input, atajos, autosave, import/export, menús y paleta en un solo componente. Ahí viven B02–B05, B07, B09, B14 y B17.
+- **`BoardCanvas.svelte` era un monolito de 1235 líneas** (render, input, atajos, autosave, import/export, menús y paleta). M1-01 lo partió en `canvas/Renderer.ts`, `input/InputController.ts`, `board/BoardRuntime.ts`, `board/BoardSession.ts`, `board/boardInteractions.ts` e `io/transfer.ts`, más los componentes `BoardChrome`, `CanvasHint`, `ExportMenu` y `ToolPalette`: ahora son 396 líneas de composición. Ahí siguen viviendo B07, B14 y B17, y parte de B12.
 - **Mutaciones fuera del historial:** la UI llama a `store.*` directamente desde varios sitios. No hay un único camino comando → undo → autosave.
 - **Rendimiento:** `perfect-freehand` se recalcula para cada trazo visible en cada frame (`smoothedPoints` nunca se rellena). El autosave serializa el board entero, imágenes incluidas como data URL. Los comandos Tauri son síncronos, así que corren en el hilo principal.
 - **Seguridad:** `csp: null`. `inspect_import` y `read_file_bytes` leen cualquier ruta que mande el webview. El ZIP se descomprime entero antes de comprobar su tamaño (zip bomb).
@@ -62,7 +62,7 @@
 - **Sin UI de estilo:** no se puede cambiar el color ni el grosor del pen, ni el fill o el stroke de las formas (`engine.setPenConfig` existe, pero nada lo llama).
 - **Código muerto:** `src-tauri/src/geometry/` (vacío). `src/lib/components/TopBar.svelte` se borró en M0-17 (nadie lo importaba).
 - **Calidad:** con CI desde M0-16 y E2E de las funciones básicas de edición; sin ESLint ni `prettier --check` (M1-12).
-- **Documentación:** `README.md` y `PRODUCT.md` dan por funcionales la selección/transformación y el texto. Hay que corregirlo al cerrar M0.
+- **Documentación:** `README.md` refleja el estado real tras M0 (`PRODUCT.md` L27 todavía cita B04/B05/B09 como pendientes y su título sigue diciendo "M0 en curso").
 
 ### 0.4 Parcial o no implementado
 
@@ -1358,7 +1358,7 @@ fn validate_board_data(data: &BoardData) -> Result<(), ValidationError> {
 
 ## 23. Estructura Completa de Carpetas
 
-> **Actualizado 2026-09-30:** el repo es una app plana (no Turborepo). Estructura real:
+> **Actualizado 2026-09-30:** el repo es una app plana (no Turborepo). Estructura real. `canvas/Renderer.ts`, `input/InputController.ts`, `board/`, `io/transfer.ts` y los componentes `BoardChrome` / `CanvasHint` / `ExportMenu` / `ToolPalette` llegaron con M1-01, que partió `BoardCanvas.svelte` (1235 → 396 líneas).
 
 ```
 board/   (package name: inkboard)
@@ -1378,18 +1378,21 @@ board/   (package name: inkboard)
 │   └── lib/
 │       ├── canvas/             # Camera, CanvasEngine, ObjectStore, SpatialIndex,
 │       │                       # SelectionManager, HistoryManager, RenderLoop,
-│       │                       # EventBus, commands (+ *.test.ts)
+│       │                       # EventBus, Renderer, commands (+ *.test.ts)
 │       ├── tools/              # Select, Pen, Highlighter, Eraser, Text,
 │       │                       # StickyNote, Shape, Image (+ tests)
-│       ├── objects/            # types, factory, renderers, bounds
-│       ├── io/                 # persistence, InternalFormat, PngExporter, SvgExporter
+│       ├── objects/            # types, factory, renderers, bounds, geometry
+│       ├── io/                 # persistence, InternalFormat, PngExporter,
+│       │                       # SvgExporter, transfer
+│       ├── input/              # shortcuts (tabla de atajos), InputController
+│       ├── board/              # BoardRuntime, BoardSession, boardInteractions
 │       ├── components/
 │       │   ├── BoardCanvas.svelte, TextEditor.svelte
 │       │   ├── app/TopBar.svelte
-│       │   ├── toolbar/ToolBar.svelte, ContextToolbar.svelte
-│       │   ├── menus/CommandPalette.svelte, ContextMenu.svelte
+│       │   ├── toolbar/ToolBar.svelte, ToolPalette.svelte, ContextToolbar.svelte
+│       │   ├── menus/CommandPalette.svelte, ContextMenu.svelte, ExportMenu.svelte
 │       │   ├── panels/CreatePanel.svelte, SettingsPanel.svelte
-│       │   ├── board/ZoomControls.svelte
+│       │   ├── board/ZoomControls.svelte, BoardChrome.svelte, CanvasHint.svelte
 │       │   └── ui/Icon.svelte, ToolButton.svelte
 │       ├── stores/ui.svelte.ts
 │       └── utils/math.ts
@@ -1467,7 +1470,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-06 ✅ | **B05, B17** · `flushSave()` al desmontar, antes de `goto('/')`, en `pagehide`/`visibilitychange` y en `getCurrentWindow().onCloseRequested` (el handler async hace `await flushSave()`; la API espera al handler y luego llama a `destroy()`, que necesita el permiso de M0-09). Guardado forzado cada 30 s de edición continua. Conservar el `createdAt` del board cargado. | `BoardCanvas.svelte` | E2E: dibujar y salir en < 200 ms ⇒ persistido. Manual: cerrar con ✕ a los 500 ms conserva el cambio | S |
 | M0-07 ✅ | **B06** · Capturar `const removed = this.removed` dentro del comando. El eraser ignora los objetos `locked`. | `tools/EraserTool.ts` | Unit: borrar 3 objetos en un gesto → undo los restaura → redo los vuelve a quitar | S |
 | M0-08 ✅ | **B07** · Renderizar en orden de `zIndex`. Bring/send con `ReorderCommand` (se puede deshacer). `]`/`[` = un paso adelante/atrás; `Ctrl+]`/`Ctrl+[` = al frente/al fondo (ver Atajos). | `BoardCanvas.svelte`, `canvas/ObjectStore.ts`, `canvas/commands.ts` | E2E con captura: dos stickies superpuestos cambian de orden y undo lo revierte | S |
-| M0-09 ✅\* | **B08** · Añadir `core:window:allow-minimize`, `allow-maximize`, `allow-unmaximize`, `allow-close` y `allow-destroy` (este último lo usa M0-06). | `src-tauri/capabilities/default.json` | Manual en `tauri dev`: minimizar, maximizar/restaurar y cerrar funcionan | S |
+| M0-09 ✅ | **B08** · Añadir `core:window:allow-minimize`, `allow-maximize`, `allow-unmaximize`, `allow-close` y `allow-destroy` (este último lo usa M0-06). | `src-tauri/capabilities/default.json` | Manual en `tauri dev`: minimizar, maximizar/restaurar y cerrar funcionan | S |
 | M0-10 ✅ | **B11, B12** · Helpers `translateObject`, `scaleObject(origin, sx, sy)` y `rotateObject(center, θ)` que mueven `points`/`startPoint`/`endPoint` en trazos y conectores, y `transform` en el resto. Convención única: **rotación alrededor del centro de la caja**, aplicada en el renderer, `worldToLocal`, `getObjectBounds` (AABB de la caja rotada) y el SVG (`rotate(deg cx cy)`). | `objects/geometry.ts` (nuevo), `tools/SelectTool.ts`, `objects/renderers.ts`, `objects/bounds.ts`, `utils/math.ts`, `io/SvgExporter.ts` | Unit por tipo (mover, escalar y rotar dan los bounds esperados). E2E: se puede mover un trazo; un clic en la esquina de un rect rotado 45° lo selecciona | M |
 | M0-11 ✅ | **B10** · Ocultar el botón Connector hasta M1-09. `setTool` devuelve `boolean` y la UI solo cambia si el engine aceptó. | `CanvasEngine.ts`, `BoardCanvas.svelte` | La tool activa en la UI siempre coincide con la del engine | S |
 | M0-12 ✅ | **B13** · Undo al insertar imagen (picker, paste y drop), al importar (un solo paso) y al reordenar. | `tools/ImageTool.ts`, `BoardCanvas.svelte` | Unit/E2E: cada operación se deshace y se rehace | S |
@@ -1477,17 +1480,17 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-16 ✅* | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
 | M0-17 ✅ | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
 
-\* M0-09, M0-15 y M0-16 están implementadas (los permisos de ventana están en `capabilities/default.json`, `read_file_bytes` ya devuelve bytes crudos y el workflow existe en `.github/workflows/ci.yml`), pero su aceptación no está verificada todavía: M0-09 y M0-15 necesitan `pnpm tauri dev` (minimizar/maximizar/cerrar, y importar un PNG de 10 MB por el diálogo nativo) y M0-16 necesita su primera ejecución en GitHub, que ocurrirá con el primer push. Trátalas como abiertas hasta cerrar esas comprobaciones.
+\* M0-15 y M0-16 están implementadas (`read_file_bytes` ya devuelve bytes crudos y el workflow existe en `.github/workflows/ci.yml`), pero su aceptación no está verificada: M0-15 necesita importar un PNG de 10 MB por el diálogo nativo en `pnpm tauri dev`, y M0-16 necesita su primera ejecución en GitHub, que ocurrirá con el primer push. Trátalas como abiertas hasta cerrar esas comprobaciones.
 
-**Gate M0**
-- [ ] E2E de M0-01 en verde en CI.
-- [ ] Checklist manual en Windows (`pnpm tauri dev`): dibujar exactamente bajo el cursor · seleccionar, mover, escalar y rotar formas y trazos · escribir en texto y sticky · deshacer todo lo anterior · cerrar con ✕ justo después de editar sin perder nada · minimizar y maximizar.
+**Gate M0 — cerrado (2026-09-30)**
+- [ ] E2E de M0-01 en verde en CI. *(36/36 en local; el workflow de M0-16 aún no se ha ejecutado en GitHub, así que esto se cerrará con el primer push.)*
+- [x] Checklist manual en Windows (`pnpm tauri dev`): dibujar exactamente bajo el cursor · seleccionar, mover, escalar y rotar formas y trazos · escribir en texto y sticky · deshacer todo lo anterior · cerrar con ✕ justo después de editar sin perder nada · minimizar y maximizar.
 
 ### 24.5 M1 — Editor completo (v0.2.0)
 
 | ID | Tarea | Aceptación | Tam. | Dep. |
 |----|-------|------------|------|------|
-| M1-01 | Partir `BoardCanvas.svelte` en módulos sin cambiar comportamiento: `canvas/Renderer.ts` (fondo, grid, objetos, overlay), `input/InputController.ts` (Pointer Events, rueda y pinch, sin touch events duplicados), `input/shortcuts.ts` (de M0-05), `board/BoardSession.ts` (carga, autosave, flush, estado de guardado) e `io/transfer.ts` (import, export y descargas). | `BoardCanvas.svelte` < 400 líneas; los E2E de M0 siguen en verde | L | M0 |
+| M1-01 ✅ | Partir `BoardCanvas.svelte` en módulos sin cambiar comportamiento: `canvas/Renderer.ts` (fondo, grid, objetos, overlay), `input/InputController.ts` (Pointer Events, rueda y pinch, sin touch events duplicados), `input/shortcuts.ts` (de M0-05), `board/BoardSession.ts` (carga, autosave, flush, estado de guardado) e `io/transfer.ts` (import, export y descargas). | `BoardCanvas.svelte` < 400 líneas; los E2E de M0 siguen en verde | L | M0 |
 | M1-02 | API única de mutación: `engine.execute(cmd)`. Comandos `AddObjects`, `RemoveObjects`, `UpdateTransform`, `UpdateStyle`, `UpdateContent`, `Reorder`, `Group`/`Ungroup` y `Batch`, con transacciones (`begin`/`commit`/`rollback`, §15). | Test de propiedades (`fast-check`) sobre el JSON del store: para todo comando, `undo(redo(s)) ≡ s` y `redo(undo(redo(s))) ≡ redo(s)` | M | M1-01 |
 | M1-03 | Estilos en el ContextToolbar (DESIGN § ContextToolbar; sin panel lateral fijo): color y grosor del pen/highlighter; fill, stroke, grosor, dash y radio de las formas; tamaño, negrita, cursiva, alineación y color del texto; color del sticky; opacidad. Swatches solo para contenido (One Color Rule). Se recuerda el último estilo de cada tool. | E2E: cambiar el color de un trazo seleccionado y deshacerlo | L | M1-02 |
 | M1-04 | Clipboard de objetos (RF-09): Ctrl+C/X/V/D. Portapapeles del sistema con JSON versionado (`inkboard/clipboard@1`) y fallback interno; pegar en el cursor o en el centro del viewport con offset acumulativo; pegar entre boards; el texto plano se pega como objeto texto; el pegado de imágenes sigue funcionando. | E2E: copiar en el board A y pegar en el B | M | M1-02 |

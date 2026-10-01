@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.0 → M0 in progress):** Selection, canvas DPR sizing, text/sticky editing, shortcuts, autosave flush, eraser and import undo, z-order, object transform, shell reset and the Rust `object_count` fixed (M0-02…M0-15). Window controls and native-dialog import (M0-09, M0-15) still need a manual check in `tauri dev` — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.1.1 → M1 in progress):** Selection, canvas DPR sizing, text/sticky editing, shortcuts, autosave flush, eraser and import undo, z-order, object transform, shell reset and the Rust `object_count` fixed (M0 closed: M0-01…M0-17). Window controls verified by hand in `tauri dev` (M0-09, B08). `BoardCanvas.svelte` split into modules (M1-01). Native-dialog import (M0-15) still needs its manual check, and CI (M0-16) runs on its first push — see [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -20,7 +20,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Import** — images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)
 - **UI** — floating ToolBar, ContextToolbar, ContextMenu, Command palette (`Ctrl+K`), Create panel, Settings
 - **Multi-board** — home picker with search, favorites, grid view
-- **Desktop** — custom titlebar, window controls (capabilities granted in M0-09; minimize/maximize/close still to be confirmed in `tauri dev` — B08)
+- **Desktop** — custom titlebar, window controls (capabilities granted in M0-09 and verified by hand — B08)
 
 ## Current status
 
@@ -33,7 +33,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Shortcuts while typing in inputs | **Works** after M0-05 (B04, B09 fixed) — one table in `src/lib/input/shortcuts.ts` feeds the keydown, tooltips and palette |
 | Eraser undo | **Works** after M0-07 (B06 fixed); locked objects are skipped |
 | Z-order (bring/send to front/back) | **Works** after M0-08 (B07 fixed) — painted by `zIndex`, undoable via `ReorderCommand`; `]`/`[` one step, `Ctrl+]`/`Ctrl+[` all the way |
-| Window controls (titlebar) | **Likely fixed** in M0-09 (B08) — capabilities granted, still to be confirmed in `tauri dev` |
+| Window controls (titlebar) | **Works** — M0-09 (B08) granted the capabilities and minimize/maximize/close were verified by hand in `tauri dev` |
 | Native-dialog image import | **Likely fixed** in M0-15 (B16) — raw bytes instead of a JSON array; still to be confirmed in `tauri dev` |
 | Board list in Home | No leftover board chrome after leaving a board (M0-13, B14) |
 | `object_count` in SQLite | **Works** after M0-14 (B15 fixed) |
@@ -41,7 +41,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0-01…M0-15 done; M0-09 and M0-15 done pending their manual checks; M0-16, M0-17… pending).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1-01 done).
 
 ## Tech Stack
 
@@ -73,7 +73,7 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 97/97
+pnpm test                           # Unit (Vitest) — 105/105
 pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 36/36
 pnpm check                          # Svelte / TS check
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 11/11
@@ -98,13 +98,20 @@ Flat app (not a monorepo):
 src/
   lib/
     canvas/       Camera, CanvasEngine, ObjectStore, SpatialIndex,
-                  SelectionManager, HistoryManager, RenderLoop, commands
+                  SelectionManager, HistoryManager, RenderLoop, Renderer,
+                  commands
     tools/        Select, Pen, Highlighter, Eraser, Text, Sticky, Shape, Image
     objects/      types, factory, renderers, bounds, geometry
-    io/           persistence, InternalFormat, PngExporter, SvgExporter
-    input/        keyboard shortcut table (single source of truth)
-    components/   BoardCanvas, TextEditor, app/TopBar, toolbar/, menus/,
-                  panels/, board/ZoomControls, ui/
+    io/           persistence, InternalFormat, PngExporter, SvgExporter,
+                  transfer (import/export/downloads)
+    input/        shortcuts (single shortcut table), InputController
+                  (pointer, wheel, pinch)
+    board/        BoardRuntime (wiring), BoardSession (load/autosave/flush),
+                  boardInteractions (palette, menus, context actions)
+    components/   BoardCanvas, TextEditor, app/TopBar, toolbar/ (ToolBar,
+                  ToolPalette, ContextToolbar), menus/ (CommandPalette,
+                  ContextMenu, ExportMenu), panels/, board/ (ZoomControls,
+                  BoardChrome, CanvasHint), ui/
     stores/       ui.svelte.ts
   routes/         / (board picker), /board/[id]
   app.css         Design tokens + themes
@@ -117,6 +124,10 @@ src-tauri/
   capabilities/   Tauri permission grants
 e2e/              Playwright (smoke + M0 editing suite)
 ```
+
+`BoardCanvas.svelte` is composition only (396 lines after M1-01): it mounts a
+`BoardRuntime`, which owns the engine, renderer, input controller and save
+session, and renders the chrome components.
 
 ## License
 

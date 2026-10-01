@@ -13,7 +13,7 @@ pub mod formats;
 pub mod geometry;
 
 use commands::persistence::DbState;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -42,7 +42,7 @@ pub fn run() {
             let db_path = data_dir.join("inkboard.db");
             let app_db = db::AppDb::new(&db_path)?;
             app_db.ensure_default_workspace()?;
-            app.manage(DbState(Mutex::new(app_db)));
+            app.manage(DbState(Arc::new(Mutex::new(app_db))));
 
             eprintln!("[inkboard] db ready at {}", db_path.display());
             Ok(())

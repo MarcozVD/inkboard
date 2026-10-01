@@ -1,43 +1,54 @@
 //! Import Tauri commands (implementation_plan.md §7 / Fase 13).
+//! File IO and ZIP parsing run on the blocking pool (M2-01).
 
 use crate::formats::ms_whiteboard;
 
 /// Detect + parse an imported file (path). Returns the detected format and,
 /// for MS Whiteboard ZIPs, any text content extracted.
 #[tauri::command]
-pub fn inspect_import(path: String) -> Result<serde_json::Value, String> {
-    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read file: {e}"))?;
-    let filename = std::path::Path::new(&path)
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| path.clone());
+pub async fn inspect_import(path: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|e| format!("cannot read file: {e}"))?;
+        let filename = std::path::Path::new(&path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.clone());
 
-    let format = ms_whiteboard::detect_format(&filename, &bytes);
-    match format {
-        ms_whiteboard::ImportFormat::MsWhiteboardZip => {
-            let content = ms_whiteboard::parse_ms_whiteboard_zip(&bytes)?;
-            Ok(serde_json::json!({
-                "format": "ms_whiteboard_zip",
-                "title": content.title,
-                "texts": content.texts,
-            }))
+        let format = ms_whiteboard::detect_format(&filename, &bytes);
+        match format {
+            ms_whiteboard::ImportFormat::MsWhiteboardZip => {
+                let content = ms_whiteboard::parse_ms_whiteboard_zip(&bytes)?;
+                Ok(serde_json::json!({
+                    "format": "ms_whiteboard_zip",
+                    "title": content.title,
+                    "texts": content.texts,
+                }))
+            }
+            ms_whiteboard::ImportFormat::Image => Ok(serde_json::json!({
+                "format": "image",
+                "name": filename,
+            })),
+            ms_whiteboard::ImportFormat::Json => Ok(serde_json::json!({
+                "format": "json",
+                "name": filename,
+            })),
+            ms_whiteboard::ImportFormat::Unknown => {
+                Err(format!("unsupported file format: {filename}"))
+            }
         }
-        ms_whiteboard::ImportFormat::Image => Ok(serde_json::json!({
-            "format": "image",
-            "name": filename,
-        })),
-        ms_whiteboard::ImportFormat::Json => Ok(serde_json::json!({
-            "format": "json",
-            "name": filename,
-        })),
-        ms_whiteboard::ImportFormat::Unknown => Err(format!("unsupported file format: {filename}")),
-    }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Read a file as raw bytes (for image imports picked via the OS dialog).
 /// Returns a raw IPC response; the frontend receives an ArrayBuffer (B16).
 #[tauri::command]
-pub fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
-    let bytes = std::fs::read(&path).map_err(|e| format!("cannot read file: {e}"))?;
-    Ok(tauri::ipc::Response::new(bytes))
+pub async fn read_file_bytes(path: String) -> Result<tauri::ipc::Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|e| format!("cannot read file: {e}"))?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

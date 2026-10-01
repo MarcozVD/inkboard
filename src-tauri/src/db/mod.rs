@@ -1,9 +1,19 @@
 //! Persistence layer — SQLite via rusqlite (Fase 11, implementation_plan.md §16).
 //! Objects are stored as zstd-compressed JSON blobs; SHA-256 detects changes.
+//!
+//! M2-01: WAL + foreign_keys + busy_timeout on every connection, and a
+//! `PRAGMA user_version` migration runner (v0.1 databases are detected as
+//! schema version 1 and stamped without re-running the initial migration).
 
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
 use std::path::Path;
+
+/// Ordered migrations; the tuple index is the schema version.
+const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("migrations/001_initial.sql"))];
+
+/// busy_timeout used for every connection (ms).
+const BUSY_TIMEOUT_MS: i64 = 5_000;
 
 pub struct AppDb {
     conn: Connection,
@@ -33,10 +43,59 @@ pub struct BoardRecord {
 
 impl AppDb {
     pub fn new(path: &Path) -> Result<Self, String> {
-        let conn = Connection::open(path).map_err(|e| e.to_string())?;
-        conn.execute_batch(include_str!("migrations/001_initial.sql"))
-            .map_err(|e| e.to_string())?;
+        let mut conn = Connection::open(path).map_err(|e| e.to_string())?;
+        Self::configure(&conn)?;
+        Self::migrate(&mut conn)?;
         Ok(Self { conn })
+    }
+
+    /// Connection-level pragmas (M2-01).
+    fn configure(conn: &Connection) -> Result<(), String> {
+        conn.execute_batch(&format!(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA foreign_keys = ON;
+             PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};"
+        ))
+        .map_err(|e| e.to_string())
+    }
+
+    /// Apply pending migrations, tracked by `PRAGMA user_version` (M2-01).
+    fn migrate(conn: &mut Connection) -> Result<(), String> {
+        let mut current: i64 = conn
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .map_err(|e| e.to_string())?;
+
+        // A v0.1 database has the initial schema but was never stamped:
+        // detect it as version 1 and keep its data untouched.
+        if current == 0 && Self::has_legacy_schema(conn)? {
+            current = 1;
+            conn.pragma_update(None, "user_version", current)
+                .map_err(|e| e.to_string())?;
+        }
+
+        for (version, sql) in MIGRATIONS {
+            if *version <= current {
+                continue;
+            }
+            let tx = conn.transaction().map_err(|e| e.to_string())?;
+            tx.execute_batch(sql).map_err(|e| e.to_string())?;
+            tx.pragma_update(None, "user_version", version)
+                .map_err(|e| e.to_string())?;
+            tx.commit().map_err(|e| e.to_string())?;
+            current = *version;
+        }
+        Ok(())
+    }
+
+    fn has_legacy_schema(conn: &Connection) -> Result<bool, String> {
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'boards'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(count > 0)
     }
 
     /// Ensure a default workspace exists (id 'default').
@@ -192,6 +251,28 @@ fn chrono_now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    fn temp_db_path(name: &str) -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "inkboard_test_{name}_{}_{}.db",
+            std::process::id(),
+            chrono_now_ms()
+        ));
+        path
+    }
+
+    fn cleanup(path: &Path) {
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
+    fn user_version(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap()
+    }
 
     #[test]
     fn count_objects_reads_board_objects() {
@@ -229,5 +310,96 @@ mod tests {
         let list = db.list_boards().expect("list");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].object_count, 3);
+    }
+
+    // ── M2-01: pragmas ──
+
+    #[test]
+    fn connection_pragmas_are_applied() {
+        let path = temp_db_path("pragmas");
+        let db = AppDb::new(&path).expect("db");
+        let mode: String = db
+            .conn
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+        let foreign_keys: i64 = db
+            .conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+        let busy_timeout: i64 = db
+            .conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, BUSY_TIMEOUT_MS);
+        drop(db);
+        cleanup(&path);
+    }
+
+    // ── M2-01: migrations ──
+
+    #[test]
+    fn fresh_database_runs_migrations_and_stamps_the_version() {
+        let path = temp_db_path("fresh");
+        let db = AppDb::new(&path).expect("db");
+        assert_eq!(user_version(&db.conn), 1);
+        let tables: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('boards','board_data','board_versions','workspaces')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tables, 4);
+        db.ensure_default_workspace().expect("workspace");
+        drop(db);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn legacy_v01_database_is_detected_as_v1_and_keeps_its_data() {
+        let path = temp_db_path("legacy");
+        // build a v0.1-style DB: schema applied, user_version never stamped
+        {
+            let conn = Connection::open(&path).expect("raw db");
+            conn.execute_batch(include_str!("migrations/001_initial.sql"))
+                .expect("initial schema");
+            conn.execute(
+                "INSERT INTO workspaces (id, name, created_at, updated_at) VALUES ('default', 'W', 1, 1)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO boards (id, workspace_id, name, created_at, updated_at, version, schema_version, object_count)
+                 VALUES ('b1', 'default', 'Legacy', 1, 2, 1, '1.0.0', 1)",
+                [],
+            )
+            .unwrap();
+            let json =
+                r#"{"schemaVersion":"1.0.0","version":1,"board":{"id":"b1","name":"Legacy","objects":[{"id":"a"}]}}"#;
+            let compressed = zstd::encode_all(json.as_bytes(), 3).unwrap();
+            conn.execute(
+                "INSERT INTO board_data (board_id, data, data_hash, updated_at) VALUES ('b1', ?1, 'hash', 2)",
+                params![compressed],
+            )
+            .unwrap();
+            assert_eq!(user_version(&conn), 0);
+        }
+
+        // opening it migrates in place without re-running the initial schema
+        let db = AppDb::new(&path).expect("db");
+        assert_eq!(user_version(&db.conn), 1);
+        let boards = db.list_boards().expect("list");
+        assert_eq!(boards.len(), 1);
+        assert_eq!(boards[0].name, "Legacy");
+        let record = db.load_board("b1").expect("load");
+        assert!(record.json.contains("\"id\":\"a\""));
+        db.ensure_default_workspace().expect("workspace");
+        // data survives a subsequent save/load cycle
+        db.save_board("b1", "Legacy", &record.json).expect("save");
+        drop(db);
+        cleanup(&path);
     }
 }

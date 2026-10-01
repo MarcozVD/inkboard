@@ -18,6 +18,7 @@ export interface StoredObject {
 	content?: string;
 	shape?: string;
 	points?: number[];
+	style?: Record<string, unknown>;
 	transform: StoredTransform;
 }
 

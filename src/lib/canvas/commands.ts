@@ -336,6 +336,25 @@ export function dropLastAddCommand(history: HistoryManager, id: string): boolean
 
 // ── Selection actions (undoable, through engine.execute) ──
 
+/** Apply one style patch to objects as a single undo step (§M1-03). */
+export function updateStyles(
+	engine: CanvasEngine,
+	ids: string[],
+	patch: Record<string, unknown>
+): void {
+	const store = engine.store;
+	const before = new Map<string, CanvasObject['style']>();
+	const after = new Map<string, CanvasObject['style']>();
+	for (const id of ids) {
+		const obj = store.get(id);
+		if (!obj) continue;
+		before.set(id, { ...obj.style });
+		after.set(id, { ...obj.style, ...patch } as CanvasObject['style']);
+	}
+	if (before.size === 0) return;
+	engine.execute(new UpdateStyleCommand(store, before, after));
+}
+
 /** Bring/send the current selection, registering one undo step (M0-08). */
 export function reorderObjects(engine: CanvasEngine, mode: ReorderMode): boolean {
 	const ids = engine.selectionManager.selected;

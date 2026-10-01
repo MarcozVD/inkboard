@@ -1,8 +1,10 @@
 <script lang="ts">
 	// ContextToolbar — floating toolbar above the selection, adapts to object type.
-	// DESIGN.md § Context Toolbar: [color] [text] [duplicate] [lock] [...] per type.
+	// DESIGN.md § Context Toolbar: style controls + [duplicate] [layer] [delete].
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import type { IconName } from '$lib/components/ui/Icon.svelte';
+	import StyleControls from './StyleControls.svelte';
+	import type { StyleControl } from '$lib/board/styleControls';
 
 	export interface CtxAction {
 		id: string;
@@ -17,7 +19,8 @@
 		y,
 		offsetX = 0,
 		offsetY = 0,
-		actions
+		actions,
+		style = []
 	}: {
 		x: number;
 		y: number;
@@ -25,6 +28,7 @@
 		offsetX?: number;
 		offsetY?: number;
 		actions: CtxAction[];
+		style?: StyleControl[];
 	} = $props();
 
 	let barEl: HTMLDivElement | undefined = $state();
@@ -39,8 +43,12 @@
 	});
 </script>
 
-{#if x !== -1 && y !== -1 && actions.length > 0}
+{#if x !== -1 && y !== -1 && (actions.length > 0 || style.length > 0)}
 	<div class="ctx-toolbar" bind:this={barEl} role="toolbar">
+		{#if style.length > 0}
+			<StyleControls controls={style} />
+			<span class="ctx-divider"></span>
+		{/if}
 		{#each actions as a}
 			<button
 				class="ctx-btn"
@@ -102,5 +110,12 @@
 	.ctx-btn.active {
 		background: var(--color-surface-active);
 		color: var(--color-accent);
+	}
+
+	.ctx-divider {
+		width: 1px;
+		height: 18px;
+		background: var(--color-border);
+		margin: 0 3px;
 	}
 </style>

@@ -66,9 +66,9 @@ test.describe('board canvas', () => {
 		const canvas = page.locator('canvas.board-canvas');
 		const box = (await canvas.boundingBox())!;
 		console.log(`[test] canvas box: ${JSON.stringify(box)}`);
-		await page.mouse.move(box.x + 200, box.y + 200);
+		await page.mouse.move(box.x + 280, box.y + 200);
 		await page.mouse.down();
-		await page.mouse.move(box.x + 500, box.y + 400, { steps: 10 });
+		await page.mouse.move(box.x + 560, box.y + 380, { steps: 10 });
 		await page.mouse.up();
 
 		await expect(page.getByTestId('undo')).toBeEnabled({ timeout: 3000 });
@@ -94,9 +94,9 @@ test.describe('board canvas', () => {
 		await page.waitForTimeout(200);
 		const canvas = page.locator('canvas.board-canvas');
 		const box = (await canvas.boundingBox())!;
-		await page.mouse.move(box.x + 100, box.y + 100);
+		await page.mouse.move(box.x + 300, box.y + 160);
 		await page.mouse.down();
-		await page.mouse.move(box.x + 400, box.y + 300, { steps: 10 });
+		await page.mouse.move(box.x + 600, box.y + 320, { steps: 10 });
 		await page.mouse.up();
 
 		// wait for save indicator to show ✓
@@ -166,9 +166,9 @@ test.describe('board list', () => {
 		await page.waitForTimeout(150);
 		const canvas = page.locator('canvas.board-canvas');
 		const box = (await canvas.boundingBox())!;
-		await page.mouse.move(box.x + 120, box.y + 120);
+		await page.mouse.move(box.x + 300, box.y + 160);
 		await page.mouse.down();
-		await page.mouse.move(box.x + 360, box.y + 280, { steps: 8 });
+		await page.mouse.move(box.x + 540, box.y + 320, { steps: 8 });
 		await page.mouse.up();
 		await expect(page.getByTestId('save-indicator')).toHaveText('✓', { timeout: 7000 });
 	}

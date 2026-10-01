@@ -6,6 +6,7 @@
 	import { handleCanvasKeyDown, type KeyboardContext, type ReorderMode } from '$lib/input/shortcuts';
 	import { cancelTextContent, commitTextContent, deleteObjects, duplicateObjects, reorderObjects } from '$lib/canvas/commands';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
+	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import {
 		buildContextMenu,
 		buildPaletteCommands,
@@ -50,7 +51,6 @@
 	let runtime: BoardRuntime | null = null;
 	let destroyed = false;
 	let spaceDown = false;
-
 	const editingObj = $derived.by(() => {
 		const eng = engine;
 		if (!eng || !editingTextId) return null;
@@ -64,10 +64,10 @@
 		getMeta: transferMeta
 	});
 
+	const styles = createStyleBridge({ getEngine: () => engine, onDirty: () => markDirty() });
 	function markDirty() {
 		runtime?.markDirty();
 	}
-
 	function syncShell() {
 		if (destroyed) return; // B14: no writes to the ui store after unmount
 		ui.boardName = boardName;
@@ -87,14 +87,14 @@
 	}
 
 	function setTool(t: ToolId) {
-		// B10: UI only follows when the engine actually accepted the tool
+		// B10: UI follows only when the engine accepted the tool
 		const accepted = engine?.setTool(t) ?? false;
 		if (!accepted) return;
 		activeTool = t;
 		if (t !== 'select') editingTextId = null;
 		showCreatePanel = false;
+		styles.touch();
 	}
-
 	function handleCreate(id: string) {
 		showCreatePanel = false;
 		if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
@@ -148,6 +148,7 @@
 	}
 	function updateCtxBar() {
 		ctxBar = engine ? buildSelectionToolbar(engine, camera, deps) : null;
+		styles.touch();
 	}
 
 	function openTextEditor(obj: EditableObj) {
@@ -325,6 +326,7 @@
 		{activeTool}
 		{currentShape}
 		stickyColor={engine?.stickyTool.currentColor}
+		styleControls={styles.toolControls}
 		{showCreatePanel}
 		{showExportMenu}
 		{showSettings}
@@ -368,6 +370,7 @@
 			offsetX={canvasRect.left}
 			offsetY={canvasRect.top}
 			actions={ctxBar.actions}
+			style={styles.selectionControls}
 		/>
 	{/if}
 

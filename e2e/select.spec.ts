@@ -125,12 +125,12 @@ test.describe('B01 — selection and transforms', () => {
 
 	test('marquee over empty space selects objects, Delete removes them', async ({ page }) => {
 		const id = await createBoard(page);
-		await drawShape(page, 'rect', { x: 200, y: 200 }, { x: 300, y: 300 });
-		await drawShape(page, 'rect', { x: 400, y: 200 }, { x: 500, y: 300 });
+		await drawShape(page, 'rect', { x: 280, y: 220 }, { x: 380, y: 320 });
+		await drawShape(page, 'rect', { x: 480, y: 220 }, { x: 580, y: 320 });
 		await waitForObjectCount(page, id, 2);
 
 		await selectTool(page, 'select');
-		await dragMouse(page, { x: 150, y: 150 }, { x: 550, y: 350 });
+		await dragMouse(page, { x: 260, y: 180 }, { x: 620, y: 360 });
 		await page.keyboard.press('Delete');
 
 		await expect
@@ -186,12 +186,12 @@ test.describe('B02 — pointer coordinates at DPR 2', () => {
 test.describe('B06 — eraser undo', () => {
 	test('undo restores every object erased in one gesture', async ({ page }) => {
 		const id = await createBoard(page);
-		await drawShape(page, 'rect', { x: 200, y: 200 }, { x: 300, y: 300 });
-		await drawShape(page, 'rect', { x: 400, y: 200 }, { x: 500, y: 300 });
+		await drawShape(page, 'rect', { x: 280, y: 220 }, { x: 380, y: 320 });
+		await drawShape(page, 'rect', { x: 480, y: 220 }, { x: 580, y: 320 });
 		await waitForObjectCount(page, id, 2);
 
 		await selectTool(page, 'eraser');
-		await dragMouse(page, { x: 250, y: 250 }, { x: 450, y: 250 }, 5);
+		await dragMouse(page, { x: 330, y: 270 }, { x: 530, y: 270 }, 5);
 		// wait until the erasure is actually persisted before undoing,
 		// otherwise the stored board still holds the pre-erase state
 		await expect

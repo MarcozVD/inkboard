@@ -6,6 +6,7 @@
 	import ExportMenu from '$lib/components/menus/ExportMenu.svelte';
 	import SettingsPanel from '$lib/components/panels/SettingsPanel.svelte';
 	import { CREATE_ITEMS, TOOLBAR_TOOLS } from '$lib/board/boardInteractions';
+	import type { StyleControl } from '$lib/board/styleControls';
 	import type { GridConfig, ShapeType } from '$lib/objects/types';
 	import type { ExportFormat } from '$lib/io/transfer';
 
@@ -13,6 +14,7 @@
 		activeTool,
 		currentShape,
 		stickyColor,
+		styleControls = [],
 		showCreatePanel,
 		showExportMenu,
 		showSettings,
@@ -33,6 +35,7 @@
 		activeTool: string;
 		currentShape: ShapeType;
 		stickyColor: string | undefined;
+		styleControls?: StyleControl[];
 		showCreatePanel: boolean;
 		showExportMenu: boolean;
 		showSettings: boolean;
@@ -60,7 +63,7 @@
 	onExport={onToggleExport}
 	exportActive={showExportMenu}
 >
-	<ToolPalette {activeTool} {currentShape} {stickyColor} {onShape} {onStickyColor} />
+	<ToolPalette {activeTool} {currentShape} {stickyColor} {styleControls} {onShape} {onStickyColor} />
 </ToolBar>
 
 <CreatePanel open={showCreatePanel} items={CREATE_ITEMS} onSelect={onCreate} onClose={onToggleCreate} />

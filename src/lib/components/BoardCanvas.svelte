@@ -39,7 +39,7 @@
 	let showCreatePanel = $state(false);
 	let ctxMenu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
 	let showPalette = $state(false);
-	let ctxBar = $state<{ x: number; y: number; actions: CtxAction[] } | null>(null);
+	let ctxBar = $state<{ x: number; y: number; bottom: number; actions: CtxAction[] } | null>(null);
 	let showSettings = $state(false);
 	let showShortcuts = $state(false);
 	let objectCount = $state(0);
@@ -367,7 +367,7 @@
 	{/if}
 
 	{#if ctxBar}
-		<ContextToolbar x={ctxBar.x} y={ctxBar.y} offsetX={canvasRect.left} offsetY={canvasRect.top} actions={ctxBar.actions} style={styles.selectionControls} />
+		<ContextToolbar x={ctxBar.x} y={ctxBar.y} bottom={ctxBar.bottom} offsetX={canvasRect.left} offsetY={canvasRect.top} actions={ctxBar.actions} style={styles.selectionControls} />
 	{/if}
 
 	{#if ctxMenu}

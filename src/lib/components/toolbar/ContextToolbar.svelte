@@ -17,6 +17,7 @@
 	let {
 		x,
 		y,
+		bottom = 0,
 		offsetX = 0,
 		offsetY = 0,
 		actions,
@@ -24,6 +25,8 @@
 	}: {
 		x: number;
 		y: number;
+		/** selection bottom in canvas-local coords (for below-placement) */
+		bottom?: number;
 		/** canvas box origin in viewport coords (the toolbar is position: fixed) */
 		offsetX?: number;
 		offsetY?: number;
@@ -32,14 +35,23 @@
 	} = $props();
 
 	let barEl: HTMLDivElement | undefined = $state();
+	/** clearance above the selection top that keeps the rotate handle reachable */
+	const ROTATE_CLEARANCE = 56;
+	const MARGIN = 8;
 
 	$effect(() => {
 		if (!barEl || x === -1) return;
 		const r = barEl.getBoundingClientRect();
 		const vw = window.innerWidth;
-		// clamp horizontally; keep above the object (y - height - 8)
-		barEl.style.left = `${Math.max(8, Math.min(x + offsetX - r.width / 2, vw - r.width - 8))}px`;
-		barEl.style.top = `${Math.max(8, y + offsetY - r.height - 8)}px`;
+		const vh = window.innerHeight;
+		const selectionTop = y + offsetY;
+		const selectionBottom = bottom + offsetY;
+		// above the selection, clear of the rotate handle; below if it does not fit
+		let top = selectionTop - ROTATE_CLEARANCE - r.height;
+		if (top < MARGIN) top = selectionBottom + MARGIN;
+		top = Math.max(MARGIN, Math.min(top, vh - r.height - MARGIN));
+		barEl.style.left = `${Math.max(MARGIN, Math.min(x + offsetX - r.width / 2, vw - r.width - MARGIN))}px`;
+		barEl.style.top = `${top}px`;
 	});
 </script>
 

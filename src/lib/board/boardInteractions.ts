@@ -58,18 +58,19 @@ export function buildSelectionToolbar(
 	engine: CanvasEngine,
 	camera: CameraState,
 	deps: BoardActionDeps
-): { x: number; y: number; actions: CtxAction[] } | null {
+): { x: number; y: number; bottom: number; actions: CtxAction[] } | null {
 	const sel = engine.selectionManager;
 	const bounds = sel.getSelectionBounds();
 	if (!bounds || sel.selected.length === 0) return null;
 	const [x, y] = worldToScreen(bounds.x + bounds.width / 2, bounds.y, camera);
+	const [, bottom] = worldToScreen(bounds.x, bounds.y + bounds.height, camera);
 	const actions: CtxAction[] = [
 		{ id: 'duplicate', icon: 'duplicate', label: 'Duplicate', onClick: deps.duplicateSelection },
 		{ id: 'front', icon: 'layer-front', label: 'Bring to front', onClick: () => deps.reorderSelection('front') },
 		{ id: 'back', icon: 'layer-back', label: 'Send to back', onClick: () => deps.reorderSelection('back') },
 		{ id: 'delete', icon: 'trash', label: 'Delete', onClick: deps.deleteSelection }
 	];
-	return { x, y, actions };
+	return { x, y, bottom, actions };
 }
 
 /** Right-click menu items for the object (or empty canvas) under a point. */

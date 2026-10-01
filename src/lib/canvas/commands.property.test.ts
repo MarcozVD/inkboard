@@ -13,6 +13,7 @@ import {
 	ReorderCommand,
 	UngroupCommand,
 	UpdateContentCommand,
+	UpdateLockCommand,
 	UpdateStyleCommand,
 	UpdateTransformCommand,
 	fitContentBox
@@ -69,6 +70,7 @@ type Op =
 	| { kind: 'remove'; picks: number[] }
 	| { kind: 'transform'; picks: number[]; dx: number; dy: number; scale: number; angle: number }
 	| { kind: 'style'; picks: number[]; opacity: number }
+	| { kind: 'lock'; picks: number[] }
 	| { kind: 'content'; picks: number[] }
 	| { kind: 'reorder'; shift: number }
 	| { kind: 'group'; picks: number[] }
@@ -93,6 +95,7 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
 		picks: picksArb,
 		opacity: fc.constantFrom(0.25, 0.5, 1)
 	}),
+	fc.record({ kind: fc.constant('lock' as const), picks: picksArb }),
 	fc.record({ kind: fc.constant('content' as const), picks: picksArb }),
 	fc.record({ kind: fc.constant('reorder' as const), shift: fc.nat({ max: 3 }) }),
 	fc.record({ kind: fc.constant('group' as const), picks: picksArb }),
@@ -157,6 +160,20 @@ function buildCommand(store: ObjectStore, op: Op): Command | null {
 				after.set(id, { ...obj.style, opacity: op.opacity });
 			}
 			return before.size > 0 ? new UpdateStyleCommand(store, before, after) : null;
+		}
+
+		case 'lock': {
+			const targets = resolveIds(store, op.picks);
+			if (targets.length === 0) return null;
+			const before = new Map<string, boolean>();
+			const after = new Map<string, boolean>();
+			for (const id of targets) {
+				const obj = store.get(id);
+				if (!obj) continue;
+				before.set(id, obj.locked);
+				after.set(id, !obj.locked);
+			}
+			return before.size > 0 ? new UpdateLockCommand(store, before, after) : null;
 		}
 
 		case 'content': {

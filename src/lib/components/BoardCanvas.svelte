@@ -9,6 +9,8 @@
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
 	import { createZoomActions } from '$lib/board/zoomActions';
+	import { resolveDoubleClick, groupSelection, ungroupSelection } from '$lib/board/groups';
+	import { toggleLockSelection } from '$lib/board/lock';
 	import {
 		buildContextMenu,
 		buildPaletteCommands,
@@ -26,7 +28,6 @@
 	import ContextMenu, { type MenuItem } from '$lib/components/menus/ContextMenu.svelte';
 	import CommandPalette from '$lib/components/menus/CommandPalette.svelte';
 	import ContextToolbar, { type CtxAction } from '$lib/components/toolbar/ContextToolbar.svelte';
-
 	let { boardId }: { boardId: string } = $props();
 
 	let canvasEl = $state<HTMLCanvasElement | null>(null);
@@ -43,7 +44,6 @@
 	let showSettings = $state(false);
 	let theme = $state<'dark' | 'light' | 'system'>('dark');
 	let objectCount = $state(0);
-
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
 	let grid: GridConfig = $state({ enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 });
 	let canvasRect = $state({ left: 0, top: 0, width: 0, height: 0 });
@@ -57,7 +57,6 @@
 		if (!eng || !editingTextId) return null;
 		return (eng.store.get(editingTextId) as unknown as EditableObj) ?? null;
 	});
-
 	const transfer = createTransferHandlers({
 		getBoardId: () => boardId,
 		getEngine: () => engine,
@@ -91,7 +90,6 @@
 		ui.canUndo = engine?.history.canUndo ?? false;
 		ui.canRedo = engine?.history.canRedo ?? false;
 	}
-
 	function transferMeta() {
 		return {
 			name: boardName,
@@ -101,7 +99,6 @@
 			view: { width: canvasRect.width, height: canvasRect.height }
 		};
 	}
-
 	function setTool(t: ToolId) {
 		// B10: UI follows only when the engine accepted the tool
 		const accepted = engine?.setTool(t) ?? false;
@@ -115,7 +112,6 @@
 		showCreatePanel = false;
 		if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
 	}
-
 	function setShape(shape: ShapeType) {
 		if (!engine) return;
 		engine.shapeTool.config.shape = shape;
@@ -123,39 +119,37 @@
 		setTool('shape');
 	}
 
-	function deleteSelection() {
+	const deleteSelection = () => {
 		if (!engine) return;
 		deleteObjects(engine);
 		ctxBar = null;
 		syncShell();
 		markDirty();
-	}
-	function duplicateSelection() {
+	};
+	const duplicateSelection = () => {
 		if (!engine) return;
 		duplicateObjects(engine);
 		updateCtxBar();
 		syncShell();
 		markDirty();
-	}
-	function reorderSelection(mode: ReorderMode) {
+	};
+	const reorderSelection = (mode: ReorderMode) => {
 		if (!engine) return;
 		reorderObjects(engine, mode);
 		syncShell();
 		markDirty();
-	}
+	};
 	function updateCtxBar() {
 		ctxBar = engine ? buildSelectionToolbar(engine, camera, deps) : null;
 		styles.touch();
 	}
-
 	function openTextEditor(obj: EditableObj) {
 		editingTextId = obj.id;
 	}
 	function commitTextEdit(content: string) {
 		const id = editingTextId;
 		editingTextId = null;
-		if (!engine || !id) return;
-		commitTextContent(engine, id, content);
+		if (engine && id) commitTextContent(engine, id, content);
 		syncShell();
 		markDirty();
 	}
@@ -170,12 +164,17 @@
 	function onDblClick(e: MouseEvent) {
 		if (!engine || !runtime || activeTool !== 'select') return;
 		const p = runtime.input.toCanvasPoint(e);
-		const hit = engine.selectionManager.hitTest({ x: (p.x - camera.x) / camera.zoom, y: (p.y - camera.y) / camera.zoom });
-		if (hit && (hit.type === 'text' || hit.type === 'sticky_note')) {
-			openTextEditor(hit as unknown as EditableObj);
+		const action = resolveDoubleClick(engine, { x: (p.x - camera.x) / camera.zoom, y: (p.y - camera.y) / camera.zoom });
+		if (!action) return;
+		if (action.kind === 'group') {
+			engine.selectTool.enterGroup(action.objectId);
+			updateCtxBar();
+		} else {
+			const obj = engine.store.get(action.objectId);
+			if (obj) openTextEditor(obj as unknown as EditableObj);
 		}
+		markDirty();
 	}
-
 	function onPaste(e: ClipboardEvent) {
 		clipboard.pasteFromEvent(e);
 	}
@@ -199,7 +198,6 @@
 			items: buildContextMenu(engine, { x: (p.x - camera.x) / camera.zoom, y: (p.y - camera.y) / camera.zoom }, deps)
 		};
 	}
-
 	function onKeyDown(e: KeyboardEvent) {
 		handleCanvasKeyDown(e, deps);
 	}
@@ -225,7 +223,9 @@
 		openPalette: () => { showPalette = true; },
 		selectAll: () => {
 			if (!engine) return;
-			engine.selectionManager.selectMany(engine.store.getAll().map((o) => o.id));
+			engine.selectionManager.selectMany(
+				engine.store.getAll().filter((o) => o.type !== 'group').map((o) => o.id)
+			);
 			updateCtxBar();
 			markDirty();
 		},
@@ -240,6 +240,9 @@
 		copySelection: () => void clipboard.copySelection(),
 		cutSelection: () => clipboard.cutSelection(),
 		pasteClipboard: (at?: { x: number; y: number } | null) => { void clipboard.paste(at); },
+		groupSelection: () => { if (engine) { groupSelection(engine); syncShell(); markDirty(); } },
+		ungroupSelection: () => { if (engine) { ungroupSelection(engine); syncShell(); markDirty(); } },
+		toggleLockSelection: () => { if (engine) { toggleLockSelection(engine); syncShell(); markDirty(); } },
 		undo: () => { engine?.history.undo(); syncShell(); markDirty(); },
 		redo: () => { engine?.history.redo(); syncShell(); markDirty(); },
 		zoomFit,
@@ -247,7 +250,6 @@
 		openSettings: () => { showSettings = true; },
 		onDirty: markDirty
 	} satisfies KeyboardContext & BoardActionDeps;
-
 	const paletteCommands = buildPaletteCommands(deps);
 
 	onMount(() => {
@@ -285,7 +287,6 @@
 			onKeyUp,
 			onPaste
 		});
-
 		syncShell();
 		uiActions.undo = deps.undo;
 		uiActions.redo = deps.redo;
@@ -309,7 +310,6 @@
 		};
 	});
 </script>
-
 <div class="canvas-wrap">
 	<canvas
 		bind:this={canvasEl}

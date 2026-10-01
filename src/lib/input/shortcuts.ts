@@ -115,6 +115,9 @@ export interface KeyboardContext {
 	copySelection: () => void;
 	cutSelection: () => void;
 	pasteClipboard: () => void;
+	groupSelection: () => void;
+	ungroupSelection: () => void;
+	toggleLockSelection: () => void;
 	undo: () => void;
 	redo: () => void;
 }
@@ -179,6 +182,17 @@ export function handleCanvasKeyDown(e: KeyboardEvent, ctx: KeyboardContext): voi
 		// handled here (and the native paste event suppressed) for deterministic behavior
 		e.preventDefault();
 		ctx.pasteClipboard();
+	}
+	// groups (§M1-05) and lock (§M1-06)
+	if (mod && (e.key === 'g' || e.key === 'G')) {
+		e.preventDefault();
+		if (e.shiftKey) ctx.ungroupSelection();
+		else ctx.groupSelection();
+		return;
+	}
+	if (mod && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+		e.preventDefault();
+		ctx.toggleLockSelection();
 	}
 	if (e.key === 'Escape') ctx.clearSelection();
 

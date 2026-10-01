@@ -198,6 +198,37 @@ export class ReorderCommand implements Command {
 	}
 }
 
+/** Lock/unlock objects (§M1-06). */
+export class UpdateLockCommand implements Command {
+	constructor(
+		private store: ObjectStore,
+		private before: Map<string, boolean>,
+		private after: Map<string, boolean>
+	) {}
+
+	description = 'Lock';
+
+	undo(): void {
+		this.apply(this.before);
+	}
+
+	redo(): void {
+		this.apply(this.after);
+	}
+
+	private apply(map: Map<string, boolean>): void {
+		const ids: string[] = [];
+		for (const [id, locked] of map) {
+			const obj = this.store.get(id);
+			if (!obj) continue;
+			obj.locked = locked;
+			obj.updatedAt = Date.now();
+			ids.push(id);
+		}
+		if (ids.length) this.store.notifyChange(ids);
+	}
+}
+
 // ── Grouping (structure only; UI is M1-05) ──
 
 function unionBounds(store: ObjectStore, ids: string[]): Rect {
@@ -381,11 +412,19 @@ export function reorderObjects(engine: CanvasEngine, mode: ReorderMode): boolean
 	return changed;
 }
 
-/** Delete objects (current selection by default) as one undo step. */
+/** Delete objects (current selection by default) as one undo step.
+ * Locked objects are skipped; group shells left without children are removed too. */
 export function deleteObjects(engine: CanvasEngine, ids = engine.selectionManager.selected): void {
 	const store = engine.store;
-	const objs = ids.map((id) => store.get(id)).filter(Boolean) as CanvasObject[];
+	const objs = ids
+		.map((id) => store.get(id))
+		.filter((obj): obj is CanvasObject => !!obj && !obj.locked);
 	if (objs.length === 0) return;
+	const removedIds = new Set(objs.map((o) => o.id));
+	// group shells whose children are all going away
+	for (const obj of store.getAll()) {
+		if (obj.type === 'group' && obj.childIds.every((id) => removedIds.has(id))) objs.push(obj);
+	}
 	engine.execute(new RemoveObjectsCommand(store, objs));
 	engine.selectionManager.clear();
 }

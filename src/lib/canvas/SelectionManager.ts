@@ -53,23 +53,27 @@ export class SelectionManager {
 
 	// ── Hit-testing ──
 
-	/** Find the topmost object under the world-space point (refined by type) */
+	/** Find the topmost object under the world-space point (refined by type).
+	 * Group shells are structural: they resolve through their children. */
 	hitTest(world: Vec2): CanvasObject | null {
 		const candidates = this.store.queryPoint(world, 8);
 		if (candidates.length === 0) return null;
 		// topmost first (highest zIndex)
 		candidates.sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
 		for (const obj of candidates) {
+			if (obj.type === 'group') continue;
 			if (pointInObject(obj, world)) return obj;
 		}
 		return null;
 	}
 
-	/** Find all objects whose AABB intersects the world rect, refined. */
+	/** Find all objects whose AABB intersects the world rect, refined.
+	 * Locked objects and group shells never join a marquee selection (§M1-06). */
 	selectInRect(worldRect: Rect, additive = false): string[] {
 		const candidates = this.store.queryRect(worldRect);
 		const hits: string[] = [];
 		for (const obj of candidates) {
+			if (obj.locked || obj.type === 'group') continue;
 			if (objectBoundsIntersectRect(obj, worldRect)) {
 				hits.push(obj.id);
 			}

@@ -70,6 +70,18 @@ export class Renderer {
 		return [wx * camera.zoom + camera.x, wy * camera.zoom + camera.y];
 	}
 
+	private drawLockBadge(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+		ctx.save();
+		ctx.fillStyle = '#ffffff';
+		ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+		ctx.lineWidth = 1.5;
+		ctx.fillRect(x - 6, y - 4, 12, 9);
+		ctx.beginPath();
+		ctx.arc(x, y - 4, 4, Math.PI, 0);
+		ctx.stroke();
+		ctx.restore();
+	}
+
 	private drawGrid(
 		ctx: CanvasRenderingContext2D,
 		camera: CameraState,
@@ -149,6 +161,11 @@ export class Renderer {
 			}
 			ctx.fill();
 			ctx.stroke();
+		}
+
+		// lock indicator (§M1-06)
+		if (sel.selected.some((id) => engine.store.get(id)?.locked)) {
+			this.drawLockBadge(ctx, sx + sw + 9, sy - 9);
 		}
 		ctx.restore();
 

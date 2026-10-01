@@ -38,6 +38,9 @@ export interface BoardActionDeps {
 	copySelection: () => void;
 	cutSelection: () => void;
 	pasteClipboard: (at?: { x: number; y: number } | null) => void;
+	groupSelection: () => void;
+	ungroupSelection: () => void;
+	toggleLockSelection: () => void;
 	setTool: (tool: ToolId) => void;
 	zoomFit: () => void;
 	resetZoom: () => void;
@@ -87,14 +90,19 @@ export function buildContextMenu(
 	}
 	const objId = obj.id;
 	const sel = engine.selectionManager;
-	return [
+	const items: MenuItem[] = [
 		{ label: 'Copy', icon: 'copy', action: () => { sel.selectMany([objId]); deps.copySelection(); } },
 		{ label: 'Cut', icon: 'cut', action: () => { sel.selectMany([objId]); deps.cutSelection(); } },
 		{ label: 'Paste', icon: 'import', action: () => deps.pasteClipboard(world) },
 		{ separator: true },
 		{ label: 'Duplicate', icon: 'duplicate', action: () => { sel.selectMany([objId]); deps.duplicateSelection(); } },
-		{ label: 'Delete', icon: 'trash', danger: true, action: () => { sel.selectMany([objId]); deps.deleteSelection(); } }
+		{ label: obj.locked ? 'Unlock' : 'Lock', icon: 'lock', action: () => { sel.selectMany([objId]); deps.toggleLockSelection(); } }
 	];
+	if (obj.groupId) {
+		items.push({ label: 'Ungroup', action: () => { sel.selectMany([objId]); deps.ungroupSelection(); } });
+	}
+	items.push({ label: 'Delete', icon: 'trash', danger: true, action: () => { sel.selectMany([objId]); deps.deleteSelection(); } });
+	return items;
 }
 
 /** Command palette entries; hints come from the shortcut table. */

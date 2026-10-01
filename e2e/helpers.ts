@@ -19,6 +19,8 @@ export interface StoredObject {
 	shape?: string;
 	points?: number[];
 	style?: Record<string, unknown>;
+	locked?: boolean;
+	groupId?: string;
 	transform: StoredTransform;
 }
 

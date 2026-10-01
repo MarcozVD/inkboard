@@ -1,6 +1,7 @@
 // SelectTool — pointer interaction for selection & transform (§4)
 import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { SelectionManager, type HandleId } from '$lib/canvas/SelectionManager';
+import { expandSelection, groupMembers } from '$lib/board/groups';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
 import { UpdateTransformCommand } from '$lib/canvas/commands';
@@ -32,6 +33,8 @@ export class SelectTool extends BaseTool {
 	private activeHandle: HandleId | null = null;
 	private rectStart: Vec2 = { x: 0, y: 0 };
 	private moved = false;
+	/** group the user has entered with a double click (one nesting level) */
+	private enteredGroupId: string | null = null;
 
 	constructor(ctx: ToolContext, private cb: SelectToolCallbacks = {}) {
 		super(ctx);
@@ -40,6 +43,16 @@ export class SelectTool extends BaseTool {
 
 	get selectionManager(): SelectionManager {
 		return this.sel;
+	}
+
+	/** Double click entry: select one child inside its group (§M1-05). */
+	enterGroup(childId: string): boolean {
+		const child = this.ctx.store.get(childId);
+		if (!child || !child.groupId) return false;
+		this.enteredGroupId = child.groupId;
+		this.sel.selectMany([childId]);
+		this.cb.onSelectionChange?.(this.sel.selected);
+		return true;
 	}
 
 	// ── Pointer events (screen space) ──
@@ -66,19 +79,30 @@ export class SelectTool extends BaseTool {
 			}
 		}
 
-		// 2) hit-test objects
+		// 2) hit-test objects (groups resolve to their members; locked select but don't transform)
 		const hit = this.sel.hitTest(world);
-		if (hit && !hit.locked) {
-			if (!this.sel.isSelected(hit.id)) {
-				this.sel.select(hit.id, shift);
+		if (hit) {
+			let ids: string[];
+			if (hit.groupId && hit.groupId === this.enteredGroupId) {
+				ids = [hit.id]; // inside the entered group: select the child itself
+			} else if (hit.groupId) {
+				this.enteredGroupId = null;
+				ids = groupMembers(this.ctx.store, hit.groupId);
+			} else {
+				ids = [hit.id];
+			}
+			if (!ids.every((id) => this.sel.isSelected(id))) {
+				this.sel.selectMany(ids, shift);
 				this.cb.onSelectionChange?.(this.sel.selected);
 			} else if (shift) {
-				this.sel.toggle(hit.id);
+				for (const id of ids) this.sel.toggle(id);
 				this.cb.onSelectionChange?.(this.sel.selected);
 				return; // click on selected + shift = deselect
 			}
-			this.mode = 'move';
-			this.captureStart();
+			if (!hit.locked) {
+				this.mode = 'move';
+				this.captureStart();
+			}
 		} else {
 			// empty space: start rect-select
 			this.mode = 'rect-select';
@@ -138,6 +162,7 @@ export class SelectTool extends BaseTool {
 		this.startGeometries.clear();
 		this.startBounds = null;
 		this.moved = false;
+		this.enteredGroupId = null;
 	}
 
 	/** Push an undo command capturing before/after geometry (§15). */
@@ -266,6 +291,8 @@ export class SelectTool extends BaseTool {
 			height: Math.abs(world.y - this.rectStart.y)
 		};
 		this.sel.selectInRect(rect, shift);
+		// a hit on a group member selects the whole group
+		this.sel.selectMany(expandSelection(this.ctx.store, this.sel.selected), true);
 		this.cb.onSelectionChange?.(this.sel.selected);
 	}
 

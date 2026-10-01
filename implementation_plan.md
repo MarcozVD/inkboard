@@ -55,7 +55,7 @@
 ### 0.3 Deuda técnica que condiciona el plan
 
 - **`BoardCanvas.svelte` era un monolito de 1235 líneas** (render, input, atajos, autosave, import/export, menús y paleta). M1-01 lo partió en `canvas/Renderer.ts`, `input/InputController.ts`, `board/BoardRuntime.ts`, `board/BoardSession.ts`, `board/boardInteractions.ts` e `io/transfer.ts`, más los componentes `BoardChrome`, `CanvasHint`, `ExportMenu` y `ToolPalette`: ahora son 396 líneas de composición. Ahí siguen viviendo B07, B14 y B17, y parte de B12.
-- **Mutaciones fuera del historial:** la UI llama a `store.*` directamente desde varios sitios. No hay un único camino comando → undo → autosave.
+- **Sin `store.*` fuera de los comandos:** desde M1-02 todo pasa por `engine.execute(cmd)` → store → historial → autosave → render, y `HistoryManager` agrupa (batch/transacción) o revierte (rollback) los pasos múltiples.
 - **Rendimiento:** `perfect-freehand` se recalcula para cada trazo visible en cada frame (`smoothedPoints` nunca se rellena). El autosave serializa el board entero, imágenes incluidas como data URL. Los comandos Tauri son síncronos, así que corren en el hilo principal.
 - **Seguridad:** `csp: null`. `inspect_import` y `read_file_bytes` leen cualquier ruta que mande el webview. El ZIP se descomprime entero antes de comprobar su tamaño (zip bomb).
 - **Tema:** el canvas usa colores oscuros fijos (`#0f1013`, grid, selección blanca). `system` no sigue al sistema operativo y el tema no se guarda.
@@ -1491,7 +1491,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | ID | Tarea | Aceptación | Tam. | Dep. |
 |----|-------|------------|------|------|
 | M1-01 ✅ | Partir `BoardCanvas.svelte` en módulos sin cambiar comportamiento: `canvas/Renderer.ts` (fondo, grid, objetos, overlay), `input/InputController.ts` (Pointer Events, rueda y pinch, sin touch events duplicados), `input/shortcuts.ts` (de M0-05), `board/BoardSession.ts` (carga, autosave, flush, estado de guardado) e `io/transfer.ts` (import, export y descargas). | `BoardCanvas.svelte` < 400 líneas; los E2E de M0 siguen en verde | L | M0 |
-| M1-02 | API única de mutación: `engine.execute(cmd)`. Comandos `AddObjects`, `RemoveObjects`, `UpdateTransform`, `UpdateStyle`, `UpdateContent`, `Reorder`, `Group`/`Ungroup` y `Batch`, con transacciones (`begin`/`commit`/`rollback`, §15). | Test de propiedades (`fast-check`) sobre el JSON del store: para todo comando, `undo(redo(s)) ≡ s` y `redo(undo(redo(s))) ≡ redo(s)` | M | M1-01 |
+| M1-02 ✅ | API única de mutación: `engine.execute(cmd)`. Comandos `AddObjects`, `RemoveObjects`, `UpdateTransform`, `UpdateStyle`, `UpdateContent`, `Reorder`, `Group`/`Ungroup` y `Batch`, con transacciones (`begin`/`commit`/`rollback`, §15). `tools`, `board` e `io` migrados: ya no llaman a `store.*`. | Test de propiedades (`fast-check`) sobre el JSON del store: para todo comando, `undo(redo(s)) ≡ s` y `redo(undo(redo(s))) ≡ redo(s)` | M | M1-01 |
 | M1-03 | Estilos en el ContextToolbar (DESIGN § ContextToolbar; sin panel lateral fijo): color y grosor del pen/highlighter; fill, stroke, grosor, dash y radio de las formas; tamaño, negrita, cursiva, alineación y color del texto; color del sticky; opacidad. Swatches solo para contenido (One Color Rule). Se recuerda el último estilo de cada tool. | E2E: cambiar el color de un trazo seleccionado y deshacerlo | L | M1-02 |
 | M1-04 | Clipboard de objetos (RF-09): Ctrl+C/X/V/D. Portapapeles del sistema con JSON versionado (`inkboard/clipboard@1`) y fallback interno; pegar en el cursor o en el centro del viewport con offset acumulativo; pegar entre boards; el texto plano se pega como objeto texto; el pegado de imágenes sigue funcionando. | E2E: copiar en el board A y pegar en el B | M | M1-02 |
 | M1-05 | Grupos (RF-12): Ctrl+G / Ctrl+Shift+G. Un clic selecciona el grupo y el doble clic entra en él; los bounds salen de los hijos; un nivel de anidamiento. | Unit + E2E: agrupar → mover → undo | M | M1-02, M0-10 |
@@ -1684,7 +1684,7 @@ WASM compilado descartado para el MVP: complejidad de compilación y bindgen sin
 
 Versiones reales de `package.json` y `src-tauri/Cargo.toml` (2026-09-30):
 
-- **Frontend:** svelte 5.57 · @sveltejs/kit 2.70 · vite 8.2 · vitest 4.1 · typescript 6.0 · @playwright/test 1.62 · rbush 4.0 · perfect-freehand 1.2 · uuid 14 · @tauri-apps/api 2.11 con los plugins fs, dialog y clipboard-manager.
+- **Frontend:** svelte 5.57 · @sveltejs/kit 2.70 · vite 8.2 · vitest 4.1 · typescript 6.0 · @playwright/test 1.62 · rbush 4.0 · perfect-freehand 1.2 · uuid 14 · fast-check 4.10 (dev) · @tauri-apps/api 2.11 con los plugins fs, dialog y clipboard-manager.
 - **Rust:** tauri 2.11 · rusqlite 0.31 (bundled) · zstd 0.13 · sha2 0.10 · zip 2.1 · serde / serde_json · uuid · anyhow · tauri-plugin-fs, dialog, clipboard-manager y log.
 
 **Nota sobre `perfect-freehand`:** esta librería (de Steve Ruiz, creador de tldraw) genera strokes de alta calidad con simulación de presión. Es la elección pragmática para el lápiz frente a implementar Catmull-Rom desde cero.
@@ -1693,7 +1693,7 @@ Dependencias que añade el plan:
 
 | Milestone | Dependencia | Para qué |
 |-----------|-------------|----------|
-| M1 | `fast-check` (dev) | Tests de propiedades de los comandos (M1-02) |
+| M1 | `fast-check` (dev) — **añadida en M1-02** | Tests de propiedades de los comandos (M1-02) |
 | M1 | `eslint`, `typescript-eslint`, `eslint-plugin-svelte` (dev) | Lint en CI (M1-12) |
 | M2 | `image` | Re-encode de imágenes importadas (M2-08) |
 | M2 | `usvg`, `svg2pdf` | PDF vectorial (M2-10) |

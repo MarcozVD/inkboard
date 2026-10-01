@@ -66,7 +66,7 @@
 
 ### 0.4 Parcial o no implementado
 
-Conectores (tipo + renderer, sin tool) · grupos (solo el tipo) · clipboard de objetos (stub) · lock (campo sin UI) · snap y smart guides · minimap · PDF / JPG / `.inkboard` · versiones y backup (tabla sin uso) · thumbnails reales · borrar, renombrar o duplicar boards desde Home · workers / OffscreenCanvas · colaboración.
+Conectores (tipo + renderer, sin tool) · grupos (solo el tipo) · lock (campo sin UI) · snap y smart guides · minimap · PDF / JPG / `.inkboard` · versiones y backup (tabla sin uso) · thumbnails reales · borrar, renombrar o duplicar boards desde Home · workers / OffscreenCanvas · colaboración.
 
 ### 0.5 Layout del repo y comandos
 
@@ -1493,7 +1493,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M1-01 ✅ | Partir `BoardCanvas.svelte` en módulos sin cambiar comportamiento: `canvas/Renderer.ts` (fondo, grid, objetos, overlay), `input/InputController.ts` (Pointer Events, rueda y pinch, sin touch events duplicados), `input/shortcuts.ts` (de M0-05), `board/BoardSession.ts` (carga, autosave, flush, estado de guardado) e `io/transfer.ts` (import, export y descargas). | `BoardCanvas.svelte` < 400 líneas; los E2E de M0 siguen en verde | L | M0 |
 | M1-02 ✅ | API única de mutación: `engine.execute(cmd)`. Comandos `AddObjects`, `RemoveObjects`, `UpdateTransform`, `UpdateStyle`, `UpdateContent`, `Reorder`, `Group`/`Ungroup` y `Batch`, con transacciones (`begin`/`commit`/`rollback`, §15). `tools`, `board` e `io` migrados: ya no llaman a `store.*`. | Test de propiedades (`fast-check`) sobre el JSON del store: para todo comando, `undo(redo(s)) ≡ s` y `redo(undo(redo(s))) ≡ redo(s)` | M | M1-01 |
 | M1-03 ✅ | Estilos en el ContextToolbar (DESIGN § ContextToolbar; sin panel lateral fijo): color y grosor del pen/highlighter; fill, stroke, grosor, dash y radio de las formas; tamaño, negrita, cursiva, alineación y color del texto; color del sticky; opacidad. Swatches solo para contenido (One Color Rule). Se recuerda el último estilo de cada tool. Todo el cambio de estilo es undoable vía `UpdateStyle` (`objects/stylePalette.ts`, `board/styleControls.ts`, `board/styleBridge.svelte.ts`, `toolbar/StyleControls.svelte`). | E2E: cambiar el color de un trazo seleccionado y deshacerlo (`e2e/styles.spec.ts`, 38 E2E en verde) | L | M1-02 |
-| M1-04 | Clipboard de objetos (RF-09): Ctrl+C/X/V/D. Portapapeles del sistema con JSON versionado (`inkboard/clipboard@1`) y fallback interno; pegar en el cursor o en el centro del viewport con offset acumulativo; pegar entre boards; el texto plano se pega como objeto texto; el pegado de imágenes sigue funcionando. | E2E: copiar en el board A y pegar en el B | M | M1-02 |
+| M1-04 ✅ | Clipboard de objetos (RF-09): Ctrl+C/X/V/D. Portapapeles del sistema con JSON versionado (`inkboard/clipboard@1`) y fallback interno; pegar en el cursor o en el centro del viewport con offset acumulativo; pegar entre boards; el texto plano se pega como objeto texto; el pegado de imágenes sigue funcionando. Todo pasa por `AddObjects`/`RemoveObjects`, así que copy es neutro y cut/paste son undoable (`board/clipboard.ts`, `board/zoomActions.ts`, `e2e/clipboard.spec.ts`). | E2E: copiar en el board A y pegar en el B (41 E2E en verde con `--workers=1`) | M | M1-02 |
 | M1-05 | Grupos (RF-12): Ctrl+G / Ctrl+Shift+G. Un clic selecciona el grupo y el doble clic entra en él; los bounds salen de los hijos; un nivel de anidamiento. | Unit + E2E: agrupar → mover → undo | M | M1-02, M0-10 |
 | M1-06 | Lock/unlock (RF-02) desde el menú contextual y con Ctrl+Shift+L. Un objeto bloqueado no entra en el marquee ni lo borra el eraser. | E2E | S | M1-02 |
 | M1-07 | Snap básico (RF-13 parcial): snap a grid (toggle en Settings), Shift restringe el movimiento a un eje, rotación en pasos de 15° con Shift, nudge con flechas (1 px, 10 px con Shift). | Unit del snapping | M | M0-10 |
@@ -1594,7 +1594,7 @@ Candidatos, a priorizar con el uso real de la beta:
 | Función | Prioridad | Estado (2026-09-30) | Planificado en |
 |---------|-----------|---------------------|----------------|
 | Estilos editables (color, grosor, fill) | Alta | **Hecho (M1-03)** — ContextToolbar + popover del ToolBar, sin panel lateral; cada cambio es undoable | M1-03 |
-| Clipboard de objetos | Alta | Stub | M1-04 |
+| Clipboard de objetos | Alta | **Hecho (M1-04)** — `Ctrl+C/X/V` y menú contextual, portapapeles del sistema con `inkboard/clipboard@1` + fallback interno, cut/paste undoable | M1-04 |
 | Conectores entre objetos | Alta | Tipo + renderer, sin tool | M1-09 (rectos), M5 (ortogonales) |
 | PDF / JPG / `.inkboard` | Alta | No | M2-06, M2-09, M2-10 |
 | Colaboración en tiempo real | Alta (largo plazo) | Solo stub de UI | M6 |
@@ -1744,8 +1744,8 @@ Estado: ✅ funciona · ⚠️ funciona con fallos · ❌ no existe. La columna 
 | `Delete` / `Backspace` | Eliminar selección | ✅ (ya no se dispara al escribir en inputs, B04) | — |
 | `Ctrl+Z` | Undo | ✅ | — |
 | `Ctrl+Shift+Z` / `Ctrl+Y` | Redo | ✅ | — |
-| `Ctrl+C` / `Ctrl+X` | Copy / Cut | ❌ | M1-04 |
-| `Ctrl+V` | Paste | ⚠️ solo imágenes | M1-04 |
+| `Ctrl+C` / `Ctrl+X` | Copy / Cut | ✅ (objetos, también desde el menú contextual) | M1-04 |
+| `Ctrl+V` | Paste | ✅ objetos en el cursor con offset acumulativo, entre boards, y texto plano como objeto texto; el pegado de imágenes sigue funcionando | M1-04 |
 | `Ctrl+D` | Duplicate | ✅ | — |
 | `Ctrl+A` | Select all | ✅ | — |
 | `Ctrl+G` / `Ctrl+Shift+G` | Group / Ungroup | ❌ | M1-05 |

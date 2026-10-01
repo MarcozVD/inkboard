@@ -16,6 +16,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG); insert is a single undo step (M0-12)
 - **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10)
 - **Undo/redo** — Command Pattern, 200 steps (eraser undo in M0-07, image insert and import in M0-12)
+- **Clipboard** — copy, cut and paste of objects with `Ctrl+C/X/V` and the context menu; system clipboard with a versioned `inkboard/clipboard@1` payload plus an internal fallback, paste at the cursor with cumulative offset, works across boards, plain text pastes as a text object, and cut/paste are undoable (M1-04)
 - **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (flushed on unmount, on `pagehide`/hidden, before returning Home and on window close — M0-06)
 - **Export** — PNG, SVG, JSON (client-side)
 - **Import** — images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)

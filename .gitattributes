@@ -1,0 +1,30 @@
+# Normalize all text files to LF in the repository and in checkouts,
+# so Prettier's format:check behaves the same on Windows and Linux CI.
+* text=auto eol=lf
+
+# Scripts and sources are always text
+*.rs    text eol=lf
+*.ts    text eol=lf
+*.js    text eol=lf
+*.svelte text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.html  text eol=lf
+*.sql   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.md    text eol=lf
+
+# Binary assets — never touch their line endings
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.gif   binary
+*.ico   binary
+*.icns  binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.zip   binary

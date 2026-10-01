@@ -1,6 +1,6 @@
 // Single source of truth for keyboard shortcuts (§M0-05, fixes B04/B09).
 // Consumed by the BoardCanvas keydown, the ToolBar hints and the CommandPalette.
-import type { ToolId } from '$lib/canvas/CanvasEngine';
+import type { CanvasEngine, ToolId } from '$lib/canvas/CanvasEngine';
 import type { ShapeType } from '$lib/objects/types';
 
 export interface ToolShortcut {
@@ -91,4 +91,97 @@ export function shouldIgnoreShortcut(
 	if (!target) return false;
 	const tag = typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
 	return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable === true;
+}
+
+// ── Keydown dispatcher (§M1-01) ──
+
+/** Board actions the keydown dispatcher can trigger. */
+export interface KeyboardContext {
+	getEngine: () => CanvasEngine | null;
+	isEditingText: () => boolean;
+	isModalOpen: () => boolean;
+	setSpaceDown: (down: boolean) => void;
+	zoomIn: () => void;
+	zoomOut: () => void;
+	resetZoom: () => void;
+	setTool: (tool: ToolId) => void;
+	setShape: (shape: ShapeType) => void;
+	openPalette: () => void;
+	selectAll: () => void;
+	clearSelection: () => void;
+	deleteSelection: () => void;
+	duplicateSelection: () => void;
+	reorderSelection: (mode: ReorderMode) => void;
+	undo: () => void;
+	redo: () => void;
+}
+
+/** Canvas keydown handler: editor guard, modal/input guard, tools and commands. */
+export function handleCanvasKeyDown(e: KeyboardEvent, ctx: KeyboardContext): void {
+	// while the in-canvas editor is open, keys belong to the textarea (B03)
+	if (ctx.isEditingText()) return;
+	// B04: never steal keys from inputs/contenteditable or while a modal is open
+	if (shouldIgnoreShortcut(e, { modalOpen: ctx.isModalOpen() })) return;
+
+	if (e.code === 'Space' && !e.repeat) ctx.setSpaceDown(true);
+	if (e.key === '+' || e.key === '=') ctx.zoomIn();
+	if (e.key === '-') ctx.zoomOut();
+	if (e.key === '0' && (e.ctrlKey || e.metaKey)) {
+		e.preventDefault();
+		ctx.resetZoom();
+	}
+
+	const sel = ctx.getEngine();
+	if (!sel) return;
+	const mod = e.ctrlKey || e.metaKey;
+
+	// tool shortcuts from the shared table (B09): S/N → sticky, R/O/L/A → shape
+	if (!mod) {
+		const shortcut = toolShortcutForKey(e.key);
+		if (shortcut) {
+			if (shortcut.shape) ctx.setShape(shortcut.shape);
+			ctx.setTool(shortcut.tool);
+			return;
+		}
+	}
+
+	if (mod && (e.key === 'k' || e.key === 'K')) {
+		e.preventDefault();
+		ctx.openPalette();
+		return;
+	}
+	if (e.key === 'Delete' || e.key === 'Backspace') {
+		if (sel.selectionManager.selected.length) {
+			e.preventDefault();
+			ctx.deleteSelection();
+		}
+	}
+	if (mod && (e.key === 'd' || e.key === 'D')) {
+		e.preventDefault();
+		ctx.duplicateSelection();
+	}
+	if (mod && (e.key === 'a' || e.key === 'A')) {
+		e.preventDefault();
+		ctx.selectAll();
+	}
+	if (e.key === 'Escape') ctx.clearSelection();
+
+	// z-order shortcuts from the shared table (M0-08): ]/[ one step, Ctrl+] /Ctrl+[ front/back
+	const reorder = reorderShortcutFor(e.key, mod);
+	if (reorder) {
+		e.preventDefault();
+		ctx.reorderSelection(reorder.mode);
+		return;
+	}
+
+	// ── Fase 10: undo/redo shortcuts ──
+	if (mod && (e.key === 'z' || e.key === 'Z')) {
+		e.preventDefault();
+		if (e.shiftKey) ctx.redo();
+		else ctx.undo();
+	}
+	if (mod && (e.key === 'y' || e.key === 'Y')) {
+		e.preventDefault();
+		ctx.redo();
+	}
 }

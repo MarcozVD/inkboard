@@ -10,7 +10,8 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 - **Infinite canvas** — pan, zoom, optional grid, empty-state hint
 - **Drawing** — pen (pressure via Pointer Events + perfect-freehand), highlighter, eraser
-- **Shapes** — rect, ellipse, line, arrow, triangle, diamond, star, polygon
+- **Shapes** — rect, ellipse, line, arrow, triangle, diamond, star, polygon, with editable fill, stroke, width, dash and corner radius
+- **Styles** — pen/highlighter color and width, shape fill/stroke/width/dash/radius, text size, bold, italic, alignment and color, sticky color, opacity: all editable from the ContextToolbar and the ToolBar popover, each change undoable, and the last style is remembered per tool (M1-03)
 - **Sticky notes / text** — in-canvas editing with undoable `UpdateContentCommand` (M0-04)
 - **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG); insert is a single undo step (M0-12)
 - **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10)

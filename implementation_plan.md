@@ -59,7 +59,7 @@
 - **Rendimiento:** `perfect-freehand` se recalcula para cada trazo visible en cada frame (`smoothedPoints` nunca se rellena). El autosave serializa el board entero, imágenes incluidas como data URL. Los comandos Tauri son síncronos, así que corren en el hilo principal.
 - **Seguridad:** `csp: null`. `inspect_import` y `read_file_bytes` leen cualquier ruta que mande el webview. El ZIP se descomprime entero antes de comprobar su tamaño (zip bomb).
 - **Tema:** el canvas usa colores oscuros fijos (`#0f1013`, grid, selección blanca). `system` no sigue al sistema operativo y el tema no se guarda.
-- **Sin UI de estilo:** no se puede cambiar el color ni el grosor del pen, ni el fill o el stroke de las formas (`engine.setPenConfig` existe, pero nada lo llama).
+- ~~**Sin UI de estilo:**~~ resuelta en M1-03: ContextToolbar y popover del ToolBar editan color, grosor, fill, stroke, dash, radio, opacidad y tipografía, cada cambio pasa por `UpdateStyle` y el último estilo se recuerda por tool.
 - **Código muerto:** `src-tauri/src/geometry/` (vacío). `src/lib/components/TopBar.svelte` se borró en M0-17 (nadie lo importaba).
 - **Calidad:** con CI desde M0-16 y E2E de las funciones básicas de edición; sin ESLint ni `prettier --check` (M1-12).
 - **Documentación:** `README.md` refleja el estado real tras M0 (`PRODUCT.md` L27 todavía cita B04/B05/B09 como pendientes y su título sigue diciendo "M0 en curso").
@@ -1492,7 +1492,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 |----|-------|------------|------|------|
 | M1-01 ✅ | Partir `BoardCanvas.svelte` en módulos sin cambiar comportamiento: `canvas/Renderer.ts` (fondo, grid, objetos, overlay), `input/InputController.ts` (Pointer Events, rueda y pinch, sin touch events duplicados), `input/shortcuts.ts` (de M0-05), `board/BoardSession.ts` (carga, autosave, flush, estado de guardado) e `io/transfer.ts` (import, export y descargas). | `BoardCanvas.svelte` < 400 líneas; los E2E de M0 siguen en verde | L | M0 |
 | M1-02 ✅ | API única de mutación: `engine.execute(cmd)`. Comandos `AddObjects`, `RemoveObjects`, `UpdateTransform`, `UpdateStyle`, `UpdateContent`, `Reorder`, `Group`/`Ungroup` y `Batch`, con transacciones (`begin`/`commit`/`rollback`, §15). `tools`, `board` e `io` migrados: ya no llaman a `store.*`. | Test de propiedades (`fast-check`) sobre el JSON del store: para todo comando, `undo(redo(s)) ≡ s` y `redo(undo(redo(s))) ≡ redo(s)` | M | M1-01 |
-| M1-03 | Estilos en el ContextToolbar (DESIGN § ContextToolbar; sin panel lateral fijo): color y grosor del pen/highlighter; fill, stroke, grosor, dash y radio de las formas; tamaño, negrita, cursiva, alineación y color del texto; color del sticky; opacidad. Swatches solo para contenido (One Color Rule). Se recuerda el último estilo de cada tool. | E2E: cambiar el color de un trazo seleccionado y deshacerlo | L | M1-02 |
+| M1-03 ✅ | Estilos en el ContextToolbar (DESIGN § ContextToolbar; sin panel lateral fijo): color y grosor del pen/highlighter; fill, stroke, grosor, dash y radio de las formas; tamaño, negrita, cursiva, alineación y color del texto; color del sticky; opacidad. Swatches solo para contenido (One Color Rule). Se recuerda el último estilo de cada tool. Todo el cambio de estilo es undoable vía `UpdateStyle` (`objects/stylePalette.ts`, `board/styleControls.ts`, `board/styleBridge.svelte.ts`, `toolbar/StyleControls.svelte`). | E2E: cambiar el color de un trazo seleccionado y deshacerlo (`e2e/styles.spec.ts`, 38 E2E en verde) | L | M1-02 |
 | M1-04 | Clipboard de objetos (RF-09): Ctrl+C/X/V/D. Portapapeles del sistema con JSON versionado (`inkboard/clipboard@1`) y fallback interno; pegar en el cursor o en el centro del viewport con offset acumulativo; pegar entre boards; el texto plano se pega como objeto texto; el pegado de imágenes sigue funcionando. | E2E: copiar en el board A y pegar en el B | M | M1-02 |
 | M1-05 | Grupos (RF-12): Ctrl+G / Ctrl+Shift+G. Un clic selecciona el grupo y el doble clic entra en él; los bounds salen de los hijos; un nivel de anidamiento. | Unit + E2E: agrupar → mover → undo | M | M1-02, M0-10 |
 | M1-06 | Lock/unlock (RF-02) desde el menú contextual y con Ctrl+Shift+L. Un objeto bloqueado no entra en el marquee ni lo borra el eraser. | E2E | S | M1-02 |
@@ -1593,7 +1593,7 @@ Candidatos, a priorizar con el uso real de la beta:
 
 | Función | Prioridad | Estado (2026-09-30) | Planificado en |
 |---------|-----------|---------------------|----------------|
-| Estilos editables (color, grosor, fill) | Alta | Sin UI | M1-03 |
+| Estilos editables (color, grosor, fill) | Alta | **Hecho (M1-03)** — ContextToolbar + popover del ToolBar, sin panel lateral; cada cambio es undoable | M1-03 |
 | Clipboard de objetos | Alta | Stub | M1-04 |
 | Conectores entre objetos | Alta | Tipo + renderer, sin tool | M1-09 (rectos), M5 (ortogonales) |
 | PDF / JPG / `.inkboard` | Alta | No | M2-06, M2-09, M2-10 |
@@ -1783,7 +1783,7 @@ Es la numeración de los commits `Fase N` y de los comentarios del código. Los 
 | 4 | Selección y transformación | Código presente, roto en runtime (B01, B11, B12) | M0-02, M0-10 |
 | 5 | Lápiz | ✓; sin UI de color ni grosor | M1-03 |
 | 6 | Texto | Roto: el editor no guarda (B03) | M0-04, M1-08 |
-| 7 | Formas | ✓ 8 formas; sin UI de estilo | M1-03 |
+| 7 | Formas | ✓ 8 formas; estilo editable desde M1-03 (fill, stroke, grosor, dash, radio) | — |
 | 8 | Imágenes | ✓; insertar no se puede deshacer (B13); import grande por diálogo (B16) | M0-12, M0-15 |
 | 9 | Sticky notes | Se crean, pero el texto no se guarda (B03) | M0-04 |
 | 10 | Undo / Redo | ✓ con huecos (B06, B13) | M0-07, M0-12, M1-02 |

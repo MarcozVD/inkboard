@@ -89,8 +89,10 @@ pnpm lint                           # ESLint (0 problems; rule banning `store.*`
 pnpm lint:fix                       # ESLint autofix
 pnpm format                         # Prettier write
 pnpm format:check                   # Prettier check
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 11/11
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 14/14
 ```
+
+**Line endings:** the repo is **LF everywhere** — `.gitattributes` sets `* text=auto eol=lf` (and marks binaries `binary`), and Prettier is pinned to `endOfLine: "lf"`. Without both halves, `format:check` fails on `windows-latest` with CRLF checkouts while passing on Linux.
 
 **CI** (M0-16, ampliada en M1-12): `.github/workflows/ci.yml` runs `lint`, `format:check`, `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Last run on GitHub Actions: green on both OSes.
 

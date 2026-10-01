@@ -1,6 +1,7 @@
 // PngExporter — render board objects to an offscreen canvas → PNG data URL (§18).
 import { renderObject } from '$lib/objects/renderers';
 import type { CanvasObject, GridConfig } from '$lib/objects/types';
+import type { ResolvedTheme } from '$lib/objects/colors';
 
 interface Bounds {
 	minX: number;
@@ -39,6 +40,7 @@ export async function boardToPngDataUrl(
 		scale?: number;
 		background?: string;
 		grid?: GridConfig;
+		theme?: ResolvedTheme;
 		getImage?: (src: string) => HTMLImageElement | undefined;
 	} = {}
 ): Promise<string> {
@@ -62,7 +64,7 @@ export async function boardToPngDataUrl(
 	const ctx = canvas.getContext('2d');
 	if (!ctx) throw new Error('PNG export: canvas 2d context unavailable');
 
-	ctx.fillStyle = opts.background ?? '#0f1013';
+	ctx.fillStyle = opts.background ?? (opts.theme === 'light' ? '#f5f5f7' : '#0f1013');
 	ctx.fillRect(0, 0, width, height);
 
 	// world → export-space: translate by -min + pad, then scale
@@ -71,7 +73,7 @@ export async function boardToPngDataUrl(
 	ctx.translate(pad - bounds.minX, pad - bounds.minY);
 
 	for (const o of objects) {
-		renderObject(ctx, o, { getImage: opts.getImage });
+		renderObject(ctx, o, { getImage: opts.getImage, theme: opts.theme });
 	}
 	ctx.restore();
 

@@ -4,6 +4,7 @@ import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createText } from '$lib/objects/factory';
 import type { TextObject, TextStyle } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';
+import { INK } from '$lib/objects/colors';
 
 /** Last-used text style (M1-03): new objects are created with it. */
 export interface TextToolConfig {
@@ -19,7 +20,7 @@ export const DEFAULT_TEXT_CONFIG: TextToolConfig = {
 	fontWeight: 'normal',
 	fontStyle: 'normal',
 	textAlign: 'left',
-	color: '#e8e9ec'
+	color: INK
 };
 
 export class TextTool extends BaseTool {

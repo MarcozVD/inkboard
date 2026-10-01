@@ -4,6 +4,7 @@ import { BaseTool, type ToolPointerEvent } from './BaseTool';
 import { createShape } from '$lib/objects/factory';
 import type { ShapeType, ShapeStyle } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';
+import { INK } from '$lib/objects/colors';
 
 export interface ShapeConfig {
 	shape: ShapeType;
@@ -12,7 +13,7 @@ export interface ShapeConfig {
 
 export const DEFAULT_SHAPE_CONFIG: ShapeConfig = {
 	shape: 'rect',
-	style: { fill: 'none', stroke: '#e8e9ec', strokeWidth: 2 }
+	style: { fill: 'none', stroke: INK, strokeWidth: 2 }
 };
 
 export const SHAPE_TYPES: ShapeType[] = ['rect', 'ellipse', 'line', 'arrow', 'triangle', 'diamond', 'star', 'polygon'];

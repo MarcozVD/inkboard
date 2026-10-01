@@ -6,6 +6,8 @@
 	import { handleCanvasKeyDown, type KeyboardContext, type ReorderMode } from '$lib/input/shortcuts';
 	import { deleteObjects, duplicateObjects, reorderObjects } from '$lib/canvas/commands';
 	import { createTextEditing } from '$lib/board/textEditing.svelte';
+	import { themeController } from '$lib/board/theme.svelte';
+	import { GRID } from '$lib/objects/colors';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
@@ -40,10 +42,9 @@
 	let ctxBar = $state<{ x: number; y: number; actions: CtxAction[] } | null>(null);
 	let showSettings = $state(false);
 	let showShortcuts = $state(false);
-	let theme = $state<'dark' | 'light' | 'system'>('dark');
 	let objectCount = $state(0);
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
-	let grid: GridConfig = $state({ enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 });
+	let grid: GridConfig = $state({ enabled: true, size: 32, color: GRID, opacity: 0.6 });
 	let canvasRect = $state({ left: 0, top: 0, width: 0, height: 0 });
 	let engine: CanvasEngine | null = $state(null);
 	let runtime: BoardRuntime | null = null;
@@ -70,8 +71,11 @@
 		getView: () => canvasRect,
 		onDirty: () => markDirty()
 	});
-	const { zoomIn, zoomOut, zoomReset, zoomFit } = zoom;
 	const markDirty = () => runtime?.markDirty();
+	$effect(() => {
+		document.documentElement.dataset.theme = themeController.resolved;
+		markDirty();
+	});
 	const textEdit = createTextEditing({ getEngine: () => engine, onShellChange: () => syncShell(), onDirty: () => markDirty() });
 	function syncShell() {
 		if (destroyed) return; // B14: no writes to the ui store after unmount
@@ -92,10 +96,6 @@
 	const gridChanged = (g: GridConfig) => {
 		grid = g;
 		markDirty();
-	};
-	const themeChanged = (t: 'dark' | 'light' | 'system') => {
-		theme = t;
-		document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark';
 	};
 	function setTool(t: ToolId) {
 		const accepted = engine?.setTool(t) ?? false;
@@ -192,9 +192,9 @@
 			spaceDown = down;
 			if (canvasEl) canvasEl.style.cursor = down ? 'grab' : 'default';
 		},
-		zoomIn,
-		zoomOut,
-		resetZoom: zoomReset,
+		zoomIn: zoom.zoomIn,
+		zoomOut: zoom.zoomOut,
+		resetZoom: zoom.zoomReset,
 		setTool,
 		setShape,
 		openPalette: () => {
@@ -268,7 +268,7 @@
 			syncShell();
 			markDirty();
 		},
-		zoomFit,
+		zoomFit: zoom.zoomFit,
 		onExport: (format: ExportFormat) => {
 			showExportMenu = false;
 			transfer.export(format);
@@ -279,7 +279,6 @@
 		onDirty: markDirty
 	} satisfies KeyboardContext & BoardActionDeps;
 	const paletteCommands = buildPaletteCommands(deps);
-
 	onMount(() => {
 		runtime = new BoardRuntime({
 			canvas: () => canvasEl,
@@ -287,6 +286,7 @@
 			getCamera: () => camera,
 			setCamera: (c) => (camera = c),
 			getGrid: () => grid,
+			getTheme: () => themeController.resolved,
 			getView: () => canvasRect,
 			getBoardName: () => boardName,
 			isSpaceDown: () => spaceDown,
@@ -344,7 +344,7 @@
 	<CanvasHint visible={objectCount === 0 && !textEdit.editingObj} />
 
 	<BoardChrome
-		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme }}
+		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme: themeController.choice }}
 		actions={{
 			onSelectTool: (t) => setTool(t as ToolId),
 			onToggleCreate: () => (showCreatePanel = !showCreatePanel),
@@ -356,11 +356,11 @@
 			onImport: () => void transfer.import(),
 			onCloseSettings: () => (showSettings = false),
 			onGridChange: gridChanged,
-			onThemeChange: themeChanged
+			onThemeChange: (t) => themeController.set(t)
 		}}
 	/>
 
-	<ZoomControls zoom={camera.zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onReset={zoomReset} onFit={zoomFit} />
+	<ZoomControls zoom={camera.zoom} onZoomIn={zoom.zoomIn} onZoomOut={zoom.zoomOut} onReset={zoom.zoomReset} onFit={zoom.zoomFit} />
 
 	{#if textEdit.editingObj}
 		<TextEditor obj={textEdit.editingObj} camera={{ x: camera.x, y: camera.y, zoom: camera.zoom }} offset={{ x: canvasRect.left, y: canvasRect.top }} onCommit={textEdit.commit} onCancel={textEdit.cancel} />

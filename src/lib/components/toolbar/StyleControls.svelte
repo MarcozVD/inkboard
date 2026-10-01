@@ -19,6 +19,16 @@
 						data-testid={c.testid}
 						onclick={c.onPick}>∅</button
 					>
+				{:else if c.color === 'ink'}
+					<button
+						class="style-swatch"
+						class:active={c.active}
+						style="background: var(--ink)"
+						title={c.label}
+						aria-label={c.label}
+						data-testid={c.testid}
+						onclick={c.onPick}
+					></button>
 				{:else}
 					<button
 						class="style-swatch"

@@ -26,7 +26,7 @@ test.describe('M1-03 — styles', () => {
 		await selectTool(page, 'pen');
 		await dragMouse(page, { x: 300, y: 250 }, { x: 500, y: 350 }, 8);
 		await waitForObjectCount(page, id, 1);
-		await expect.poll(async () => strokeColor(page, id), { timeout: TIMEOUT }).toBe('#e8e9ec');
+		await expect.poll(async () => strokeColor(page, id), { timeout: TIMEOUT }).toBe('ink');
 
 		// select the stroke through its midpoint
 		const box = await canvasBox(page);
@@ -39,6 +39,6 @@ test.describe('M1-03 — styles', () => {
 		await expect.poll(async () => strokeColor(page, id), { timeout: TIMEOUT }).toBe('#ff7a7a');
 
 		await page.keyboard.press('Control+z');
-		await expect.poll(async () => strokeColor(page, id), { timeout: TIMEOUT }).toBe('#e8e9ec');
+		await expect.poll(async () => strokeColor(page, id), { timeout: TIMEOUT }).toBe('ink');
 	});
 });

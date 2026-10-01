@@ -8,6 +8,8 @@ import { AddObjectsCommand } from '$lib/canvas/commands';
 import { serializeBoard } from '$lib/io/InternalFormat';
 import { boardToSvg } from '$lib/io/SvgExporter';
 import { boardToPngDataUrl } from '$lib/io/PngExporter';
+import { cssVar } from '$lib/objects/colors';
+import { themeController } from '$lib/board/theme.svelte';
 
 export type ExportFormat = 'svg' | 'png' | 'json';
 
@@ -78,11 +80,21 @@ export async function exportBoard(ctx: TransferContext, format: ExportFormat): P
 	const base = `inkboard-${ctx.boardId.slice(0, 8)}`;
 	try {
 		if (format === 'svg') {
-			downloadFile(`${base}.svg`, boardToSvg(objects), 'image/svg+xml');
+			const theme = themeController.resolved;
+			downloadFile(
+				`${base}.svg`,
+				boardToSvg(objects, { theme, background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013') }),
+				'image/svg+xml'
+			);
 			return;
 		}
 		if (format === 'png') {
-			const dataUrl = await boardToPngDataUrl(objects, { scale: 2 });
+			const theme = themeController.resolved;
+			const dataUrl = await boardToPngDataUrl(objects, {
+				scale: 2,
+				theme,
+				background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013')
+			});
 			const res = await fetch(dataUrl);
 			downloadBlob(`${base}.png`, await res.blob());
 			return;
@@ -112,7 +124,12 @@ export async function exportSelectionPng(engine: CanvasEngine): Promise<void> {
 	const objects = engine.selectionManager.selected.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
 	if (objects.length === 0) return;
 	try {
-		const dataUrl = await boardToPngDataUrl(objects, { scale: 2 });
+		const theme = themeController.resolved;
+		const dataUrl = await boardToPngDataUrl(objects, {
+			scale: 2,
+			theme,
+			background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013')
+		});
 		const res = await fetch(dataUrl);
 		downloadBlob(`inkboard-selection-${Date.now()}.png`, await res.blob());
 	} catch (err) {

@@ -1,6 +1,7 @@
 // SvgExporter — serialize board objects to an SVG string (§18).
 import type { CanvasObject } from '$lib/objects/types';
 import { getObjectBounds } from '$lib/objects/bounds';
+import { resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 
 function esc(s: string): string {
 	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -19,7 +20,7 @@ function rotationAttr(o: CanvasObject): string {
 /** Export a full board (objects in world coords) to an SVG string. */
 export function boardToSvg(
 	objects: CanvasObject[],
-	opts: { width?: number; height?: number; background?: string } = {}
+	opts: { width?: number; height?: number; background?: string; theme?: ResolvedTheme } = {}
 ): string {
 	// compute bounds over all objects (rotated AABBs, stroke widths included)
 	let minX = Infinity;
@@ -55,13 +56,13 @@ export function boardToSvg(
 		);
 	}
 	for (const o of objects) {
-		parts.push(objectToSvg(o));
+		parts.push(objectToSvg(o, opts.theme ?? 'dark'));
 	}
 	parts.push('</svg>');
 	return parts.join('\n');
 }
 
-function objectToSvg(o: CanvasObject): string {
+function objectToSvg(o: CanvasObject, theme: ResolvedTheme): string {
 	const t = o.transform;
 	const opacity = o.style?.opacity ?? 1;
 
@@ -70,10 +71,12 @@ function objectToSvg(o: CanvasObject): string {
 			const w = t.width;
 			const h = t.height;
 			const s = o.style;
+			const fill = s.fill === 'none' ? s.fill : resolveColor(s.fill, theme);
+			const stroke = resolveColor(s.stroke, theme);
 			const rot = rotationAttr(o);
 			const common =
 				`x="${t.x}" y="${t.y}" width="${w}" height="${h}" ` +
-				`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" ` +
+				`fill="${fill}" stroke="${stroke}" stroke-width="${s.strokeWidth ?? 1}" ` +
 				`opacity="${opacity}" ${s.strokeDash?.length ? `stroke-dasharray="${s.strokeDash.join(' ')}"` : ''}`;
 			switch (o.shape) {
 				case 'rect':
@@ -81,23 +84,23 @@ function objectToSvg(o: CanvasObject): string {
 				case 'ellipse':
 					return (
 						`<ellipse cx="${t.x + w / 2}" cy="${t.y + h / 2}" rx="${w / 2}" ry="${h / 2}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+						`fill="${fill}" stroke="${stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
 					);
 				case 'line':
 				case 'arrow':
 					return (
 						`<line x1="${t.x}" y1="${t.y}" x2="${t.x + w}" y2="${t.y + h}" ` +
-						`stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+						`stroke="${stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
 					);
 				case 'triangle':
 					return (
 						`<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h} ${t.x},${t.y + h}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+						`fill="${fill}" stroke="${stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
 					);
 				case 'diamond':
 					return (
 						`<polygon points="${t.x + w / 2},${t.y} ${t.x + w},${t.y + h / 2} ${t.x + w / 2},${t.y + h} ${t.x},${t.y + h / 2}" ` +
-						`fill="${s.fill}" stroke="${s.stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
+						`fill="${fill}" stroke="${stroke}" stroke-width="${s.strokeWidth ?? 1}" opacity="${opacity}"${rot}/>`
 					);
 				default:
 					return `<rect ${common}${rot}/>`;
@@ -110,7 +113,7 @@ function objectToSvg(o: CanvasObject): string {
 				.map(
 					(line, i) =>
 						`<text x="${t.x}" y="${t.y + o.style.fontSize + i * lh}" ` +
-						`font-size="${o.style.fontSize}" fill="${o.style.color}" opacity="${opacity}">${esc(line)}</text>`
+						`font-size="${o.style.fontSize}" fill="${resolveColor(o.style.color, theme)}" opacity="${opacity}">${esc(line)}</text>`
 				)
 				.join('\n');
 			return `<g${rotationAttr(o)}>${body}</g>`;
@@ -140,7 +143,7 @@ function objectToSvg(o: CanvasObject): string {
 				return acc;
 			}, '');
 			return (
-				`<path d="${d}" stroke="${o.style.color}" stroke-width="${o.style.width}" ` +
+				`<path d="${d}" stroke="${resolveColor(o.style.color, theme)}" stroke-width="${o.style.width}" ` +
 				`fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}"/>`
 			);
 		}
@@ -150,7 +153,7 @@ function objectToSvg(o: CanvasObject): string {
 				.map((p, i) => (i === 0 ? `M${p.x.toFixed(2)} ${p.y.toFixed(2)}` : `L${p.x.toFixed(2)} ${p.y.toFixed(2)}`))
 				.join(' ');
 			return (
-				`<path d="${d}" stroke="${o.style.stroke}" stroke-width="${o.style.strokeWidth ?? 2}" ` +
+				`<path d="${d}" stroke="${resolveColor(o.style.stroke, theme)}" stroke-width="${o.style.strokeWidth ?? 2}" ` +
 				`fill="none" stroke-linecap="round" opacity="${opacity}"/>`
 			);
 		}

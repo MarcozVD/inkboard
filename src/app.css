@@ -15,6 +15,9 @@
 	--color-danger: #e5534b;
 	--color-selection: rgba(255, 255, 255, 0.9);
 	--color-selection-fill: rgba(255, 255, 255, 0.12);
+	--color-grid: #2a2d34;
+	/* semantic default ink (D1 §28 option b) */
+	--ink: #e8e9ec;
 
 	/* ── Legacy aliases (components still reference these) ── */
 	--bg-app: var(--color-bg);
@@ -130,5 +133,7 @@ textarea {
 	--color-accent: #000000;
 	--color-selection: rgba(0, 0, 0, 0.9);
 	--color-selection-fill: rgba(0, 0, 0, 0.08);
+	--color-grid: #e2e2e8;
+	--ink: #1b1d22;
 	--shadow-float: 0 4px 12px rgba(0, 0, 0, 0.12);
 }

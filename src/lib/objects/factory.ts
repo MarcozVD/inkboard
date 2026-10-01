@@ -1,5 +1,6 @@
 // Object factories — construct valid typed objects (§11).
 import { v4 as uuidv4 } from 'uuid';
+import { INK } from '$lib/objects/colors';
 import type {
 	CanvasObject,
 	ConnectorObject,
@@ -39,7 +40,7 @@ export function createStroke(points: number[], style: Partial<StrokeStyle> = {},
 	const maxX = Math.max(...xs);
 	const maxY = Math.max(...ys);
 	const s: StrokeStyle = {
-		color: '#e8e9ec',
+		color: INK,
 		width: 3,
 		lineCap: 'round',
 		lineJoin: 'round',
@@ -62,7 +63,7 @@ export function createText(x: number, y: number, content: string, style: Partial
 		fontStyle: 'normal',
 		textDecoration: 'none',
 		textAlign: 'left',
-		color: '#e8e9ec',
+		color: INK,
 		lineHeight: 1.3,
 		padding: 4,
 		opacity: 1,
@@ -82,7 +83,7 @@ export function createShape(
 	shape: ShapeType,
 	style: Partial<ShapeStyle> = {}
 ): ShapeObject {
-	const s: ShapeStyle = { fill: 'none', stroke: '#e8e9ec', strokeWidth: 2, opacity: 1, ...style };
+	const s: ShapeStyle = { fill: 'none', stroke: INK, strokeWidth: 2, opacity: 1, ...style };
 	return { ...base(uuidv4(), 'shape', transform(x, y, width, height)), shape, style: s };
 }
 
@@ -129,7 +130,7 @@ export function createConnector(
 	style: Partial<ConnectorObject['style']> = {}
 ): ConnectorObject {
 	const s = {
-		stroke: '#e8e9ec',
+		stroke: INK,
 		strokeWidth: 2,
 		startArrow: 'none',
 		endArrow: 'none',

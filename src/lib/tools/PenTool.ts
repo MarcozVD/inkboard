@@ -3,6 +3,7 @@ import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createStroke } from '$lib/objects/factory';
 import type { StrokeObject } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';
+import { INK } from '$lib/objects/colors';
 
 export interface PenConfig {
 	color: string;
@@ -11,7 +12,7 @@ export interface PenConfig {
 	opacity?: number;
 }
 
-export const DEFAULT_PEN_CONFIG: PenConfig = { color: '#e8e9ec', width: 3, isHighlighter: false };
+export const DEFAULT_PEN_CONFIG: PenConfig = { color: INK, width: 3, isHighlighter: false };
 
 export class PenTool extends BaseTool {
 	protected active: StrokeObject | null = null;

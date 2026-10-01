@@ -1,6 +1,7 @@
 // Object renderers — Canvas 2D drawing for every object type (§3).
 import { getStroke } from 'perfect-freehand';
 import { wrapText } from '$lib/objects/textLayout';
+import { resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 import type {
 	CanvasObject,
 	ShapeObject,
@@ -19,17 +20,18 @@ import type {
 export function renderObject(
 	ctx: CanvasRenderingContext2D,
 	obj: CanvasObject,
-	opts: { getImage?: (src: string) => HTMLImageElement | undefined } = {}
+	opts: { getImage?: (src: string) => HTMLImageElement | undefined; theme?: ResolvedTheme } = {}
 ): void {
 	if (!obj.visible) return;
+	const theme = opts.theme ?? 'dark';
 
 	// Geometric types (stroke, connector) store world-space coords directly in
 	// their points/points, so they must NOT receive the local transform.
 	if (obj.type === 'stroke' || obj.type === 'connector') {
 		ctx.save();
 		ctx.globalAlpha = obj.style.opacity ?? 1;
-		if (obj.type === 'stroke') renderStroke(ctx, obj);
-		else renderConnector(ctx, obj);
+		if (obj.type === 'stroke') renderStroke(ctx, obj, theme);
+		else renderConnector(ctx, obj, theme);
 		ctx.restore();
 		return;
 	}
@@ -49,10 +51,10 @@ export function renderObject(
 
 	switch (obj.type) {
 		case 'shape':
-			renderShape(ctx, obj);
+			renderShape(ctx, obj, theme);
 			break;
 		case 'text':
-			renderText(ctx, obj);
+			renderText(ctx, obj, theme);
 			break;
 		case 'sticky_note':
 			renderStickyNote(ctx, obj);
@@ -68,14 +70,15 @@ export function renderObject(
 
 // ── Stroke ──
 
-function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject) {
+function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject, theme: ResolvedTheme) {
 	const pts = s.points;
 	if (pts.length < 4) return;
 
 	const style = s.style;
 	ctx.save();
-	ctx.strokeStyle = style.color;
-	ctx.fillStyle = style.color;
+	const color = resolveColor(style.color, theme);
+	ctx.strokeStyle = color;
+	ctx.fillStyle = color;
 	if (style.isHighlighter) {
 		ctx.globalAlpha = (style.opacity ?? 1) * 0.4;
 	}
@@ -116,7 +119,7 @@ function drawOutline(ctx: CanvasRenderingContext2D, flatOutline: number[]) {
 
 // ── Shapes ──
 
-function renderShape(ctx: CanvasRenderingContext2D, s: ShapeObject) {
+function renderShape(ctx: CanvasRenderingContext2D, s: ShapeObject, theme: ResolvedTheme) {
 	const { width: w, height: h } = s.transform;
 	const sw = Math.abs(w);
 	const sh = Math.abs(h);
@@ -126,10 +129,10 @@ function renderShape(ctx: CanvasRenderingContext2D, s: ShapeObject) {
 
 	ctx.save();
 	if (hasFill) {
-		ctx.fillStyle = style.fill;
+		ctx.fillStyle = resolveColor(style.fill, theme);
 	}
 	if (hasStroke) {
-		ctx.strokeStyle = style.stroke;
+		ctx.strokeStyle = resolveColor(style.stroke, theme);
 		ctx.lineWidth = style.strokeWidth || 1;
 		if (style.strokeDash?.length) ctx.setLineDash(style.strokeDash);
 	}
@@ -185,7 +188,7 @@ function renderShape(ctx: CanvasRenderingContext2D, s: ShapeObject) {
 
 	// arrowhead for arrow shapes (drawn after fill/stroke)
 	if (s.shape === 'arrow' && hasStroke) {
-		drawArrowHead(ctx, sw, sh, style.stroke, style.strokeWidth || 1);
+		drawArrowHead(ctx, sw, sh, resolveColor(style.stroke, theme), style.strokeWidth || 1);
 	}
 }
 
@@ -237,24 +240,24 @@ function drawArrowHead(ctx: CanvasRenderingContext2D, w: number, h: number, colo
 
 // ── Text ──
 
-function renderText(ctx: CanvasRenderingContext2D, t: TextObject) {
+function renderText(ctx: CanvasRenderingContext2D, t: TextObject, theme: ResolvedTheme) {
 	const style = t.style;
 	const size = style.fontSize;
 	ctx.save();
 	ctx.font = `${style.fontStyle === 'italic' ? 'italic ' : ''}${style.fontWeight === 'bold' ? 'bold ' : ''}${size}px ${style.fontFamily}`;
-	ctx.fillStyle = style.color;
+	ctx.fillStyle = resolveColor(style.color, theme);
 	ctx.textBaseline = 'top';
 	ctx.textAlign = style.textAlign || 'left';
 
 	if (style.backgroundColor) {
-		ctx.fillStyle = style.backgroundColor;
+		ctx.fillStyle = resolveColor(style.backgroundColor, theme);
 		ctx.fillRect(
 			-style.padding,
 			-style.padding,
 			t.transform.width + style.padding * 2,
 			t.transform.height + style.padding * 2
 		);
-		ctx.fillStyle = style.color;
+		ctx.fillStyle = resolveColor(style.color, theme);
 	}
 
 	const lines = wrapText(t.content, t.transform.width - (style.padding ?? 0) * 2, style);
@@ -343,10 +346,11 @@ function renderImage(
 
 // ── Connector ──
 
-function renderConnector(ctx: CanvasRenderingContext2D, c: ConnectorObject) {
+function renderConnector(ctx: CanvasRenderingContext2D, c: ConnectorObject, theme: ResolvedTheme) {
 	const style = c.style;
 	ctx.save();
-	ctx.strokeStyle = style.stroke;
+	const stroke = resolveColor(style.stroke, theme);
+	ctx.strokeStyle = stroke;
 	ctx.lineWidth = style.strokeWidth || 2;
 	ctx.lineCap = 'round';
 	if (style.strokeDash?.length) ctx.setLineDash(style.strokeDash);
@@ -364,14 +368,15 @@ function renderConnector(ctx: CanvasRenderingContext2D, c: ConnectorObject) {
 
 	const first = waypoints[0] ?? end;
 	const last = waypoints.at(-1) ?? start;
-	if (style.endArrow !== 'none') drawConnectorEnd(ctx, style, end, last, false);
-	if (style.startArrow !== 'none') drawConnectorEnd(ctx, style, start, first, true);
+	if (style.endArrow !== 'none') drawConnectorEnd(ctx, style, stroke, end, last, false);
+	if (style.startArrow !== 'none') drawConnectorEnd(ctx, style, stroke, start, first, true);
 }
 
 /** Arrow/dot at one end of a connector (`reverse`: the start end). */
 function drawConnectorEnd(
 	ctx: CanvasRenderingContext2D,
 	style: ConnectorObject['style'],
+	color: string,
 	tip: { x: number; y: number },
 	from: { x: number; y: number },
 	reverse: boolean
@@ -380,8 +385,8 @@ function drawConnectorEnd(
 	const headLen = 12;
 
 	ctx.save();
-	ctx.fillStyle = style.stroke;
-	ctx.strokeStyle = style.stroke;
+	ctx.fillStyle = color;
+	ctx.strokeStyle = color;
 	ctx.beginPath();
 	if ((reverse ? style.startArrow : style.endArrow) === 'dot') {
 		ctx.arc(tip.x, tip.y, (style.strokeWidth || 2) * 1.6, 0, Math.PI * 2);

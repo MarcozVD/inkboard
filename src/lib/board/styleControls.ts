@@ -1,5 +1,6 @@
 // styleControls — descriptors for the ContextToolbar and tool popovers (§M1-03).
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
+import { INK } from '$lib/objects/colors';
 import type {
 	CanvasObject,
 	ConnectorObject,
@@ -281,7 +282,7 @@ export function buildToolStyleControls(engine: CanvasEngine, refresh: () => void
 		return shapeControls(
 			{
 				fill: cfg.fill ?? 'none',
-				stroke: cfg.stroke ?? '#e8e9ec',
+				stroke: cfg.stroke ?? INK,
 				strokeWidth: cfg.strokeWidth ?? 2,
 				strokeDash: cfg.strokeDash,
 				cornerRadius: cfg.cornerRadius,

@@ -4,6 +4,8 @@ import type { CameraState } from '$lib/canvas/Camera';
 import type { GridConfig } from '$lib/objects/types';
 import { renderObject } from '$lib/objects/renderers';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
+import { cssVar, resolveColor, type ResolvedTheme } from '$lib/objects/colors';
+import { LEGACY_GRID, GRID } from '$lib/objects/colors';
 
 export interface RendererDeps {
 	canvas: () => HTMLCanvasElement | null;
@@ -13,12 +15,42 @@ export interface RendererDeps {
 	dpr: () => number;
 	/** canvas box in CSS px */
 	view: () => { width: number; height: number };
+	theme: () => ResolvedTheme;
+}
+
+interface CanvasPalette {
+	bg: string;
+	grid: string;
+	overlay: string;
+	overlayFill: string;
+	handle: string;
 }
 
 export class Renderer {
 	private imageCache = new Map<string, HTMLImageElement>();
+	private paletteTheme: ResolvedTheme | null = null;
+	private palette: CanvasPalette = {
+		bg: '#0f1013',
+		grid: '#2a2d34',
+		overlay: 'rgba(255,255,255,0.9)',
+		overlayFill: 'rgba(255,255,255,0.12)',
+		handle: '#ffffff'
+	};
 
 	constructor(private deps: RendererDeps) {}
+
+	/** Palette from the CSS tokens, refreshed when the theme changes. */
+	private refreshPalette(theme: ResolvedTheme): void {
+		if (theme === this.paletteTheme) return;
+		this.paletteTheme = theme;
+		this.palette = {
+			bg: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013'),
+			grid: cssVar('--color-grid', theme === 'light' ? '#e2e2e8' : '#2a2d34'),
+			overlay: cssVar('--color-selection', 'rgba(255,255,255,0.9)'),
+			overlayFill: cssVar('--color-selection-fill', 'rgba(255,255,255,0.12)'),
+			handle: cssVar('--color-text', '#ffffff')
+		};
+	}
 
 	/** Full frame: background, grid, visible objects (z-order), selection overlay. */
 	render(): void {
@@ -29,9 +61,11 @@ export class Renderer {
 		const camera = this.deps.camera();
 		const dpr = this.deps.dpr();
 		const view = this.deps.view();
+		const theme = this.deps.theme();
+		this.refreshPalette(theme);
 
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
-		ctx.fillStyle = '#0f1013';
+		ctx.fillStyle = this.palette.bg;
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 		this.drawGrid(ctx, camera, view.width, view.height, dpr);
@@ -49,7 +83,7 @@ export class Renderer {
 		ctx.save();
 		ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y);
 		for (const obj of visible) {
-			renderObject(ctx, obj, { getImage: (src) => this.getImage(src) });
+			renderObject(ctx, obj, { getImage: (src) => this.getImage(src), theme });
 		}
 		ctx.restore();
 
@@ -72,8 +106,8 @@ export class Renderer {
 
 	private drawLockBadge(ctx: CanvasRenderingContext2D, x: number, y: number): void {
 		ctx.save();
-		ctx.fillStyle = '#ffffff';
-		ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+		ctx.fillStyle = this.palette.handle;
+		ctx.strokeStyle = this.palette.overlay;
 		ctx.lineWidth = 1.5;
 		ctx.fillRect(x - 6, y - 4, 12, 9);
 		ctx.beginPath();
@@ -91,7 +125,11 @@ export class Renderer {
 	): void {
 		const grid = this.deps.grid();
 		if (!grid.enabled) return;
-		const { size, color, opacity } = grid;
+		const { size, opacity } = grid;
+		const color =
+			grid.color === GRID || grid.color === LEGACY_GRID
+				? this.palette.grid
+				: resolveColor(grid.color, this.paletteTheme ?? 'dark');
 		if (size * camera.zoom < 8) return;
 
 		const [wx0, wy0] = screenToWorld(0, 0, camera);
@@ -140,7 +178,7 @@ export class Renderer {
 
 		ctx.save();
 		ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-		ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+		ctx.strokeStyle = this.palette.overlay;
 		ctx.lineWidth = 1.5;
 		ctx.setLineDash([4, 3]);
 		ctx.strokeRect(sx, sy, sw, sh);
@@ -148,8 +186,8 @@ export class Renderer {
 
 		const handles = sel.getHandles((wx, wy) => this.worldToScreen(camera, wx, wy));
 		for (const h of handles) {
-			ctx.fillStyle = '#ffffff';
-			ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+			ctx.fillStyle = this.palette.handle;
+			ctx.strokeStyle = this.palette.overlay;
 			ctx.lineWidth = 1.5;
 			ctx.beginPath();
 			if (h.id === 'rotate') {
@@ -180,8 +218,8 @@ export class Renderer {
 			const [mx1, my1] = this.worldToScreen(camera, marquee.x + marquee.width, marquee.y + marquee.height);
 			ctx.save();
 			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-			ctx.fillStyle = 'rgba(255,255,255,0.12)';
-			ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+			ctx.fillStyle = this.palette.overlayFill;
+			ctx.strokeStyle = this.palette.overlay;
 			ctx.lineWidth = 1;
 			ctx.fillRect(mx0, my0, mx1 - mx0, my1 - my0);
 			ctx.strokeRect(mx0, my0, mx1 - mx0, my1 - my0);

@@ -7,6 +7,8 @@ import { BoardSession, type SaveState } from './BoardSession';
 import { syncConnectors } from './connectors';
 import type { CameraState } from '$lib/canvas/Camera';
 import type { Board, EditableObj, GridConfig } from '$lib/objects/types';
+import type { ResolvedTheme } from '$lib/objects/colors';
+import { migrateLegacyInk } from '$lib/objects/colors';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { resetUi } from '$lib/stores/ui.svelte';
 
@@ -16,6 +18,7 @@ export interface BoardRuntimeHost {
 	getCamera: () => CameraState;
 	setCamera: (camera: CameraState) => void;
 	getGrid: () => GridConfig;
+	getTheme: () => ResolvedTheme;
 	getView: () => { width: number; height: number };
 	getBoardName: () => string;
 	isSpaceDown: () => boolean;
@@ -76,7 +79,8 @@ export class BoardRuntime {
 			camera: host.getCamera,
 			grid: host.getGrid,
 			dpr: () => this.input.dpr,
-			view: host.getView
+			view: host.getView,
+			theme: host.getTheme
 		});
 		this.renderLoop = new RenderLoop(() => this.renderer.render());
 
@@ -115,8 +119,11 @@ export class BoardRuntime {
 		this.session
 			.load()
 			.then((board: Board) => {
+				// migrate pre-M1-10 default white ink to the semantic 'ink' value
+				const migrated = migrateLegacyInk(board.objects);
 				this.engine.load(board.objects);
 				this.host.onBoardLoaded(board);
+				if (migrated > 0) this.session.scheduleAutosave();
 				this.host.onDirty();
 			})
 			.catch(() => this.host.onDirty());

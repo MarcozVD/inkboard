@@ -5,6 +5,7 @@ import { createConnector } from '$lib/objects/factory';
 import type { ConnectorObject, ConnectorStyle } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';
 import { ANCHOR_HIT_SCREEN, nearestAnchor } from '$lib/board/connectors';
+import { INK } from '$lib/objects/colors';
 import type { Vec2 } from '$lib/utils/math';
 
 export interface ConnectorConfig {
@@ -16,7 +17,7 @@ export interface ConnectorConfig {
 }
 
 export const DEFAULT_CONNECTOR_CONFIG: ConnectorConfig = {
-	stroke: '#e8e9ec',
+	stroke: INK,
 	strokeWidth: 2,
 	startArrow: 'none',
 	endArrow: 'arrow',

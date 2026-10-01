@@ -45,6 +45,10 @@ export interface BoardMeta {
 	updatedAt: number;
 	thumbnailDataUrl?: string;
 	objectCount: number;
+	/** SQLite-backed favorite (M2-02) */
+	isFavorite?: boolean;
+	/** soft-delete timestamp; null/undefined = active (M2-02) */
+	deletedAt?: number | null;
 }
 
 export interface BoardBackground {

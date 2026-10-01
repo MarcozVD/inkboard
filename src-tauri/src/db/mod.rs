@@ -10,7 +10,10 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// Ordered migrations; the tuple index is the schema version.
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("migrations/001_initial.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("migrations/001_initial.sql")),
+    (2, include_str!("migrations/002_board_management.sql")),
+];
 
 /// busy_timeout used for every connection (ms).
 const BUSY_TIMEOUT_MS: i64 = 5_000;
@@ -28,6 +31,8 @@ pub struct BoardMeta {
     pub updated_at: i64,
     pub version: i64,
     pub object_count: i64,
+    pub is_favorite: bool,
+    pub deleted_at: Option<i64>,
 }
 
 /// Full board record (metadata + compressed data + hash).
@@ -193,15 +198,24 @@ impl AppDb {
         })
     }
 
-    /// List board metadata ordered by most recently updated.
-    pub fn list_boards(&self) -> Result<Vec<BoardMeta>, String> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT id, name, created_at, updated_at, version, object_count
-				 FROM boards ORDER BY updated_at DESC",
-            )
-            .map_err(|e| e.to_string())?;
+    /// List board metadata. `trash` selects soft-deleted boards; `sort` is
+    /// "date" (default, most recent first) or "name" (A→Z).
+    pub fn list_boards(&self, trash: bool, sort: &str) -> Result<Vec<BoardMeta>, String> {
+        let filter = if trash {
+            "deleted_at IS NOT NULL"
+        } else {
+            "deleted_at IS NULL"
+        };
+        let order = if sort == "name" {
+            "name COLLATE NOCASE ASC"
+        } else {
+            "updated_at DESC"
+        };
+        let sql = format!(
+            "SELECT id, name, created_at, updated_at, version, object_count, is_favorite, deleted_at
+             FROM boards WHERE {filter} ORDER BY {order}"
+        );
+        let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(BoardMeta {
@@ -211,6 +225,8 @@ impl AppDb {
                     updated_at: row.get(3)?,
                     version: row.get(4)?,
                     object_count: row.get(5)?,
+                    is_favorite: row.get::<_, i64>(6)? != 0,
+                    deleted_at: row.get(7)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -220,6 +236,122 @@ impl AppDb {
             out.push(r.map_err(|e| e.to_string())?);
         }
         Ok(out)
+    }
+
+    /// Rename a board (keeps its data).
+    pub fn rename_board(&self, id: &str, name: &str) -> Result<(), String> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE boards SET name = ?2, updated_at = ?3 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, name, chrono_now_ms()],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err(format!("board not found: {id}"));
+        }
+        Ok(())
+    }
+
+    /// Duplicate a board (metadata + compressed data) under a new id.
+    pub fn duplicate_board(&self, source_id: &str, new_id: &str, name: &str) -> Result<(), String> {
+        let now = chrono_now_ms();
+        let changed = self
+            .conn
+            .execute(
+                "INSERT INTO boards (id, workspace_id, name, created_at, updated_at, version, schema_version, object_count, is_favorite)
+                 SELECT ?2, workspace_id, ?3, ?4, ?4, version, schema_version, object_count, 0
+                 FROM boards WHERE id = ?1",
+                params![source_id, new_id, name, now],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err(format!("board not found: {source_id}"));
+        }
+        let copied = self
+            .conn
+            .execute(
+                "INSERT INTO board_data (board_id, data, data_hash, updated_at)
+                 SELECT ?2, data, data_hash, ?3 FROM board_data WHERE board_id = ?1",
+                params![source_id, new_id, now],
+            )
+            .map_err(|e| e.to_string())?;
+        if copied == 0 {
+            // roll back the metadata if the source had no data row
+            let _ = self.conn.execute("DELETE FROM boards WHERE id = ?1", params![new_id]);
+            return Err(format!("board data not found: {source_id}"));
+        }
+        Ok(())
+    }
+
+    /// Soft delete: move the board to the trash.
+    pub fn delete_board(&self, id: &str) -> Result<(), String> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE boards SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, chrono_now_ms()],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err(format!("board not found: {id}"));
+        }
+        Ok(())
+    }
+
+    /// Restore a board from the trash.
+    pub fn restore_board(&self, id: &str) -> Result<(), String> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE boards SET deleted_at = NULL, updated_at = ?2 WHERE id = ?1 AND deleted_at IS NOT NULL",
+                params![id, chrono_now_ms()],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err(format!("board not in trash: {id}"));
+        }
+        Ok(())
+    }
+
+    /// Permanently delete a trashed board (data + versions + metadata).
+    pub fn purge_board(&self, id: &str) -> Result<(), String> {
+        let deleted_at: Option<Option<i64>> = self
+            .conn
+            .query_row(
+                "SELECT deleted_at FROM boards WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("board not found: {id}"))?;
+        if deleted_at.flatten().is_none() {
+            return Err(format!("board is not in trash: {id}"));
+        }
+        self.conn
+            .execute("DELETE FROM board_versions WHERE board_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        self.conn
+            .execute("DELETE FROM board_data WHERE board_id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        self.conn
+            .execute("DELETE FROM boards WHERE id = ?1", params![id])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Mark/unmark a board as favorite.
+    pub fn set_favorite(&self, id: &str, favorite: bool) -> Result<(), String> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE boards SET is_favorite = ?2 WHERE id = ?1",
+                params![id, i64::from(favorite)],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err(format!("board not found: {id}"));
+        }
+        Ok(())
     }
 }
 
@@ -274,6 +406,25 @@ mod tests {
             .unwrap()
     }
 
+    fn latest_version() -> i64 {
+        MIGRATIONS.last().map(|(v, _)| *v).unwrap_or(0)
+    }
+
+    /// AppDb with the default workspace and one saved board.
+    fn seeded_db() -> AppDb {
+        let db = AppDb::new(std::path::Path::new(":memory:")).expect("db");
+        db.ensure_default_workspace().expect("workspace");
+        db.save_board("b1", "Board", &board_json("b1", "Board"))
+            .expect("save");
+        db
+    }
+
+    fn board_json(id: &str, name: &str) -> String {
+        format!(
+            r#"{{"schemaVersion":"1.0.0","version":1,"board":{{"id":"{id}","name":"{name}","objects":[{{"id":"a"}}]}}}}"#
+        )
+    }
+
     #[test]
     fn count_objects_reads_board_objects() {
         let json = r#"{
@@ -307,7 +458,7 @@ mod tests {
             }
         }"#;
         db.save_board("b1", "Test", json).expect("save");
-        let list = db.list_boards().expect("list");
+        let list = db.list_boards(false, "date").expect("list");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].object_count, 3);
     }
@@ -343,7 +494,7 @@ mod tests {
     fn fresh_database_runs_migrations_and_stamps_the_version() {
         let path = temp_db_path("fresh");
         let db = AppDb::new(&path).expect("db");
-        assert_eq!(user_version(&db.conn), 1);
+        assert_eq!(user_version(&db.conn), latest_version());
         let tables: i64 = db
             .conn
             .query_row(
@@ -390,8 +541,8 @@ mod tests {
 
         // opening it migrates in place without re-running the initial schema
         let db = AppDb::new(&path).expect("db");
-        assert_eq!(user_version(&db.conn), 1);
-        let boards = db.list_boards().expect("list");
+        assert_eq!(user_version(&db.conn), latest_version());
+        let boards = db.list_boards(false, "date").expect("list");
         assert_eq!(boards.len(), 1);
         assert_eq!(boards[0].name, "Legacy");
         let record = db.load_board("b1").expect("load");
@@ -401,5 +552,101 @@ mod tests {
         db.save_board("b1", "Legacy", &record.json).expect("save");
         drop(db);
         cleanup(&path);
+    }
+
+    #[test]
+    fn migration_002_adds_management_columns() {
+        let db = AppDb::new(std::path::Path::new(":memory:")).expect("db");
+        assert_eq!(user_version(&db.conn), 2);
+        db.ensure_default_workspace().expect("workspace");
+        db.save_board("b1", "Board", &board_json("b1", "Board"))
+            .expect("save");
+        let (favorite, deleted): (i64, Option<i64>) = db
+            .conn
+            .query_row(
+                "SELECT is_favorite, deleted_at FROM boards WHERE id = 'b1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(favorite, 0);
+        assert_eq!(deleted, None);
+    }
+
+    // ── M2-02: board management ──
+
+    #[test]
+    fn rename_board_updates_the_name() {
+        let db = seeded_db();
+        db.rename_board("b1", "Renamed").expect("rename");
+        let boards = db.list_boards(false, "date").expect("list");
+        assert_eq!(boards[0].name, "Renamed");
+        assert!(db.rename_board("missing", "x").is_err());
+    }
+
+    #[test]
+    fn duplicate_board_copies_metadata_and_data() {
+        let db = seeded_db();
+        db.duplicate_board("b1", "b2", "Copy of Board")
+            .expect("duplicate");
+        let boards = db.list_boards(false, "date").expect("list");
+        assert_eq!(boards.len(), 2);
+        let copy = boards.iter().find(|b| b.id == "b2").expect("copy");
+        assert_eq!(copy.name, "Copy of Board");
+        assert_eq!(copy.object_count, 1);
+        let record = db.load_board("b2").expect("load copy");
+        assert!(record.json.contains("\"id\":\"a\""));
+        assert!(db.duplicate_board("missing", "b3", "x").is_err());
+    }
+
+    #[test]
+    fn delete_and_restore_move_the_board_to_and_from_the_trash() {
+        let db = seeded_db();
+        db.delete_board("b1").expect("delete");
+        assert!(db.list_boards(false, "date").expect("active").is_empty());
+        let trash = db.list_boards(true, "date").expect("trash");
+        assert_eq!(trash.len(), 1);
+        assert!(trash[0].deleted_at.is_some());
+
+        db.restore_board("b1").expect("restore");
+        assert_eq!(db.list_boards(false, "date").expect("active").len(), 1);
+        assert!(db.list_boards(true, "date").expect("trash").is_empty());
+        assert!(db.restore_board("b1").is_err()); // not in trash anymore
+    }
+
+    #[test]
+    fn purge_board_removes_the_board_and_its_data() {
+        let db = seeded_db();
+        assert!(db.purge_board("b1").is_err()); // must be trashed first
+        db.delete_board("b1").expect("delete");
+        db.purge_board("b1").expect("purge");
+        assert!(db.list_boards(true, "date").expect("trash").is_empty());
+        assert!(db.load_board("b1").is_err());
+    }
+
+    #[test]
+    fn set_favorite_is_reflected_in_the_listing() {
+        let db = seeded_db();
+        db.set_favorite("b1", true).expect("favorite");
+        let boards = db.list_boards(false, "date").expect("list");
+        assert!(boards[0].is_favorite);
+        db.set_favorite("b1", false).expect("unfavorite");
+        assert!(!db.list_boards(false, "date").expect("list")[0].is_favorite);
+        assert!(db.set_favorite("missing", true).is_err());
+    }
+
+    #[test]
+    fn list_boards_sorts_by_name() {
+        let db = AppDb::new(std::path::Path::new(":memory:")).expect("db");
+        db.ensure_default_workspace().expect("workspace");
+        db.save_board("b1", "Zeta", &board_json("b1", "Zeta"))
+            .expect("save");
+        db.save_board("b2", "Alpha", &board_json("b2", "Alpha"))
+            .expect("save");
+        let dates = db.list_boards(false, "date").expect("date");
+        let names = db.list_boards(false, "name").expect("name");
+        assert_eq!(dates.len(), 2);
+        assert_eq!(names[0].name, "Alpha");
+        assert_eq!(names[1].name, "Zeta");
     }
 }

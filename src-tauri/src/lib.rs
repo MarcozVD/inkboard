@@ -52,6 +52,12 @@ pub fn run() {
             commands::persistence::save_board,
             commands::persistence::load_board,
             commands::persistence::list_boards,
+            commands::persistence::rename_board,
+            commands::persistence::duplicate_board,
+            commands::persistence::delete_board,
+            commands::persistence::restore_board,
+            commands::persistence::purge_board,
+            commands::persistence::set_favorite,
             commands::import::inspect_import,
             commands::import::read_file_bytes,
         ])

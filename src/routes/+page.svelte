@@ -1,59 +1,66 @@
 <script lang="ts">
 	// Home — Board Picker per DESIGN.md § Multi-board UI.
-	// Grid of boards with thumbnails, search, favorites, empty state.
+	// Grid of boards with search, sorting, favorites, trash (M2-02) and empty state.
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { SvelteSet } from 'svelte/reactivity';
 	import { onMount } from 'svelte';
-	import { listBoards, freshBoard } from '$lib/io/persistence';
-	import { saveBoard } from '$lib/io/persistence';
+	import {
+		listBoards,
+		freshBoard,
+		saveBoard,
+		renameBoard,
+		duplicateBoard,
+		deleteBoard,
+		restoreBoard,
+		purgeBoard,
+		setBoardFavorite,
+		migrateLegacyFavorites
+	} from '$lib/io/persistence';
 	import type { BoardMeta } from '$lib/objects/types';
 	import Icon from '$lib/components/ui/Icon.svelte';
 
 	let boards = $state<BoardMeta[]>([]);
 	let loading = $state(true);
 	let query = $state('');
-	const favs = new SvelteSet<string>();
+	let view = $state<'active' | 'trash'>('active');
+	let sort = $state<'date' | 'name'>('date');
+	let menu = $state<{ x: number; y: number; board: BoardMeta } | null>(null);
+	let renamingId = $state<string | null>(null);
+	let renameValue = $state('');
+	let inputEl: HTMLInputElement | undefined = $state();
 
-	const FAV_KEY = 'inkboard:favorites';
+	async function load() {
+		boards = await listBoards({ trash: view === 'trash', sort });
+	}
 
-	function loadFavs() {
-		favs.clear();
+	onMount(async () => {
 		try {
-			for (const id of JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]')) favs.add(id);
+			await migrateLegacyFavorites();
 		} catch {
-			// corrupted favorites — start empty
+			// older contexts without a DB — favorites stay in localStorage
 		}
+		try {
+			await load();
+		} finally {
+			loading = false;
+		}
+	});
+
+	async function setView(next: 'active' | 'trash') {
+		view = next;
+		menu = null;
+		renamingId = null;
+		await load();
 	}
-	function persistFavs() {
-		localStorage.setItem(FAV_KEY, JSON.stringify([...favs]));
-	}
-	function toggleFav(id: string, e: MouseEvent) {
-		e.stopPropagation();
-		if (favs.has(id)) favs.delete(id);
-		else favs.add(id);
-		persistFavs();
+
+	async function changeSort(e: Event) {
+		sort = (e.target as HTMLSelectElement).value as 'date' | 'name';
+		await load();
 	}
 
 	const filtered = $derived(
 		query.trim() ? boards.filter((b) => b.name.toLowerCase().includes(query.toLowerCase())) : boards
 	);
-
-	onMount(async () => {
-		loadFavs();
-		try {
-			const list = await listBoards();
-			boards = list.map((b) => ({
-				id: b.id,
-				name: b.name,
-				createdAt: b.updated_at,
-				updatedAt: b.updated_at,
-				objectCount: 0
-			}));
-		} finally {
-			loading = false;
-		}
-	});
 
 	async function createBoard() {
 		const id = crypto.randomUUID();
@@ -65,6 +72,64 @@
 		}
 		goto(resolve('/board/[id]', { id }));
 	}
+
+	function openMenu(board: BoardMeta, e: MouseEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		menu = { x: e.clientX, y: e.clientY, board };
+	}
+
+	function startRename(board: BoardMeta) {
+		menu = null;
+		renamingId = board.id;
+		renameValue = board.name;
+	}
+
+	async function commitRename() {
+		const id = renamingId;
+		if (!id) return;
+		const name = renameValue.trim() || 'Untitled';
+		renamingId = null;
+		await renameBoard(id, name);
+		await load();
+	}
+
+	async function duplicate(board: BoardMeta) {
+		menu = null;
+		await duplicateBoard(board.id, crypto.randomUUID(), `Copy of ${board.name}`);
+		await load();
+	}
+
+	async function moveToTrash(board: BoardMeta) {
+		menu = null;
+		await deleteBoard(board.id);
+		await load();
+	}
+
+	async function restore(board: BoardMeta) {
+		menu = null;
+		await restoreBoard(board.id);
+		await load();
+	}
+
+	async function purge(board: BoardMeta) {
+		menu = null;
+		await purgeBoard(board.id);
+		await load();
+	}
+
+	async function toggleFavorite(board: BoardMeta, e?: MouseEvent) {
+		e?.stopPropagation();
+		await setBoardFavorite(board.id, !board.isFavorite);
+		await load();
+	}
+
+	$effect(() => {
+		if (renamingId && inputEl) {
+			inputEl.focus();
+			inputEl.select();
+		}
+	});
 
 	function formatDate(ts: number): string {
 		if (!ts) return '';
@@ -78,6 +143,8 @@
 		return `hsl(${h} 12% 32%)`;
 	}
 </script>
+
+<svelte:window onmousedown={() => (menu = null)} />
 
 <svelte:head>
 	<title>Inkboard — Home</title>
@@ -99,18 +166,6 @@
 			<div class="home-empty" aria-live="polite">
 				<p class="empty-hint">Loading boards…</p>
 			</div>
-		{:else if boards.length === 0}
-			<!-- Empty state per DESIGN.md § Empty States -->
-			<div class="home-empty">
-				<div class="empty-mark"><Icon name="sticky" size={28} /></div>
-				<h2>Start creating</h2>
-				<p class="empty-hint">Open a blank canvas and start thinking visually.</p>
-				<div class="empty-actions">
-					<button class="btn-primary" data-testid="new-board" onclick={createBoard}>
-						<Icon name="plus" size={15} /> New board
-					</button>
-				</div>
-			</div>
 		{:else}
 			<section class="board-picker">
 				<div class="picker-header">
@@ -122,14 +177,37 @@
 							oninput={(e) => (query = (e.target as HTMLInputElement).value)}
 						/>
 					</div>
-					<button class="btn-primary" data-testid="new-board" onclick={createBoard}>
-						<Icon name="plus" size={15} /> New board
-					</button>
+					<div class="picker-controls">
+						<select class="sort-select" data-testid="sort-boards" value={sort} onchange={changeSort}>
+							<option value="date">Last edited</option>
+							<option value="name">Name</option>
+						</select>
+						<div class="view-toggle">
+							<button class:active={view === 'active'} data-testid="view-active" onclick={() => setView('active')}
+								>Boards</button
+							>
+							<button class:active={view === 'trash'} data-testid="view-trash" onclick={() => setView('trash')}
+								>Trash</button
+							>
+						</div>
+						<button class="btn-primary" data-testid="new-board" onclick={createBoard}>
+							<Icon name="plus" size={15} /> New board
+						</button>
+					</div>
 				</div>
 
 				{#if filtered.length === 0}
 					<div class="home-empty">
-						<p class="empty-hint">No boards match “{query}”.</p>
+						{#if view === 'active' && boards.length === 0}
+							<!-- Empty state per DESIGN.md § Empty States -->
+							<div class="empty-mark"><Icon name="sticky" size={28} /></div>
+							<h2>Start creating</h2>
+							<p class="empty-hint">Open a blank canvas and start thinking visually.</p>
+						{:else}
+							<p class="empty-hint">
+								{view === 'trash' ? 'Trash is empty.' : `No boards match “${query}”.`}
+							</p>
+						{/if}
 					</div>
 				{:else}
 					<ul class="board-grid" data-testid="board-list">
@@ -140,25 +218,53 @@
 									data-testid="board-{board.id}"
 									role="button"
 									tabindex="0"
-									onclick={() => goto(resolve('/board/[id]', { id: board.id }))}
-									onkeydown={(e) => {
-										if (e.key === 'Enter') goto(resolve('/board/[id]', { id: board.id }));
+									onclick={() => {
+										if (view === 'active' && renamingId !== board.id) goto(resolve('/board/[id]', { id: board.id }));
 									}}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' && view === 'active') goto(resolve('/board/[id]', { id: board.id }));
+									}}
+									oncontextmenu={(e) => openMenu(board, e)}
 								>
 									<span class="board-thumb" style="background: {thumbTint(board.id)}"></span>
 									<span class="board-meta">
-										<span class="board-name">{board.name}</span>
+										{#if renamingId === board.id}
+											<input
+												bind:this={inputEl}
+												class="board-name-input"
+												value={renameValue}
+												oninput={(e) => (renameValue = (e.target as HTMLInputElement).value)}
+												onblur={commitRename}
+												onkeydown={(e) => {
+													e.stopPropagation();
+													if (e.key === 'Enter') commitRename();
+													if (e.key === 'Escape') renamingId = null;
+												}}
+												onclick={(e) => e.stopPropagation()}
+											/>
+										{:else}
+											<span class="board-name">{board.name}</span>
+										{/if}
 										<span class="board-sub">
 											<span>{formatDate(board.updatedAt)}</span>
-											{#if favs.has(board.id)}<span class="fav-dot">★</span>{/if}
+											{#if board.isFavorite}<span class="fav-dot">★</span>{/if}
+											{#if view === 'trash'}<span class="trash-tag">deleted</span>{/if}
 										</span>
 									</span>
+									{#if view === 'active'}
+										<button
+											class="fav-btn"
+											class:faved={board.isFavorite}
+											aria-label={board.isFavorite ? 'Remove favorite' : 'Add favorite'}
+											aria-pressed={board.isFavorite}
+											onclick={(e) => toggleFavorite(board, e)}>★</button
+										>
+									{/if}
 									<button
-										class="fav-btn"
-										class:faved={favs.has(board.id)}
-										aria-label={favs.has(board.id) ? 'Remove favorite' : 'Add favorite'}
-										aria-pressed={favs.has(board.id)}
-										onclick={(e) => toggleFav(board.id, e)}>★</button
+										class="card-menu"
+										data-testid="board-menu-{board.id}"
+										aria-label="Board actions"
+										onclick={(e) => openMenu(board, e)}>…</button
 									>
 								</div>
 							</li>
@@ -169,6 +275,28 @@
 		{/if}
 	</main>
 </div>
+
+{#if menu}
+	<div
+		class="card-menu-pop"
+		style="left: {menu.x}px; top: {menu.y}px"
+		role="menu"
+		tabindex="-1"
+		onmousedown={(e) => e.stopPropagation()}
+	>
+		{#if view === 'active'}
+			<button role="menuitem" onclick={() => startRename(menu!.board)}>Rename</button>
+			<button role="menuitem" onclick={() => duplicate(menu!.board)}>Duplicate</button>
+			<button role="menuitem" onclick={() => toggleFavorite(menu!.board)}>
+				{menu.board.isFavorite ? 'Unfavorite' : 'Favorite'}
+			</button>
+			<button role="menuitem" class="danger" onclick={() => moveToTrash(menu!.board)}>Move to trash</button>
+		{:else}
+			<button role="menuitem" onclick={() => restore(menu!.board)}>Restore</button>
+			<button role="menuitem" class="danger" onclick={() => purge(menu!.board)}>Delete forever</button>
+		{/if}
+	</div>
+{/if}
 
 <style>
 	.home {
@@ -228,6 +356,42 @@
 		justify-content: space-between;
 		gap: 12px;
 		margin-bottom: 20px;
+	}
+
+	.picker-controls {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	.sort-select {
+		height: 34px;
+		padding: 0 8px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		color: var(--color-text);
+		font-size: 13px;
+	}
+
+	.view-toggle {
+		display: flex;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+	}
+
+	.view-toggle button {
+		height: 34px;
+		padding: 0 12px;
+		font-size: 13px;
+		color: var(--color-text-muted);
+	}
+
+	.view-toggle button.active {
+		background: var(--color-surface-active);
+		color: var(--color-text);
 	}
 
 	.search-box {
@@ -333,6 +497,18 @@
 		text-overflow: ellipsis;
 	}
 
+	.board-name-input {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--color-text);
+		background: var(--color-surface-hover);
+		border: 1px solid var(--color-accent);
+		border-radius: var(--radius-sm);
+		padding: 1px 4px;
+		outline: none;
+		max-width: 100%;
+	}
+
 	.board-sub {
 		display: flex;
 		align-items: center;
@@ -345,10 +521,14 @@
 		color: var(--color-accent);
 	}
 
+	.trash-tag {
+		font-style: italic;
+	}
+
 	.fav-btn {
 		position: absolute;
 		top: 14px;
-		right: 14px;
+		right: 40px;
 		width: 24px;
 		height: 24px;
 		display: flex;
@@ -361,15 +541,64 @@
 		transition: opacity var(--dur-micro) var(--ease-out);
 	}
 
-	.board-card:hover .fav-btn {
+	.card-menu {
+		position: absolute;
+		top: 14px;
+		right: 14px;
+		width: 24px;
+		height: 24px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-sm);
+		font-size: 15px;
+		color: rgba(255, 255, 255, 0.7);
+		opacity: 0;
+		transition: opacity var(--dur-micro) var(--ease-out);
+	}
+
+	.board-card:hover .fav-btn,
+	.board-card:hover .card-menu,
+	.card-menu:focus-visible {
 		opacity: 1;
 	}
-	.fav-btn:hover {
+	.fav-btn:hover,
+	.card-menu:hover {
 		background: rgba(255, 255, 255, 0.2);
 	}
 	.fav-btn.faved {
 		opacity: 1;
 		color: var(--color-accent);
+	}
+
+	.card-menu-pop {
+		position: fixed;
+		z-index: 120;
+		min-width: 160px;
+		display: flex;
+		flex-direction: column;
+		gap: 1px;
+		padding: 4px;
+		background: var(--color-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		box-shadow: var(--shadow-float);
+	}
+
+	.card-menu-pop button {
+		padding: 6px 10px;
+		text-align: left;
+		border-radius: var(--radius-md);
+		font-size: 13px;
+		color: var(--color-text);
+	}
+
+	.card-menu-pop button:hover {
+		background: var(--color-surface-hover);
+	}
+
+	.card-menu-pop button.danger {
+		color: var(--color-danger);
 	}
 
 	.home-empty {
@@ -406,9 +635,5 @@
 		margin: 0;
 		color: var(--color-text-muted);
 		font-size: 13px;
-	}
-
-	.empty-actions {
-		margin-top: 8px;
 	}
 </style>

@@ -20,6 +20,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Undo/redo** — Command Pattern, 200 steps (eraser undo in M0-07, image insert and import in M0-12)
 - **Clipboard** — copy, cut and paste of objects with `Ctrl+C/X/V` and the context menu; system clipboard with a versioned `inkboard/clipboard@1` payload plus an internal fallback, paste at the cursor with cumulative offset, works across boards, plain text pastes as a text object, and cut/paste are undoable (M1-04)
 - **Groups** — group and ungroup with `Ctrl+G` / `Ctrl+Shift+G`; one click selects the group, double click enters it, transforms apply to the children, one nesting level, all undoable (M1-05)
+- **Connectors** — straight connectors with arrowheads from any of the four side anchors of an object, or between free points, via the `C` tool; they follow the objects when moved, scaled or rotated, and survive the deletion of an endpoint as a free point (M1-09; orthogonal connectors come in M5)
 - **Lock** — lock and unlock with `Ctrl+Shift+L` or the context menu; locked objects stay out of marquee selections and the eraser, and show a padlock on the selection overlay (M1-06)
 - **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (flushed on unmount, on `pagehide`/hidden, before returning Home and on window close — M0-06)
 - **Export** — PNG, SVG, JSON (client-side)

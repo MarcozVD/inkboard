@@ -1477,13 +1477,13 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-13 ✅ | **B14** · Resetear `ui` y `uiActions` al desmontar el board. La TopBar decide el modo board/home por la ruta (`page.route.id`). | `stores/ui.svelte.ts`, `app/TopBar.svelte`, `BoardCanvas.svelte` | E2E: en Home no aparecen undo/redo ni avatares | S |
 | M0-14 ✅ | **B15** · `count_objects` lee `board.objects`, con test Rust. | `src-tauri/src/db/mod.rs` | `cargo test` cubre el conteo | S |
 | M0-15 ✅\* | **B16** · `read_file_bytes` devuelve `tauri::ipc::Response` (bytes crudos → `ArrayBuffer`) y el front construye un `Blob` que lee con `FileReader`. | `commands/import.rs`, `BoardCanvas.svelte` | Manual: importar un PNG de 10 MB por el diálogo nativo | S |
-| M0-16 ✅* | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
+| M0-16 ✅ | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. **Ejecutada en GitHub con éxito** (ya incluye `lint` y `format:check` desde M1-12). | `.github/workflows/ci.yml`, `package.json` | Un push con cualquier suite en rojo falla | S |
 | M0-17 ✅ | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
 
-\* M0-15 y M0-16 están implementadas (`read_file_bytes` ya devuelve bytes crudos y el workflow existe en `.github/workflows/ci.yml`), pero su aceptación no está verificada: M0-15 necesita importar un PNG de 10 MB por el diálogo nativo en `pnpm tauri dev`, y M0-16 necesita su primera ejecución en GitHub, que ocurrirá con el primer push. Trátalas como abiertas hasta cerrar esas comprobaciones.
+\* M0-15 está implementada (`read_file_bytes` ya devuelve bytes crudos) pero su aceptación sigue sin verificar: necesita importar un PNG de 10 MB por el diálogo nativo en `pnpm tauri dev`. Trátala como abierta hasta cerrar esa comprobación.
 
 **Gate M0 — cerrado (2026-09-30)**
-- [ ] E2E de M0-01 en verde en CI. *(36/36 en local; el workflow de M0-16 aún no se ha ejecutado en GitHub, así que esto se cerrará con el primer push.)*
+- [x] E2E de M0-01 en verde en CI. *(52 E2E en verde; el workflow de M0-16 corrió en GitHub Actions, Windows y Ubuntu, y pasó con `lint`, `format:check`, `check`, unit, E2E y `cargo test`.)*
 - [x] Checklist manual en Windows (`pnpm tauri dev`): dibujar exactamente bajo el cursor · seleccionar, mover, escalar y rotar formas y trazos · escribir en texto y sticky · deshacer todo lo anterior · cerrar con ✕ justo después de editar sin perder nada · minimizar y maximizar.
 
 ### 24.5 M1 — Editor completo (v0.2.0)
@@ -1502,7 +1502,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M1-10 | Tema en el canvas: fondo, grid, overlay y colores por defecto desde los tokens CSS. `system` sigue a `prefers-color-scheme` en vivo. El tema se guarda en los settings del workspace. Color de tinta por defecto según D1 (§28). | Capturas E2E en light y dark | M | M1-01 |
 | M1-11 ✅ | Menú contextual completo: copiar, pegar, duplicar, borrar, orden, bloquear, agrupar y exportar selección, con los atajos tomados de la tabla de M0-05. Las etiquetas de cada acción salen de `COMMAND_SHORTCUTS`, el overlay y el menú comparten tabla (`e2e/context-menu.spec.ts`). | E2E: abrir el menú con selección y ejecutar cada acción | S | M1-04, M1-05 |
 | M1-12 ✅ | Overlay de atajos (`?`) y CommandPalette alimentados por la misma tabla (`shortcutGroups()` en `input/shortcuts.ts`, `ShortcutsOverlay.svelte`). ESLint (`typescript-eslint`, `eslint-plugin-svelte`) y `prettier --check` en CI, con una regla de lint que prohíbe `store.*` fuera de `canvas/` y `tools/`. Añadidos `pnpm lint`, `pnpm lint:fix`, `pnpm format` y `pnpm format:check`; el job de CI corre lint y format antes de los tests. | La CI falla si se viola la regla (`pnpm lint` y `pnpm format:check` en verde) | S | M0-05 |
-| M1-13 | Transformación precisa: handles alineados al objeto cuando hay uno solo seleccionado y está rotado; resize respetando su eje; tamaño mínimo; flip con escala negativa. | Unit + E2E de resize de un objeto rotado | M | M0-10 |
+| M1-13 ✅ | Transformación precisa: handles alineados al objeto cuando hay uno solo seleccionado y está rotado; resize respetando su eje; tamaño mínimo; flip con escala negativa. `geometry.ts` resuelve el resize en el frame local del objeto (opuesto fijo, `worldToLocalVector`/`localVectorToWorld`) y `SelectionManager` calcula los handles rotados; todo pasa por `UpdateTransformCommand`, así que deshace (`e2e/resize.spec.ts`). | Unit + E2E de resize de un objeto rotado (unit 139, E2E 52 en verde dos corridas) | M | M0-10 |
 
 **Gate M1:** test de invariantes en verde · `BoardCanvas.svelte` < 400 líneas · un E2E por tarea · tema claro usable de punta a punta.
 
@@ -1627,7 +1627,7 @@ Candidatos, a priorizar con el uso real de la beta:
 | Migrar las imágenes a assets corrompe boards existentes (M2-05) | Baja | Alto | Snapshot en `board_versions` antes de migrar; migración idempotente; test con una DB real de v0.1 |
 | El coste o el plazo de la firma de código retrasa la beta | Media | Medio | Beta interna sin firmar; firmar antes de distribuir en público (D4) |
 | Las tareas delegadas a agentes se salen de alcance o rompen invariantes | Media | Medio | Tareas con archivos y criterio explícitos, el test como contrato y revisión del diff antes del merge |
-| `e2e/clipboard.spec.ts` (copiar en el board A y pegar en el B) es flaky con workers en paralelo | Alta | Bajo | El portapapeles del SO es un recurso compartido entre contextos: dos specs que copien a la vez se pisan. Pasa con `--workers=1` y en local; en CI hay que aislarlo (un worker para ese spec o `fullyParallel: false`) antes de fiarse del gate |
+| ~~`e2e/clipboard.spec.ts` (copiar en el board A y pegar en el B) era flaky con workers en paralelo~~ **Corregido (M1-13)**: el spec va en `mode: 'serial'`, y con eso la suite completa pasa dos corridas seguidas y también en CI | — | El portapapeles del SO es un recurso compartido entre contextos; si vuelve a fallar, la siguiente palanca es no tocar el portapapeles del sistema en el test (el fallback interno de `board/clipboard.ts` ya cubre el pegado entre boards) y no `mode: 'serial'`, que solo ordena los tests dentro del archivo |
 
 ---
 

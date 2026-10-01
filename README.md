@@ -16,7 +16,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Styles** — pen/highlighter color and width, shape fill/stroke/width/dash/radius, text size, bold, italic, alignment and color, sticky color, opacity: all editable from the ContextToolbar and the ToolBar popover, each change undoable, and the last style is remembered per tool (M1-03)
 - **Sticky notes / text** — in-canvas editing with undoable `UpdateContentCommand` (M0-04)
 - **Images** — file picker, clipboard paste, drag & drop (PNG/JPG/WEBP/SVG); insert is a single undo step (M0-12)
-- **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10)
+- **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10; handles align to a rotated object and resize works in its local axis since M1-13)
 - **Undo/redo** — Command Pattern, 200 steps (eraser undo in M0-07, image insert and import in M0-12)
 - **Clipboard** — copy, cut and paste of objects with `Ctrl+C/X/V` and the context menu; system clipboard with a versioned `inkboard/clipboard@1` payload plus an internal fallback, paste at the cursor with cumulative offset, works across boards, plain text pastes as a text object, and cut/paste are undoable (M1-04)
 - **Groups** — group and ungroup with `Ctrl+G` / `Ctrl+Shift+G`; one click selects the group, double click enters it, transforms apply to the children, one nesting level, all undoable (M1-05)
@@ -44,7 +44,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Native-dialog image import | **Likely fixed** in M0-15 (B16) — raw bytes instead of a JSON array; still to be confirmed in `tauri dev` |
 | Board list in Home | No leftover board chrome after leaving a board (M0-13, B14) |
 | `object_count` in SQLite | **Works** after M0-14 (B15 fixed) |
-| Connectors / groups | Stub only — the Connector button stays hidden until M1-09 (M0-11) |
+| Connectors / groups | **Works** since M1-09 and M1-05 — straight connectors with arrowheads (`C`) and groups (`Ctrl+G`); orthogonal connectors come in M5 |
 | PDF / JPG / `.inkboard` | Not implemented |
 | Collaboration | UI stub |
 
@@ -80,8 +80,8 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 134/134
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 50/50
+pnpm test                           # Unit (Vitest) — 139/139
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 52/52
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
 pnpm lint:fix                       # ESLint autofix
@@ -90,7 +90,7 @@ pnpm format:check                   # Prettier check
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 11/11
 ```
 
-**CI** (M0-16, ampliada en M1-12): `.github/workflows/ci.yml` runs `lint`, `format:check`, `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Not yet executed on GitHub — the first run happens with the first push.
+**CI** (M0-16, ampliada en M1-12): `.github/workflows/ci.yml` runs `lint`, `format:check`, `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Last run on GitHub Actions: green on both OSes.
 
 ## Design System
 

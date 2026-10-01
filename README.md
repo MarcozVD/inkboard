@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.1.1 → M1 in progress):** Selection, canvas DPR sizing, text/sticky editing, shortcuts, autosave flush, eraser and import undo, z-order, object transform, shell reset and the Rust `object_count` fixed (M0 closed: M0-01…M0-17). Window controls verified by hand in `tauri dev` (M0-09, B08). `BoardCanvas.svelte` split into modules (M1-01). Native-dialog import (M0-15) still needs its manual check, and CI (M0-16) runs on its first push — see [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog) and M2. See [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -19,6 +19,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Selection** — select, marquee, move, resize, rotate (B01 fixed in M0-02; strokes and connectors transform too since M0-10; handles align to a rotated object and resize works in its local axis since M1-13)
 - **Undo/redo** — Command Pattern, 200 steps (eraser undo in M0-07, image insert and import in M0-12)
 - **Clipboard** — copy, cut and paste of objects with `Ctrl+C/X/V` and the context menu; system clipboard with a versioned `inkboard/clipboard@1` payload plus an internal fallback, paste at the cursor with cumulative offset, works across boards, plain text pastes as a text object, and cut/paste are undoable (M1-04)
+- **Theme** — dark, light and `system` (which follows `prefers-color-scheme` live); the canvas background, grid, selection overlay and default colors come from the CSS tokens, the choice is persisted and applied at startup, and the default ink is the semantic value `ink` resolved per theme, while colors you pick stay absolute (M1-10)
 - **Groups** — group and ungroup with `Ctrl+G` / `Ctrl+Shift+G`; one click selects the group, double click enters it, transforms apply to the children, one nesting level, all undoable (M1-05)
 - **Connectors** — straight connectors with arrowheads from any of the four side anchors of an object, or between free points, via the `C` tool; they follow the objects when moved, scaled or rotated, and survive the deletion of an endpoint as a free point (M1-09; orthogonal connectors come in M5)
 - **Lock** — lock and unlock with `Ctrl+Shift+L` or the context menu; locked objects stay out of marquee selections and the eraser, and show a padlock on the selection overlay (M1-06)
@@ -46,6 +47,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | `object_count` in SQLite | **Works** after M0-14 (B15 fixed) |
 | Connectors / groups | **Works** since M1-09 and M1-05 — straight connectors with arrowheads (`C`) and groups (`Ctrl+G`); orthogonal connectors come in M5 |
 | PDF / JPG / `.inkboard` | Not implemented |
+| Theme on canvas | **Works** since M1-10 (D1 option b) — dark / light / `system`, `ink` resolves per theme, exports resolve it too |
 | Collaboration | UI stub |
 
 Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1-01 done).
@@ -80,8 +82,8 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 139/139
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 52/52
+pnpm test                           # Unit (Vitest) — 144/144
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 54/54
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
 pnpm lint:fix                       # ESLint autofix

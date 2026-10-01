@@ -35,6 +35,9 @@ export interface BoardActionDeps {
 	duplicateSelection: () => void;
 	reorderSelection: (mode: ReorderMode) => void;
 	deleteSelection: () => void;
+	copySelection: () => void;
+	cutSelection: () => void;
+	pasteClipboard: (at?: { x: number; y: number } | null) => void;
 	setTool: (tool: ToolId) => void;
 	zoomFit: () => void;
 	resetZoom: () => void;
@@ -73,6 +76,8 @@ export function buildContextMenu(
 	const obj = engine.selectionManager.hitTest(world);
 	if (!obj) {
 		return [
+			{ label: 'Paste', icon: 'import', action: () => deps.pasteClipboard(world) },
+			{ separator: true },
 			{ label: 'New sticky note', icon: 'sticky', action: () => deps.setTool('sticky') },
 			{ label: 'New text', icon: 'text', action: () => deps.setTool('text') },
 			{ separator: true },
@@ -83,7 +88,10 @@ export function buildContextMenu(
 	const objId = obj.id;
 	const sel = engine.selectionManager;
 	return [
-		{ label: 'Copy', icon: 'copy', action: () => { /* clipboard */ } },
+		{ label: 'Copy', icon: 'copy', action: () => { sel.selectMany([objId]); deps.copySelection(); } },
+		{ label: 'Cut', icon: 'cut', action: () => { sel.selectMany([objId]); deps.cutSelection(); } },
+		{ label: 'Paste', icon: 'import', action: () => deps.pasteClipboard(world) },
+		{ separator: true },
 		{ label: 'Duplicate', icon: 'duplicate', action: () => { sel.selectMany([objId]); deps.duplicateSelection(); } },
 		{ label: 'Delete', icon: 'trash', danger: true, action: () => { sel.selectMany([objId]); deps.deleteSelection(); } }
 	];

@@ -40,6 +40,8 @@ export class InputController {
 	/** canvas box in CSS px inside the viewport */
 	rect = { left: 0, top: 0, width: 0, height: 0 };
 	dpr = 1;
+	/** last pointer position in canvas-local CSS px (for paste-at-cursor) */
+	lastPointer: Vec2 | null = null;
 
 	private isPanning = false;
 	private panStart: Vec2 = { x: 0, y: 0 };
@@ -105,6 +107,7 @@ export class InputController {
 		e.preventDefault?.();
 		const canvas = this.opts.canvas();
 		const p = this.toCanvasPoint(e);
+		this.lastPointer = { ...p };
 		this.pointers.set(e.pointerId, p);
 
 		if (this.pointers.size === 2) {
@@ -127,6 +130,7 @@ export class InputController {
 
 	pointerMove(e: PointerLike): void {
 		const p = this.toCanvasPoint(e);
+		this.lastPointer = { ...p };
 		if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, p);
 
 		if (this.pointers.size >= 2) {

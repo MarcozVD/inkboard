@@ -1,20 +1,21 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { DEFAULT_CAMERA, resetZoom, zoomAt } from '$lib/canvas/Camera';
+	import { DEFAULT_CAMERA } from '$lib/canvas/Camera';
 	import type { CameraState } from '$lib/canvas/Camera';
 	import type { CanvasEngine, ToolId } from '$lib/canvas/CanvasEngine';
 	import { handleCanvasKeyDown, type KeyboardContext, type ReorderMode } from '$lib/input/shortcuts';
 	import { cancelTextContent, commitTextContent, deleteObjects, duplicateObjects, reorderObjects } from '$lib/canvas/commands';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
+	import { createClipboard } from '$lib/board/clipboard';
+	import { createZoomActions } from '$lib/board/zoomActions';
 	import {
 		buildContextMenu,
 		buildPaletteCommands,
 		buildSelectionToolbar,
-		fitCameraToObjects,
 		type BoardActionDeps
 	} from '$lib/board/boardInteractions';
-	import { createTransferHandlers, dropImage, pasteImage, type ExportFormat } from '$lib/io/transfer';
+	import { createTransferHandlers, dropImage, type ExportFormat } from '$lib/io/transfer';
 	import type { EditableObj, GridConfig, ShapeType } from '$lib/objects/types';
 	import { ui, uiActions } from '$lib/stores/ui.svelte';
 	import { goto } from '$app/navigation';
@@ -65,6 +66,21 @@
 	});
 
 	const styles = createStyleBridge({ getEngine: () => engine, onDirty: () => markDirty() });
+	const clipboard = createClipboard({
+		getEngine: () => engine,
+		getCamera: () => camera,
+		getView: () => canvasRect,
+		getCursor: () => runtime?.input.lastPointer ?? null,
+		onDirty: () => markDirty()
+	});
+	const zoom = createZoomActions({
+		getEngine: () => engine,
+		getCamera: () => camera,
+		setCamera: (c) => (camera = c),
+		getView: () => canvasRect,
+		onDirty: () => markDirty()
+	});
+	const { zoomIn, zoomOut, zoomReset, zoomFit } = zoom;
 	function markDirty() {
 		runtime?.markDirty();
 	}
@@ -105,25 +121,6 @@
 		engine.shapeTool.config.shape = shape;
 		currentShape = shape;
 		setTool('shape');
-	}
-
-	function zoomIn() {
-		camera = zoomAt(camera, canvasRect.width / 2, canvasRect.height / 2, 1.25);
-		markDirty();
-	}
-	function zoomOut() {
-		camera = zoomAt(camera, canvasRect.width / 2, canvasRect.height / 2, 0.8);
-		markDirty();
-	}
-	function zoomReset() {
-		camera = resetZoom(camera, canvasRect.width, canvasRect.height);
-		markDirty();
-	}
-	function zoomFit() {
-		const next = fitCameraToObjects(engine?.store.toJSON() ?? [], canvasRect);
-		if (next) camera = next;
-		else zoomReset();
-		markDirty();
 	}
 
 	function deleteSelection() {
@@ -180,7 +177,7 @@
 	}
 
 	function onPaste(e: ClipboardEvent) {
-		if (engine) pasteImage({ engine, boardId, getMeta: transferMeta }, e);
+		clipboard.pasteFromEvent(e);
 	}
 	function onDrop(e: DragEvent) {
 		if (!engine || !runtime) return;
@@ -240,6 +237,9 @@
 		deleteSelection,
 		duplicateSelection,
 		reorderSelection,
+		copySelection: () => void clipboard.copySelection(),
+		cutSelection: () => clipboard.cutSelection(),
+		pasteClipboard: (at?: { x: number; y: number } | null) => { void clipboard.paste(at); },
 		undo: () => { engine?.history.undo(); syncShell(); markDirty(); },
 		redo: () => { engine?.history.redo(); syncShell(); markDirty(); },
 		zoomFit,

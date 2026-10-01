@@ -112,6 +112,9 @@ export interface KeyboardContext {
 	deleteSelection: () => void;
 	duplicateSelection: () => void;
 	reorderSelection: (mode: ReorderMode) => void;
+	copySelection: () => void;
+	cutSelection: () => void;
+	pasteClipboard: () => void;
 	undo: () => void;
 	redo: () => void;
 }
@@ -163,6 +166,19 @@ export function handleCanvasKeyDown(e: KeyboardEvent, ctx: KeyboardContext): voi
 	if (mod && (e.key === 'a' || e.key === 'A')) {
 		e.preventDefault();
 		ctx.selectAll();
+	}
+	if (mod && (e.key === 'c' || e.key === 'C')) {
+		e.preventDefault();
+		ctx.copySelection();
+	}
+	if (mod && (e.key === 'x' || e.key === 'X')) {
+		e.preventDefault();
+		ctx.cutSelection();
+	}
+	if (mod && (e.key === 'v' || e.key === 'V')) {
+		// handled here (and the native paste event suppressed) for deterministic behavior
+		e.preventDefault();
+		ctx.pasteClipboard();
 	}
 	if (e.key === 'Escape') ctx.clearSelection();
 

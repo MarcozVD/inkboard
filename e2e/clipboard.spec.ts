@@ -6,6 +6,9 @@ const TIMEOUT = 8000;
 test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
 test.describe('M1-04 — clipboard', () => {
+	// the OS clipboard is shared between parallel workers — keep this file serial
+	test.describe.configure({ mode: 'serial' });
+
 	test('copy in board A, paste in board B', async ({ page }) => {
 		const a = await createBoard(page);
 		await drawShape(page, 'rect', { x: 300, y: 200 }, { x: 500, y: 350 });

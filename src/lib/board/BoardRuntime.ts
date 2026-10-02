@@ -5,6 +5,9 @@ import { Renderer } from '$lib/canvas/Renderer';
 import { RenderLoop } from '$lib/canvas/RenderLoop';
 import { BoardSession, type SaveState } from './BoardSession';
 import { syncConnectors } from './connectors';
+import { createThumbnailSaver } from './thumbnails';
+import { attachVersionBridge } from './versionBridge.svelte';
+import { createVersion, saveThumbnail } from '$lib/io/persistence';
 import type { CameraState } from '$lib/canvas/Camera';
 import type { Board, EditableObj, GridConfig } from '$lib/objects/types';
 import type { ResolvedTheme } from '$lib/objects/colors';
@@ -46,6 +49,9 @@ export class BoardRuntime {
 	private renderLoop: RenderLoop;
 	private detachInput: () => void = () => {};
 	private unlistenClose: (() => void) | null = null;
+	private thumbnails: ReturnType<typeof createThumbnailSaver>;
+	private versionTimer: ReturnType<typeof setInterval> | null = null;
+	private editedSinceVersion = false;
 
 	constructor(private host: BoardRuntimeHost) {
 		this.engine = new CanvasEngine({
@@ -90,6 +96,12 @@ export class BoardRuntime {
 			getSnapshot: () => ({ name: host.getBoardName(), camera: host.getCamera(), grid: host.getGrid() }),
 			onSaveState: host.onSaveState
 		});
+		this.thumbnails = createThumbnailSaver({
+			getEngine: () => this.engine,
+			getBoardId: () => host.boardId,
+			getTheme: host.getTheme,
+			save: saveThumbnail
+		});
 		host.onEngine(this.engine);
 	}
 
@@ -106,6 +118,8 @@ export class BoardRuntime {
 			this.host.onObjectCount(this.engine.store.getAll().length);
 			this.host.onDirty();
 			this.session.scheduleAutosave();
+			this.thumbnails.schedule(); // M2-03: 10 s after the last edit
+			this.editedSinceVersion = true; // M2-04: fed the 5-minute snapshots
 		});
 		this.engine.store.onChange(this.host.onShellChange);
 		// connectors follow their attached objects (§M1-09)
@@ -114,6 +128,14 @@ export class BoardRuntime {
 			if (changed.length) this.engine.store.notifyMoved(changed);
 		});
 		this.session.startForceSave();
+
+		// M2-03 / M2-04: exit paths also flush the thumbnail and can snapshot a version
+		attachVersionBridge({ getBoardId: () => this.host.boardId, flush: () => this.session.flushSave() });
+		this.versionTimer = setInterval(() => {
+			if (!this.editedSinceVersion) return;
+			this.editedSinceVersion = false;
+			void createVersion(this.host.boardId, 'Auto').catch((err) => console.error('version snapshot failed', err));
+		}, VERSION_SNAPSHOT_INTERVAL_MS);
 
 		// load existing board (or empty canvas for a fresh one)
 		this.session
@@ -130,14 +152,19 @@ export class BoardRuntime {
 
 		// ── Flush on exit paths (B05) ──
 		const onPageHide = () => {
+			void this.thumbnails.flush();
 			void this.session.flushSave();
 		};
 		const onVisibilityChange = () => {
-			if (document.visibilityState === 'hidden') void this.session.flushSave();
+			if (document.visibilityState === 'hidden') {
+				void this.thumbnails.flush();
+				void this.session.flushSave();
+			}
 		};
 		if ('__TAURI_INTERNALS__' in window) {
 			getCurrentWindow()
 				.onCloseRequested(async () => {
+					await this.thumbnails.flush();
 					await this.session.flushSave();
 				})
 				.then((u) => (this.unlistenClose = u))
@@ -163,9 +190,14 @@ export class BoardRuntime {
 
 	/** Final flush, session teardown and shell reset (B05/B14). */
 	dispose(): void {
+		void this.thumbnails.flush();
 		void this.session.flushSave();
+		if (this.versionTimer) clearInterval(this.versionTimer);
 		this.session.dispose();
 		resetUi();
 		this.unlistenClose?.();
 	}
 }
+
+/** M2-04: snapshot the board every 5 minutes of active editing. */
+const VERSION_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000;

@@ -14,7 +14,8 @@
 		restoreBoard,
 		purgeBoard,
 		setBoardFavorite,
-		migrateLegacyFavorites
+		migrateLegacyFavorites,
+		loadThumbnail
 	} from '$lib/io/persistence';
 	import type { BoardMeta } from '$lib/objects/types';
 	import Icon from '$lib/components/ui/Icon.svelte';
@@ -28,9 +29,12 @@
 	let renamingId = $state<string | null>(null);
 	let renameValue = $state('');
 	let inputEl: HTMLInputElement | undefined = $state();
+	let thumbs = $state<Record<string, string>>({});
 
 	async function load() {
 		boards = await listBoards({ trash: view === 'trash', sort });
+		const entries = await Promise.all(boards.map(async (board) => [board.id, await loadThumbnail(board.id)] as const));
+		thumbs = Object.fromEntries(entries.filter((entry): entry is [string, string] => !!entry[1]));
 	}
 
 	onMount(async () => {
@@ -226,7 +230,15 @@
 									}}
 									oncontextmenu={(e) => openMenu(board, e)}
 								>
-									<span class="board-thumb" style="background: {thumbTint(board.id)}"></span>
+									{#if thumbs[board.id]}
+										<img class="board-thumb" data-testid="board-thumb-{board.id}" src={thumbs[board.id]} alt="" />
+									{:else}
+										<span
+											class="board-thumb"
+											data-testid="board-thumb-{board.id}"
+											style="background: {thumbTint(board.id)}"
+										></span>
+									{/if}
 									<span class="board-meta">
 										{#if renamingId === board.id}
 											<input
@@ -479,6 +491,8 @@
 		border-radius: var(--radius-md);
 		background-size: 24px 24px;
 		background-image: radial-gradient(circle, rgba(255, 255, 255, 0.14) 1px, transparent 1px);
+		display: block;
+		object-fit: cover;
 	}
 
 	.board-meta {

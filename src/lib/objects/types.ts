@@ -51,6 +51,14 @@ export interface BoardMeta {
 	deletedAt?: number | null;
 }
 
+/** Version snapshot metadata (M2-04). */
+export interface BoardVersionMeta {
+	id: string;
+	boardId: string;
+	createdAt: number;
+	label?: string | null;
+}
+
 export interface BoardBackground {
 	type: 'solid' | 'grid' | 'dots' | 'lines';
 	color: string;

@@ -7,7 +7,7 @@
 	import SettingsPanel from '$lib/components/panels/SettingsPanel.svelte';
 	import { CREATE_ITEMS, TOOLBAR_TOOLS } from '$lib/board/boardInteractions';
 	import type { StyleControl } from '$lib/board/styleControls';
-	import type { GridConfig, ShapeType } from '$lib/objects/types';
+	import type { BoardVersionMeta, GridConfig, ShapeType } from '$lib/objects/types';
 	import type { ExportFormat } from '$lib/io/transfer';
 
 	let {
@@ -24,6 +24,7 @@
 			showSettings: boolean;
 			grid: GridConfig;
 			theme: 'dark' | 'light' | 'system';
+			versions: BoardVersionMeta[];
 		};
 		actions: {
 			onSelectTool: (id: string) => void;
@@ -37,6 +38,9 @@
 			onCloseSettings: () => void;
 			onGridChange: (grid: GridConfig) => void;
 			onThemeChange: (theme: 'dark' | 'light' | 'system') => void;
+			onLoadVersions: () => void;
+			onSaveVersion: () => void;
+			onRestoreVersion: (versionId: string) => void;
 		};
 	} = $props();
 
@@ -49,7 +53,8 @@
 		showExportMenu,
 		showSettings,
 		grid,
-		theme
+		theme,
+		versions
 	} = $derived(state);
 	const {
 		onSelectTool,
@@ -62,7 +67,10 @@
 		onImport,
 		onCloseSettings,
 		onGridChange,
-		onThemeChange
+		onThemeChange,
+		onLoadVersions,
+		onSaveVersion,
+		onRestoreVersion
 	} = $derived(actions);
 </script>
 
@@ -92,4 +100,8 @@
 	{onThemeChange}
 	onExport={onToggleExport}
 	{onImport}
+	{versions}
+	{onLoadVersions}
+	{onSaveVersion}
+	{onRestoreVersion}
 />

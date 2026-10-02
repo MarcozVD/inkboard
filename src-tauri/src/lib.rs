@@ -58,6 +58,11 @@ pub fn run() {
             commands::persistence::restore_board,
             commands::persistence::purge_board,
             commands::persistence::set_favorite,
+            commands::persistence::save_thumbnail,
+            commands::persistence::get_thumbnail,
+            commands::persistence::save_version,
+            commands::persistence::list_versions,
+            commands::persistence::restore_version,
             commands::import::inspect_import,
             commands::import::read_file_bytes,
         ])

@@ -2,6 +2,7 @@
 	// SettingsPanel — slide-in from right, DESIGN.md § Settings.
 	// Sections: Canvas, Interaction, Appearance, Data, About.
 	import Icon from '$lib/components/ui/Icon.svelte';
+	import type { BoardVersionMeta } from '$lib/objects/types';
 
 	let {
 		open,
@@ -13,7 +14,11 @@
 		theme,
 		onThemeChange,
 		onExport,
-		onImport
+		onImport,
+		versions = [],
+		onLoadVersions,
+		onSaveVersion,
+		onRestoreVersion
 	}: {
 		open: boolean;
 		onClose: () => void;
@@ -25,18 +30,32 @@
 		onThemeChange: (t: 'dark' | 'light' | 'system') => void;
 		onExport?: () => void;
 		onImport?: () => void;
+		versions?: BoardVersionMeta[];
+		onLoadVersions?: () => void;
+		onSaveVersion?: () => void;
+		onRestoreVersion?: (versionId: string) => void;
 	} = $props();
 
 	let panelEl: HTMLDivElement | undefined = $state();
 
 	$effect(() => {
 		if (!open) return;
+		onLoadVersions?.();
 		function onDocClick(e: MouseEvent) {
 			if (panelEl && !panelEl.contains(e.target as Node)) onClose();
 		}
 		document.addEventListener('mousedown', onDocClick);
 		return () => document.removeEventListener('mousedown', onDocClick);
 	});
+
+	function formatTimestamp(ts: number): string {
+		return new Date(ts).toLocaleString(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		});
+	}
 </script>
 
 {#if open}
@@ -173,6 +192,32 @@
 								onImport?.();
 							}}>Import file…</button
 						>
+					</div>
+				</section>
+
+				<!-- Version history (M2-04) -->
+				<section class="sp-section">
+					<h3 class="sp-sec-title">Versions</h3>
+					<div class="sp-row">
+						<button class="sp-btn" data-testid="save-version" onclick={() => onSaveVersion?.()}> Save version </button>
+					</div>
+					<div class="version-list" data-testid="version-list">
+						{#if versions.length === 0}
+							<p class="sp-value">No versions yet</p>
+						{:else}
+							{#each versions as version, i (version.id)}
+								<div class="version-row">
+									<span class="sp-label">
+										{version.label ?? 'Auto'} · {formatTimestamp(version.createdAt)}
+									</span>
+									<button
+										class="version-restore"
+										data-testid="restore-version-{i}"
+										onclick={() => onRestoreVersion?.(version.id)}>Restore</button
+									>
+								</div>
+							{/each}
+						{/if}
 					</div>
 				</section>
 
@@ -387,5 +432,38 @@
 		font-size: 12px;
 		color: var(--color-text-muted);
 		margin: 2px 0;
+	}
+
+	.version-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		max-height: 180px;
+		overflow-y: auto;
+	}
+	.version-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 3px 0;
+	}
+	.version-row .sp-label {
+		font-size: 12px;
+		color: var(--color-text-muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.version-restore {
+		flex-shrink: 0;
+		padding: 3px 8px;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		font-size: 11px;
+		color: var(--color-text);
+	}
+	.version-restore:hover {
+		background: var(--color-surface-hover);
 	}
 </style>

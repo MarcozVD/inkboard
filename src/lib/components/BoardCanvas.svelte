@@ -7,7 +7,7 @@
 	import { deleteObjects, duplicateObjects, reorderObjects } from '$lib/canvas/commands';
 	import { createTextEditing } from '$lib/board/textEditing.svelte';
 	import { themeController } from '$lib/board/theme.svelte';
-	import { GRID } from '$lib/objects/colors';
+	import { versionBridge } from '$lib/board/versionBridge.svelte';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
@@ -44,7 +44,7 @@
 	let showShortcuts = $state(false);
 	let objectCount = $state(0);
 	let camera: CameraState = $state({ ...DEFAULT_CAMERA });
-	let grid: GridConfig = $state({ enabled: true, size: 32, color: GRID, opacity: 0.6 });
+	let grid: GridConfig = $state({ enabled: true, size: 32, color: 'grid', opacity: 0.6 });
 	let canvasRect = $state({ left: 0, top: 0, width: 0, height: 0 });
 	let engine: CanvasEngine | null = $state(null);
 	let runtime: BoardRuntime | null = null;
@@ -93,10 +93,6 @@
 			view: { width: canvasRect.width, height: canvasRect.height }
 		};
 	}
-	const gridChanged = (g: GridConfig) => {
-		grid = g;
-		markDirty();
-	};
 	function setTool(t: ToolId) {
 		const accepted = engine?.setTool(t) ?? false;
 		if (!accepted) return;
@@ -105,17 +101,12 @@
 		showCreatePanel = false;
 		styles.touch();
 	}
-	const handleCreate = (id: string) => {
-		showCreatePanel = false;
-		if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
-	};
 	function setShape(shape: ShapeType) {
 		if (!engine) return;
 		engine.shapeTool.config.shape = shape;
 		currentShape = shape;
 		setTool('shape');
 	}
-
 	const deleteSelection = () => {
 		if (!engine) return;
 		deleteObjects(engine);
@@ -344,19 +335,28 @@
 	<CanvasHint visible={objectCount === 0 && !textEdit.editingObj} />
 
 	<BoardChrome
-		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme: themeController.choice }}
+		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme: themeController.choice, versions: versionBridge.versions }}
 		actions={{
 			onSelectTool: (t) => setTool(t as ToolId),
 			onToggleCreate: () => (showCreatePanel = !showCreatePanel),
 			onToggleExport: () => (showExportMenu = !showExportMenu),
 			onShape: setShape,
 			onStickyColor: (i) => engine?.stickyTool.setColor(i),
-			onCreate: handleCreate,
+			onCreate: (id: string) => {
+				showCreatePanel = false;
+				if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
+			},
 			onExport: deps.onExport,
 			onImport: () => void transfer.import(),
 			onCloseSettings: () => (showSettings = false),
-			onGridChange: gridChanged,
-			onThemeChange: (t) => themeController.set(t)
+			onGridChange: (g: GridConfig) => {
+				grid = g;
+				markDirty();
+			},
+			onThemeChange: (t) => themeController.set(t),
+			onLoadVersions: () => void versionBridge.load(),
+			onSaveVersion: () => void versionBridge.save(),
+			onRestoreVersion: (versionId: string) => void versionBridge.restore(versionId)
 		}}
 	/>
 

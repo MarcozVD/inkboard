@@ -5,6 +5,7 @@ import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import type { Board, CameraState, CanvasObject, GridConfig } from '$lib/objects/types';
 import { createText } from '$lib/objects/factory';
 import { AddObjectsCommand } from '$lib/canvas/commands';
+import { createVersion } from '$lib/io/persistence';
 import { serializeBoard } from '$lib/io/InternalFormat';
 import { boardToSvg } from '$lib/io/SvgExporter';
 import { boardToPngDataUrl } from '$lib/io/PngExporter';
@@ -50,7 +51,14 @@ export function createTransferHandlers(host: TransferHost) {
 		},
 		async import(): Promise<void> {
 			const engine = host.getEngine();
-			if (engine) await importFile(context(engine));
+			if (!engine) return;
+			// M2-04: snapshot the live board before importing anything
+			try {
+				await createVersion(host.getBoardId(), 'Before import');
+			} catch (err) {
+				console.error('pre-import version failed', err);
+			}
+			await importFile(context(engine));
 		}
 	};
 }

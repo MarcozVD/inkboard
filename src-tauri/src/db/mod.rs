@@ -18,6 +18,20 @@ const MIGRATIONS: &[(i64, &str)] = &[
 /// busy_timeout used for every connection (ms).
 const BUSY_TIMEOUT_MS: i64 = 5_000;
 
+/// Metadata row for a board version (M2-04).
+#[derive(serde::Serialize, Clone)]
+pub struct BoardVersionMeta {
+    pub id: String,
+    pub board_id: String,
+    pub created_at: i64,
+    pub label: Option<String>,
+}
+
+/// Version retention (M2-04): keep at most this many versions…
+const MAX_VERSIONS: i64 = 50;
+/// …and never keep versions older than 30 days.
+const VERSION_MAX_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
 pub struct AppDb {
     conn: Connection,
 }
@@ -353,6 +367,140 @@ impl AppDb {
         }
         Ok(())
     }
+
+    // ── M2-03: thumbnails ──
+
+    /// Store the board thumbnail (PNG bytes).
+    pub fn set_thumbnail(&self, id: &str, png: &[u8]) -> Result<(), String> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE boards SET thumbnail = ?2 WHERE id = ?1",
+                params![id, png],
+            )
+            .map_err(|e| e.to_string())?;
+        if changed == 0 {
+            return Err(format!("board not found: {id}"));
+        }
+        Ok(())
+    }
+
+    /// Read the board thumbnail, if any.
+    pub fn get_thumbnail(&self, id: &str) -> Result<Option<Vec<u8>>, String> {
+        let thumbnail: Option<Option<Vec<u8>>> = self
+            .conn
+            .query_row(
+                "SELECT thumbnail FROM boards WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other.to_string()),
+            })?;
+        Ok(thumbnail.flatten())
+    }
+
+    // ── M2-04: version history ──
+
+    /// Snapshot the current board data as a new version.
+    pub fn create_version(&self, board_id: &str, label: Option<&str>) -> Result<String, String> {
+        let data: Vec<u8> = self
+            .conn
+            .query_row(
+                "SELECT data FROM board_data WHERE board_id = ?1",
+                params![board_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("board data not found: {board_id}"))?;
+        let id = uuid::Uuid::new_v4().to_string();
+        self.conn
+            .execute(
+                "INSERT INTO board_versions (id, board_id, created_at, data, label) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, board_id, chrono_now_ms(), data, label],
+            )
+            .map_err(|e| e.to_string())?;
+        self.trim_versions(board_id)?;
+        Ok(id)
+    }
+
+    /// Versions of a board, newest first.
+    pub fn list_versions(&self, board_id: &str) -> Result<Vec<BoardVersionMeta>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, board_id, created_at, label FROM board_versions
+                 WHERE board_id = ?1 ORDER BY created_at DESC, rowid DESC",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![board_id], |row| {
+                Ok(BoardVersionMeta {
+                    id: row.get(0)?,
+                    board_id: row.get(1)?,
+                    created_at: row.get(2)?,
+                    label: row.get(3)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Restore a version: snapshots the current data first (never destructive).
+    pub fn restore_version(&self, board_id: &str, version_id: &str) -> Result<(), String> {
+        let data: Vec<u8> = self
+            .conn
+            .query_row(
+                "SELECT data FROM board_versions WHERE id = ?1 AND board_id = ?2",
+                params![version_id, board_id],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("version not found: {version_id}"))?;
+
+        // never destroy: snapshot what is live right now
+        self.create_version(board_id, Some("Before restore"))?;
+
+        let json = zstd::decode_all(data.as_slice()).map_err(|e| e.to_string())?;
+        let hash = hex(Sha256::digest(&json));
+        let now = chrono_now_ms();
+        self.conn
+            .execute(
+                "UPDATE board_data SET data = ?2, data_hash = ?3, updated_at = ?4 WHERE board_id = ?1",
+                params![board_id, data, hash, now],
+            )
+            .map_err(|e| e.to_string())?;
+        self.conn
+            .execute(
+                "UPDATE boards SET updated_at = ?2 WHERE id = ?1",
+                params![board_id, now],
+            )
+            .map_err(|e| e.to_string())?;
+        self.trim_versions(board_id)?;
+        Ok(())
+    }
+
+    /// Retention: 50 newest versions max, none older than 30 days.
+    fn trim_versions(&self, board_id: &str) -> Result<(), String> {
+        let cutoff = chrono_now_ms() - VERSION_MAX_AGE_MS;
+        self.conn
+            .execute(
+                "DELETE FROM board_versions
+                 WHERE board_id = ?1
+                   AND (created_at < ?2
+                        OR rowid NOT IN (
+                            SELECT rowid FROM board_versions
+                            WHERE board_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT ?3
+                        ))",
+                params![board_id, cutoff, MAX_VERSIONS],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
 }
 
 fn count_objects(json: &str) -> i64 {
@@ -648,5 +796,85 @@ mod tests {
         assert_eq!(dates.len(), 2);
         assert_eq!(names[0].name, "Alpha");
         assert_eq!(names[1].name, "Zeta");
+    }
+
+    // ── M2-03: thumbnails ──
+
+    #[test]
+    fn thumbnail_roundtrip() {
+        let db = seeded_db();
+        assert_eq!(db.get_thumbnail("b1").unwrap(), None);
+
+        db.set_thumbnail("b1", &[1, 2, 3, 4]).unwrap();
+        assert_eq!(db.get_thumbnail("b1").unwrap(), Some(vec![1, 2, 3, 4]));
+        assert!(db.set_thumbnail("missing", &[1]).is_err());
+    }
+
+    // ── M2-04: version history ──
+
+    fn object_count(json: &str) -> i64 {
+        count_objects(json)
+    }
+
+    #[test]
+    fn versions_snapshot_and_list() {
+        let db = seeded_db();
+        let v1 = db.create_version("b1", Some("Manual")).unwrap();
+        let versions = db.list_versions("b1").unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].id, v1);
+        assert_eq!(versions[0].label.as_deref(), Some("Manual"));
+        assert!(db.create_version("missing", None).is_err());
+    }
+
+    #[test]
+    fn version_retention_keeps_50_newest_and_drops_old() {
+        let db = seeded_db();
+        for i in 0..55 {
+            db.create_version("b1", Some(&format!("v{i}"))).unwrap();
+        }
+        let versions = db.list_versions("b1").unwrap();
+        assert_eq!(versions.len(), 50);
+        assert!(!versions
+            .iter()
+            .any(|v| v.label.as_deref() == Some("v0")));
+
+        // an ancient version is removed on the next trim
+        let ancient = uuid::Uuid::new_v4().to_string();
+        db.conn
+            .execute(
+                "INSERT INTO board_versions (id, board_id, created_at, data, label)
+                 VALUES (?1, 'b1', ?2, x'00', 'ancient')",
+                params![ancient, chrono_now_ms() - VERSION_MAX_AGE_MS - 1000],
+            )
+            .unwrap();
+        db.create_version("b1", Some("trigger")).unwrap();
+        assert!(!db
+            .list_versions("b1")
+            .unwrap()
+            .iter()
+            .any(|v| v.label.as_deref() == Some("ancient")));
+    }
+
+    #[test]
+    fn restore_version_is_non_destructive() {
+        let db = seeded_db(); // 1 object
+        let v1 = db.create_version("b1", Some("One")).unwrap();
+
+        let json2 = r#"{"schemaVersion":"1.0.0","version":1,"board":{"id":"b1","name":"Board","objects":[{"id":"a"},{"id":"b"}]}}"#;
+        db.save_board("b1", "Board", json2).unwrap();
+        assert_eq!(object_count(&db.load_board("b1").unwrap().json), 2);
+
+        db.restore_version("b1", &v1).unwrap();
+        assert_eq!(object_count(&db.load_board("b1").unwrap().json), 1);
+
+        // the restored version and the "Before restore" snapshot both survive
+        let versions = db.list_versions("b1").unwrap();
+        assert_eq!(versions.len(), 2);
+        assert!(versions.iter().any(|v| v.id == v1));
+        assert!(versions
+            .iter()
+            .any(|v| v.label.as_deref() == Some("Before restore")));
+        assert!(db.restore_version("b1", "nope").is_err());
     }
 }

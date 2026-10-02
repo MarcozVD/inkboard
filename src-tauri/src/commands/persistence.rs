@@ -151,3 +151,84 @@ pub async fn set_favorite(
     .await
     .map_err(|e| e.to_string())?
 }
+
+/// Store the board thumbnail (PNG bytes, M2-03).
+#[tauri::command]
+pub async fn save_thumbnail(
+    state: State<'_, DbState>,
+    board_id: String,
+    png: Vec<u8>,
+) -> Result<(), String> {
+    let db = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.lock()
+            .map_err(|e| e.to_string())?
+            .set_thumbnail(&board_id, &png)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Read the board thumbnail (PNG bytes, M2-03).
+#[tauri::command]
+pub async fn get_thumbnail(
+    state: State<'_, DbState>,
+    board_id: String,
+) -> Result<Option<Vec<u8>>, String> {
+    let db = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.lock().map_err(|e| e.to_string())?.get_thumbnail(&board_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Snapshot the current board as a new version (M2-04). Returns the version id.
+#[tauri::command]
+pub async fn save_version(
+    state: State<'_, DbState>,
+    board_id: String,
+    label: Option<String>,
+) -> Result<String, String> {
+    let db = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.lock()
+            .map_err(|e| e.to_string())?
+            .create_version(&board_id, label.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// List a board's versions, newest first (M2-04).
+#[tauri::command]
+pub async fn list_versions(
+    state: State<'_, DbState>,
+    board_id: String,
+) -> Result<Vec<crate::db::BoardVersionMeta>, String> {
+    let db = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.lock()
+            .map_err(|e| e.to_string())?
+            .list_versions(&board_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Restore a version (snapshots the live board first, M2-04).
+#[tauri::command]
+pub async fn restore_version(
+    state: State<'_, DbState>,
+    board_id: String,
+    version_id: String,
+) -> Result<(), String> {
+    let db = state.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        db.lock()
+            .map_err(|e| e.to_string())?
+            .restore_version(&board_id, &version_id)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

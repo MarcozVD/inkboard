@@ -4,11 +4,18 @@
 // with an equivalent localStorage implementation for the browser.
 import { invoke } from '@tauri-apps/api/core';
 import { serializeBoard, deserializeBoard } from './InternalFormat';
-import type { Board, BoardMeta } from '$lib/objects/types';
+import type { Board, BoardMeta, BoardVersionMeta } from '$lib/objects/types';
+import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_KEY = 'inkboard:boards';
 const TRASH_KEY = 'inkboard:trash';
 const FAV_KEY = 'inkboard:favorites';
+const THUMB_KEY = 'inkboard:thumbs';
+const VERSIONS_KEY = 'inkboard:versions';
+
+/** M2-04 retention: 50 versions max, 30 days max. */
+const MAX_VERSIONS = 50;
+const VERSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function isTauri(): boolean {
 	return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -274,4 +281,110 @@ export function freshBoard(id: string, name = 'Untitled'): Board {
 		grid: { enabled: true, size: 32, color: 'grid', opacity: 0.6, snap: false },
 		metadata: {}
 	};
+}
+
+// ── M2-03: thumbnails ──
+
+function bytesToDataUrl(bytes: number[]): string {
+	let binary = '';
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return `data:image/png;base64,${btoa(binary)}`;
+}
+
+async function dataUrlToBytes(dataUrl: string): Promise<number[]> {
+	const response = await fetch(dataUrl);
+	return Array.from(new Uint8Array(await response.arrayBuffer()));
+}
+
+export async function saveThumbnail(boardId: string, dataUrl: string): Promise<void> {
+	if (isTauri()) {
+		await invoke('save_thumbnail', { boardId, png: await dataUrlToBytes(dataUrl) });
+		return;
+	}
+	const thumbs = readMap(THUMB_KEY);
+	thumbs[boardId] = dataUrl;
+	writeMap(THUMB_KEY, thumbs);
+}
+
+export async function loadThumbnail(boardId: string): Promise<string | null> {
+	if (isTauri()) {
+		const bytes = await invoke<number[] | null>('get_thumbnail', { boardId });
+		return bytes && bytes.length > 0 ? bytesToDataUrl(bytes) : null;
+	}
+	return readMap(THUMB_KEY)[boardId] ?? null;
+}
+
+// ── M2-04: version history ──
+
+interface StoredVersion {
+	id: string;
+	createdAt: number;
+	label?: string | null;
+	json: string;
+}
+
+function readVersions(): Record<string, StoredVersion[]> {
+	try {
+		return JSON.parse(localStorage.getItem(VERSIONS_KEY) || '{}') as Record<string, StoredVersion[]>;
+	} catch {
+		return {};
+	}
+}
+
+function writeVersions(versions: Record<string, StoredVersion[]>): void {
+	localStorage.setItem(VERSIONS_KEY, JSON.stringify(versions));
+}
+
+function trimVersions(list: StoredVersion[]): StoredVersion[] {
+	const cutoff = Date.now() - VERSION_MAX_AGE_MS;
+	return list
+		.filter((version) => version.createdAt >= cutoff)
+		.sort((a, b) => b.createdAt - a.createdAt)
+		.slice(0, MAX_VERSIONS);
+}
+
+export async function createVersion(boardId: string, label?: string | null): Promise<string> {
+	if (isTauri()) {
+		return invoke<string>('save_version', { boardId, label: label ?? null });
+	}
+	const json = lsGet(boardId);
+	if (!json) throw new Error(`board data not found: ${boardId}`);
+	const all = readVersions();
+	const version: StoredVersion = { id: uuidv4(), createdAt: Date.now(), label, json };
+	all[boardId] = trimVersions([...(all[boardId] ?? []), version]);
+	writeVersions(all);
+	return version.id;
+}
+
+export async function listVersions(boardId: string): Promise<BoardVersionMeta[]> {
+	if (isTauri()) {
+		const rows = await invoke<Array<{ id: string; board_id: string; created_at: number; label: string | null }>>(
+			'list_versions',
+			{ boardId }
+		);
+		return rows.map((row) => ({ id: row.id, boardId: row.board_id, createdAt: row.created_at, label: row.label }));
+	}
+	return trimVersions(readVersions()[boardId] ?? []).map((version) => ({
+		id: version.id,
+		boardId,
+		createdAt: version.createdAt,
+		label: version.label
+	}));
+}
+
+export async function restoreVersion(boardId: string, versionId: string): Promise<void> {
+	if (isTauri()) {
+		await invoke('restore_version', { boardId, versionId });
+		return;
+	}
+	const all = readVersions();
+	const version = (all[boardId] ?? []).find((entry) => entry.id === versionId);
+	if (!version) throw new Error(`version not found: ${versionId}`);
+
+	// never destructive: snapshot the live board first
+	await createVersion(boardId, 'Before restore');
+
+	const file = JSON.parse(version.json) as { board: Board };
+	file.board.updatedAt = Date.now();
+	lsPut(boardId, JSON.stringify(file));
 }

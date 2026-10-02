@@ -67,7 +67,7 @@
 
 ### 0.4 Parcial o no implementado
 
-Conectores (tipo + renderer, sin tool) · smart guides, alinear y distribuir · minimap · PDF / JPG / `.inkboard` · versiones y backup (tabla sin uso) · thumbnails reales · workers / OffscreenCanvas · colaboración.
+Conectores (tipo + renderer, sin tool) · smart guides, alinear y distribuir · minimap · PDF / JPG / `.inkboard` · workers / OffscreenCanvas · colaboración.
 
 ### 0.5 Layout del repo y comandos
 
@@ -83,7 +83,7 @@ cargo test --manifest-path src-tauri/Cargo.toml   # tests Rust
 pnpm tauri build                               # instaladores
 ```
 
-Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `inspect_import`, `read_file_bytes`.
+Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `save_thumbnail`, `get_thumbnail`, `save_version`, `list_versions`, `restore_version`, `inspect_import`, `read_file_bytes`.
 
 ---
 
@@ -368,7 +368,7 @@ tokio = { version = "1", features = ["full"] }
 
 ### Tauri Commands expuestos al frontend
 
-> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `inspect_import`, `read_file_bytes`. Los de abajo son el diseño objetivo: los assets llegan en M2 (§24.6); PNG y JPG se exportan desde TypeScript y PDF desde Rust (M2-10).
+> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `save_thumbnail`, `get_thumbnail`, `save_version`, `list_versions`, `restore_version`, `inspect_import`, `read_file_bytes`. Los de abajo son el diseño objetivo: los assets llegan en M2 (§24.6); PNG y JPG se exportan desde TypeScript y PDF desde Rust (M2-10).
 
 ```rust
 #[tauri::command]
@@ -1513,8 +1513,8 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 |----|-------|------------|------|
 | M2-01 ✅ | Rust: comandos pesados `async` o con `spawn_blocking`. SQLite con `journal_mode=WAL`, `foreign_keys=ON` y `busy_timeout` en cada conexión. Runner de migraciones con `PRAGMA user_version`: `MIGRATIONS` es una lista ordenada y el índice es la versión, así que añadir una migración es añadir una entrada; la migración inicial se extrajo a `db/migrations/001_initial.sql` y se incluye con `include_str!`. Una DB de v0.1 (esquema presente pero `user_version = 0`) se detecta como versión 1 y solo se marca, sin volver a ejecutar el SQL y sin tocar datos. | Abrir una DB de v0.1 la migra sin pérdida; test Rust | M |
 | M2-02 ✅ | Gestión de boards en Home: renombrar, duplicar, borrar (papelera restaurable, con restaurar y purgar) y ordenar por fecha o nombre; favoritos en SQLite, migrados desde localStorage. Comandos `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board` y `set_favorite`, con `list_boards(trash, sort)`. Borrado blando con `deleted_at` + índice, migración `002_board_management.sql`. Fallback completo en localStorage (`inkboard:trash`, `inkboard:favorites`) para el modo browser. | E2E (`e2e/home-boards.spec.ts`); `cargo test` 21/21 | M |
-| M2-03 | Thumbnails reales: render offscreen de 320×200 → PNG → `boards.thumbnail`, con debounce largo (≥ 10 s). Home los muestra y usa el tinte actual como fallback. | E2E: el thumbnail aparece tras editar | M |
-| M2-04 | Historial de versiones (la tabla `board_versions` existe sin uso): snapshot cada N minutos de edición activa, antes de importar o restaurar, y manual ("Guardar versión"). Retención de 50 versiones o 30 días; UI en Settings → Datos. Restaurar crea una versión nueva y nunca destruye. | Test Rust de retención; E2E de restaurar | M |
+| M2-03 ✅ | Thumbnails reales: render offscreen del contenido del board a 320×200 → PNG (data URL) → `boards.thumbnail`. Debounce de 10 s desde la última edición (`THUMBNAIL_DEBOUNCE_MS`) y `flush()` en los caminos de salida (desmontaje, `pagehide`/`visibilitychange`, `onCloseRequested`), así que editar y salir deja el thumbnail puesto. Home los carga con `loadThumbnail` y conserva el tinte derivado del `id` como fallback cuando el board aún no tiene imagen; en browser se guardan en localStorage (`inkboard:thumbs`). Comandos `save_thumbnail` y `get_thumbnail`. | E2E (`e2e/thumbnail.spec.ts`): el thumbnail aparece en Home tras editar y salir · `cargo test` 25/25 | M |
+| M2-04 ✅ | Historial de versiones: la tabla `board_versions` pasa a usarse. Snapshot automático cada 5 min **de edición activa** (un flag que solo se rearma al editar), snapshot antes de importar (`transfer.ts`) y antes de restaurar, y manual ("Save version") en Settings → Datos, que lista etiqueta, fecha y un "Restore" por versión. Retención de 50 versiones o 30 días, aplicada al crear y al restaurar (`trim_versions` en Rust, `trimVersions` en el fallback de localStorage `inkboard:versions`). Restaurar nunca destruye: escribe una versión `Before restore` del board vivo antes de poner el snapshot, en los dos caminos, y refresca el board. Comandos `save_version`, `list_versions` y `restore_version`, más `board/versionBridge.svelte.ts` como estado para la UI. | Test Rust de retención (50 más recientes, nada de más de 30 días) y de restore no destructivo · E2E (`e2e/versions.spec.ts`) · `cargo test` 25/25 | M |
 | M2-05 | Almacén de assets: las imágenes salen del JSON del board a una tabla `assets(hash sha256, mime, bytes, w, h)`; `ImageObject.src = "asset:<hash>"`; carga como Blob/object URL; deduplicación. Migración de los boards con data URLs (schema 1.1.0) con snapshot previo. En el browser, IndexedDB (D3). Hacerlo después de M1-01 (toca `renderers.ts` e `ImageTool`). | El autosave de un board con 20 MB de imágenes envía < 100 KB por guardado | L |
 | M2-06 | Formato `.inkboard` (ZIP con `board.json`, `metadata.json` y `assets/`, §16), con export e import en Rust mediante el crate `zip`. | Roundtrip board → `.inkboard` → import idéntico (JSON + hashes de assets) | M |
 | M2-07 | Import del JSON propio (hoy "not wired yet"): validación de esquema, límites de tamaño y de número de objetos, e importación como board nuevo o dentro del actual en un solo paso de undo. | E2E | S |
@@ -1601,7 +1601,7 @@ Candidatos, a priorizar con el uso real de la beta:
 | Colaboración en tiempo real | Alta (largo plazo) | Solo stub de UI | M6 |
 | Agrupación | Media | **Hecho (M1-05)** — `Ctrl+G`/`Ctrl+Shift+G`, clic selecciona el grupo, doble clic entra, un nivel de anidamiento | M1-05 |
 | Gestión de boards (renombrar, duplicar, borrar) ✅ M2-02 | Media | Solo crear, listar, buscar y favoritos | M2-02 — **hecho**: Home con renombrar, duplicar, papelera (restaurar/purgar), ordenar por fecha o nombre y favoritos en SQLite |
-| Versiones / backup | Media | Tabla sin uso | M2-04 |
+| Versiones / backup ✅ M2-04 | Media | **Hecho** — snapshot automático cada 5 min de edición activa, snapshot antes de importar o restaurar y "Save version" manual; lista con etiqueta y fecha y "Restore" en Settings → Datos; retención de 50 versiones o 30 días, y restaurar nunca destruye | M2-04 |
 | Snap a grid / smart guides | Media | **Grid snap hecho (M1-07)** (toggle en Settings, `grid.snap` persistido, Shift a un eje, rotación de 15°); smart guides, alinear y distribuir siguen en M5 | M1-07 (grid), M5 (guías) |
 | Minimap | Media | No | M5 |
 | Búsqueda de objetos | Media | No (sí de boards) | M5 |

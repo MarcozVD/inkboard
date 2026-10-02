@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. M2 has started: M2-01 moved the heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations) and M2-02 brought board management to Home. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog). See [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. M2 has started: M2-01 moved the heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations), M2-02 brought board management to Home, M2-03 renders real 320×200 board thumbnails into that grid and M2-04 gave `board_versions` a purpose with an automatic/manual version history you can restore from. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog). See [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -28,6 +28,8 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Import** — images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)
 - **UI** — floating ToolBar, ContextToolbar, ContextMenu, Command palette (`Ctrl+K`), Create panel, Settings
 - **Multi-board** — home picker with search, favorites, grid view, rename and duplicate, sort by date or name, and a trash you can restore from or purge (M2-02)
+- **Board thumbnails** — each board card shows a real 320×200 render of its content, captured 10 s after the last edit and flushed when you leave the board; boards without one yet keep the color tint as fallback (M2-03)
+- **Version history** — automatic snapshot every 5 min of active editing, one before importing or restoring, and a manual "Save version"; Settings → Datos lists them with label and date and restores any of them, keeping 50 versions or 30 days, and a restore never destroys what was on the board (M2-04)
 - **Desktop** — custom titlebar, window controls (capabilities granted in M0-09 and verified by hand — B08)
 
 ## Current status
@@ -44,6 +46,8 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Window controls (titlebar) | **Works** — M0-09 (B08) granted the capabilities and minimize/maximize/close were verified by hand in `tauri dev` |
 | Native-dialog image import | **Likely fixed** in M0-15 (B16) — raw bytes instead of a JSON array; still to be confirmed in `tauri dev` |
 | Board list in Home | No leftover board chrome after leaving a board (M0-13, B14) |
+| Board thumbnails in Home | **Works** since M2-03 — real 320×200 PNGs in `boards.thumbnail`, debounced 10 s and flushed on exit; the per-board tint is the fallback |
+| Version history | **Works** since M2-04 — automatic, pre-import/pre-restore and manual snapshots, listed and restorable from Settings → Datos, retention 50 versions / 30 days |
 | `object_count` in SQLite | **Works** after M0-14 (B15 fixed) |
 | Connectors / groups | **Works** since M1-09 and M1-05 — straight connectors with arrowheads (`C`) and groups (`Ctrl+G`); orthogonal connectors come in M5 |
 | PDF / JPG / `.inkboard` | Not implemented |
@@ -83,13 +87,13 @@ pnpm tauri build      # Desktop distributable
 
 ```bash
 pnpm test                           # Unit (Vitest) — 144/144
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 57/57
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 59/59
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
 pnpm lint:fix                       # ESLint autofix
 pnpm format                         # Prettier write
 pnpm format:check                   # Prettier check
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 21/21
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 25/25
 ```
 
 **Line endings:** the repo is **LF everywhere** — `.gitattributes` sets `* text=auto eol=lf` (and marks binaries `binary`), and Prettier is pinned to `endOfLine: "lf"`. Without both halves, `format:check` fails on `windows-latest` with CRLF checkouts while passing on Linux.
@@ -118,11 +122,13 @@ src/
     tools/        Select, Pen, Highlighter, Eraser, Text, Sticky, Shape, Image
     objects/      types, factory, renderers, bounds, geometry
     io/           persistence, InternalFormat, PngExporter, SvgExporter,
-                  transfer (import/export/downloads)
+                  thumbnail (320×200 board render), transfer
+                  (import/export/downloads)
     input/        shortcuts (single shortcut table), InputController
                   (pointer, wheel, pinch)
     board/        BoardRuntime (wiring), BoardSession (load/autosave/flush),
-                  boardInteractions (palette, menus, context actions)
+                  boardInteractions (palette, menus, context actions),
+                  thumbnails, versionBridge
     components/   BoardCanvas, TextEditor, app/TopBar, toolbar/ (ToolBar,
                   ToolPalette, ContextToolbar), menus/ (CommandPalette,
                   ContextMenu, ExportMenu), panels/, board/ (ZoomControls,

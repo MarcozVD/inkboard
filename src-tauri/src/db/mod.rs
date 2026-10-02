@@ -13,6 +13,7 @@ use std::path::Path;
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("migrations/001_initial.sql")),
     (2, include_str!("migrations/002_board_management.sql")),
+    (3, include_str!("migrations/003_assets.sql")),
 ];
 
 /// busy_timeout used for every connection (ms).
@@ -58,6 +59,16 @@ pub struct BoardRecord {
     pub updated_at: i64,
     /// Decompressed board JSON (ready for the frontend).
     pub json: String,
+}
+
+/// Content-addressed image asset (M2-05).
+pub struct AssetRecord {
+    pub hash: String,
+    pub mime: String,
+    pub bytes: Vec<u8>,
+    pub width: i64,
+    pub height: i64,
+    pub created_at: i64,
 }
 
 impl AppDb {
@@ -154,7 +165,7 @@ impl AppDb {
         self.conn
 			.execute(
 				"INSERT INTO boards (id, workspace_id, name, created_at, updated_at, version, schema_version, object_count)
-				 VALUES (?1, 'default', ?2, ?3, ?3, 1, '1.0.0', ?4)
+				 VALUES (?1, 'default', ?2, ?3, ?3, 1, '1.1.0', ?4)
 				 ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, object_count=excluded.object_count",
 				params![id, name, now, object_count],
 			)
@@ -484,6 +495,56 @@ impl AppDb {
         Ok(())
     }
 
+    // ── M2-05: assets ──
+
+    /// Store an image asset addressed by the SHA-256 of its bytes.
+    /// Re-storing identical content is a no-op (deduplication by hash).
+    /// Returns the lowercase hex hash.
+    pub fn put_asset(
+        &self,
+        bytes: &[u8],
+        mime: &str,
+        width: i64,
+        height: i64,
+    ) -> Result<String, String> {
+        let hash = hex(Sha256::digest(bytes));
+        self.conn
+            .execute(
+                "INSERT INTO assets (hash, mime, bytes, width, height, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(hash) DO UPDATE SET
+                   width = CASE WHEN assets.width = 0 THEN excluded.width ELSE assets.width END,
+                   height = CASE WHEN assets.height = 0 THEN excluded.height ELSE assets.height END",
+                params![hash, mime, bytes, width, height, chrono_now_ms()],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(hash)
+    }
+
+    /// Read an asset by hash; `None` when it is not stored.
+    pub fn get_asset(&self, hash: &str) -> Result<Option<AssetRecord>, String> {
+        self.conn
+            .query_row(
+                "SELECT hash, mime, bytes, width, height, created_at FROM assets WHERE hash = ?1",
+                params![hash],
+                |row| {
+                    Ok(AssetRecord {
+                        hash: row.get(0)?,
+                        mime: row.get(1)?,
+                        bytes: row.get(2)?,
+                        width: row.get(3)?,
+                        height: row.get(4)?,
+                        created_at: row.get(5)?,
+                    })
+                },
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other.to_string()),
+            })
+    }
+
     /// Retention: 50 newest versions max, none older than 30 days.
     fn trim_versions(&self, board_id: &str) -> Result<(), String> {
         let cutoff = chrono_now_ms() - VERSION_MAX_AGE_MS;
@@ -705,7 +766,7 @@ mod tests {
     #[test]
     fn migration_002_adds_management_columns() {
         let db = AppDb::new(std::path::Path::new(":memory:")).expect("db");
-        assert_eq!(user_version(&db.conn), 2);
+        assert_eq!(user_version(&db.conn), latest_version());
         db.ensure_default_workspace().expect("workspace");
         db.save_board("b1", "Board", &board_json("b1", "Board"))
             .expect("save");
@@ -876,5 +937,56 @@ mod tests {
             .iter()
             .any(|v| v.label.as_deref() == Some("Before restore")));
         assert!(db.restore_version("b1", "nope").is_err());
+    }
+
+    // ── M2-05: assets ──
+
+    #[test]
+    fn migration_003_creates_assets_table() {
+        let db = AppDb::new(std::path::Path::new(":memory:")).expect("db");
+        assert_eq!(user_version(&db.conn), latest_version());
+        let columns: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('assets')
+                 WHERE name IN ('hash', 'mime', 'bytes', 'width', 'height', 'created_at')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 6);
+    }
+
+    #[test]
+    fn asset_put_get_and_dedup() {
+        let db = seeded_db();
+        let png = vec![0x89, 0x50, 0x4E, 0x47, 1, 2, 3, 4];
+
+        let first = db.put_asset(&png, "image/png", 320, 200).unwrap();
+        let second = db.put_asset(&png, "image/png", 320, 200).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 64);
+
+        let rows: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM assets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 1);
+
+        let record = db.get_asset(&first).unwrap().expect("stored asset");
+        assert_eq!(record.bytes, png);
+        assert_eq!(record.mime, "image/png");
+        assert_eq!(record.width, 320);
+        assert_eq!(record.height, 200);
+
+        let other = db.put_asset(&[9, 9, 9], "image/png", 1, 1).unwrap();
+        assert_ne!(other, first);
+        let rows: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM assets", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(rows, 2);
+
+        assert!(db.get_asset("missing").unwrap().is_none());
     }
 }

@@ -1,5 +1,6 @@
 // BoardSession — load, autosave, forced save and flush (§M1-01, B05/B17).
 import { loadBoard, saveBoard } from '$lib/io/persistence';
+import { SCHEMA_VERSION } from '$lib/io/InternalFormat';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import type { Board, CameraState, GridConfig } from '$lib/objects/types';
 
@@ -47,7 +48,7 @@ export class BoardSession {
 			workspaceId: 'default',
 			name,
 			version: 1,
-			schemaVersion: '1.0.0',
+			schemaVersion: SCHEMA_VERSION,
 			createdAt: this.boardCreatedAt,
 			updatedAt: Date.now(),
 			camera,

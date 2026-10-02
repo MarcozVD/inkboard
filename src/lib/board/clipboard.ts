@@ -9,6 +9,7 @@ import { AddObjectsCommand, RemoveObjectsCommand } from '$lib/canvas/commands';
 import { translateObject } from '$lib/objects/geometry';
 import { getObjectBounds } from '$lib/objects/bounds';
 import { createText } from '$lib/objects/factory';
+import { assetifyImages, resolveAssetSources } from '$lib/io/assets';
 import type { Vec2 } from '$lib/utils/math';
 
 export const CLIPBOARD_MARKER = 'inkboard/clipboard@1';
@@ -102,15 +103,18 @@ export function createClipboard(deps: ClipboardDeps) {
 		return { x: (p.x - camera.x) / camera.zoom, y: (p.y - camera.y) / camera.zoom };
 	}
 
-	/** Copy the current selection; returns the serialized payload. */
-	function copySelection(): string | null {
+	/**
+	 * Copy the current selection; returns the serialized payload.
+	 * M2-05: asset refs are inlined as data URLs so the clipboard is portable.
+	 */
+	async function copySelection(): Promise<string | null> {
 		const engine = deps.getEngine();
 		if (!engine) return null;
-		const objects = engine.selectionManager.selected
+		const selected = engine.selectionManager.selected
 			.map((id) => engine.store.get(id))
-			.filter(Boolean)
-			.map((obj) => structuredClone(obj)) as CanvasObject[];
-		if (objects.length === 0) return null;
+			.filter(Boolean) as CanvasObject[];
+		if (selected.length === 0) return null;
+		const objects = await resolveAssetSources(selected);
 		const payload = serializeClipboard(objects);
 		fallbackPayload = payload;
 		pasteCount = 0;
@@ -123,21 +127,23 @@ export function createClipboard(deps: ClipboardDeps) {
 	}
 
 	/** Cut: copy + remove as one undo step. */
-	function cutSelection(): void {
+	async function cutSelection(): Promise<void> {
 		const engine = deps.getEngine();
 		if (!engine) return;
 		const ids = [...engine.selectionManager.selected];
-		if (!copySelection()) return;
+		if (!(await copySelection())) return;
 		const objects = ids.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
 		engine.execute(new RemoveObjectsCommand(engine.store, objects));
 		engine.selectionManager.clear();
 		deps.onDirty();
 	}
 
-	function insertObjects(source: CanvasObject[], target: Vec2): void {
+	async function insertObjects(source: CanvasObject[], target: Vec2): Promise<void> {
 		const engine = deps.getEngine();
 		if (!engine) return;
 		const clones = remapClipboardObjects(source);
+		// M2-05: images pasted as data URLs go back into the asset store
+		await assetifyImages(clones);
 		const bounds = unionBounds(clones);
 		const step = PASTE_OFFSET * pasteCount;
 		const dx = target.x - (bounds.x + bounds.width / 2) + step;
@@ -168,7 +174,7 @@ export function createClipboard(deps: ClipboardDeps) {
 		}
 		const parsed = text ? parseClipboard(text) : null;
 		if (parsed) {
-			insertObjects(parsed, target);
+			await insertObjects(parsed, target);
 			return;
 		}
 
@@ -185,7 +191,7 @@ export function createClipboard(deps: ClipboardDeps) {
 
 		if (fallbackPayload) {
 			const fallback = parseClipboard(fallbackPayload);
-			if (fallback) insertObjects(fallback, target);
+			if (fallback) await insertObjects(fallback, target);
 		}
 	}
 
@@ -211,7 +217,7 @@ export function createClipboard(deps: ClipboardDeps) {
 		const parsed = text ? parseClipboard(text) : null;
 		if (parsed) {
 			e.preventDefault();
-			insertObjects(parsed, target);
+			void insertObjects(parsed, target);
 			return;
 		}
 		if (text.trim()) {

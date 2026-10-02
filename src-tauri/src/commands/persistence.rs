@@ -6,6 +6,7 @@
 
 use crate::db::AppDb;
 use std::sync::{Arc, Mutex};
+use tauri::ipc::{InvokeBody, Request, Response};
 use tauri::State;
 
 pub struct DbState(pub Arc<Mutex<AppDb>>);
@@ -231,4 +232,54 @@ pub async fn restore_version(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Store an image asset (M2-05). The raw bytes travel in the request body;
+/// `x-mime`, `x-width` and `x-height` arrive as headers. Returns the sha256.
+#[tauri::command]
+pub fn put_asset(state: State<'_, DbState>, request: Request<'_>) -> Result<String, String> {
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let mime = header("x-mime").unwrap_or_else(|| "application/octet-stream".to_string());
+    let width = header("x-width")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    let height = header("x-height")
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0);
+    let bytes: Vec<u8> = match request.body() {
+        InvokeBody::Raw(bytes) => bytes.clone(),
+        InvokeBody::Json(value) => {
+            serde_json::from_value(value.clone()).map_err(|e| e.to_string())?
+        }
+    };
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .put_asset(&bytes, &mime, width, height)
+}
+
+/// Read an image asset as raw bytes (M2-05). The frontend receives an
+/// ArrayBuffer; missing assets reject.
+#[tauri::command]
+pub async fn get_asset(state: State<'_, DbState>, hash: String) -> Result<Response, String> {
+    let db = state.0.clone();
+    let missing = hash.clone();
+    let asset = tauri::async_runtime::spawn_blocking(move || {
+        db.lock()
+            .map_err(|e| e.to_string())?
+            .get_asset(&hash)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    match asset {
+        Some(record) => Ok(Response::new(record.bytes)),
+        None => Err(format!("asset not found: {missing}")),
+    }
 }

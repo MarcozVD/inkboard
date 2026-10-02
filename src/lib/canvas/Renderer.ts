@@ -6,6 +6,7 @@ import { renderObject } from '$lib/objects/renderers';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import { cssVar, resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 import { LEGACY_GRID, GRID } from '$lib/objects/colors';
+import { cachedAssetUrl, isAssetSrc, resolveAssetUrl } from '$lib/io/assets';
 
 export interface RendererDeps {
 	canvas: () => HTMLCanvasElement | null;
@@ -91,11 +92,21 @@ export class Renderer {
 	}
 
 	private getImage(src: string): HTMLImageElement | undefined {
-		let img = this.imageCache.get(src);
+		let url = src;
+		if (isAssetSrc(src)) {
+			const cached = cachedAssetUrl(src);
+			if (!cached) {
+				// resolve in the background; onAssetResolved triggers a repaint
+				void resolveAssetUrl(src);
+				return undefined;
+			}
+			url = cached;
+		}
+		let img = this.imageCache.get(url);
 		if (!img) {
 			img = new Image();
-			img.src = src;
-			this.imageCache.set(src, img);
+			img.src = url;
+			this.imageCache.set(url, img);
 		}
 		return img;
 	}

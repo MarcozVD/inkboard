@@ -3,7 +3,7 @@
 // M2-02 adds board management (rename/duplicate/soft delete/restore/purge)
 // with an equivalent localStorage implementation for the browser.
 import { invoke } from '@tauri-apps/api/core';
-import { serializeBoard, deserializeBoard } from './InternalFormat';
+import { serializeBoard, deserializeBoard, SCHEMA_VERSION } from './InternalFormat';
 import type { Board, BoardMeta, BoardVersionMeta } from '$lib/objects/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -272,7 +272,7 @@ export function freshBoard(id: string, name = 'Untitled'): Board {
 		workspaceId: 'default',
 		name,
 		version: 1,
-		schemaVersion: '1.0.0',
+		schemaVersion: SCHEMA_VERSION,
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 		camera: { x: 0, y: 0, zoom: 1, minZoom: 0.05, maxZoom: 32 },

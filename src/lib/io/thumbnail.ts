@@ -14,7 +14,7 @@ const PAD = 16;
  */
 export function renderThumbnail(
 	objects: CanvasObject[],
-	opts: { theme: ResolvedTheme; background: string }
+	opts: { theme: ResolvedTheme; background: string; getImage?: (src: string) => HTMLImageElement | undefined }
 ): string | null {
 	if (objects.length === 0 || typeof document === 'undefined') return null;
 
@@ -50,7 +50,7 @@ export function renderThumbnail(
 	ctx.scale(scale, scale);
 	ctx.translate(-centerX, -centerY);
 	for (const obj of objects) {
-		renderObject(ctx, obj, { theme: opts.theme });
+		renderObject(ctx, obj, { theme: opts.theme, getImage: opts.getImage });
 	}
 	ctx.restore();
 

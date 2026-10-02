@@ -3,6 +3,7 @@ import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createImage } from '$lib/objects/factory';
 import type { CanvasObject } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';
+import { ASSET_PREFIX, parseDataUrl, putAsset } from '$lib/io/assets';
 
 export class ImageTool extends BaseTool {
 	private hiddenInput: HTMLInputElement | null = null;
@@ -43,25 +44,42 @@ export class ImageTool extends BaseTool {
 		this.ctx.onDirty();
 	}
 
+	/** Store the inline bytes as a content-addressed asset (M2-05). */
+	private async toAssetSrc(dataUrl: string, width: number, height: number): Promise<string> {
+		if (!dataUrl.startsWith('data:')) return dataUrl;
+		const parsed = parseDataUrl(dataUrl);
+		if (!parsed) return dataUrl;
+		try {
+			return `${ASSET_PREFIX}${await putAsset(parsed.bytes, parsed.mime, width, height)}`;
+		} catch (err) {
+			console.error('asset store failed; keeping the data URL', err);
+			return dataUrl;
+		}
+	}
+
 	private loadFile(file: File) {
 		const reader = new FileReader();
 		reader.onload = () => {
 			const dataUrl = reader.result as string;
 			const img = new Image();
 			img.onload = () => {
-				this.commit(
-					createImage(
-						this.clickWorld.x - img.width / 2 / 2,
-						this.clickWorld.y - img.height / 2 / 2,
-						dataUrl,
-						img.width,
-						img.height
+				void this.toAssetSrc(dataUrl, img.width, img.height).then((src) =>
+					this.commit(
+						createImage(
+							this.clickWorld.x - img.width / 2 / 2,
+							this.clickWorld.y - img.height / 2 / 2,
+							src,
+							img.width,
+							img.height
+						)
 					)
 				);
 			};
 			img.onerror = () => {
 				// fallback: use conservative dimensions
-				this.commit(createImage(this.clickWorld.x - 200, this.clickWorld.y - 150, dataUrl, 400, 300));
+				void this.toAssetSrc(dataUrl, 400, 300).then((src) =>
+					this.commit(createImage(this.clickWorld.x - 200, this.clickWorld.y - 150, src, 400, 300))
+				);
 			};
 			img.src = dataUrl;
 		};
@@ -74,10 +92,14 @@ export class ImageTool extends BaseTool {
 		img.onload = () => {
 			const w = img.width;
 			const h = img.height;
-			this.commit(createImage(wx - w / 2 / 2, wy - h / 2 / 2, dataUrl, w, h));
+			void this.toAssetSrc(dataUrl, w, h).then((src) =>
+				this.commit(createImage(wx - w / 2 / 2, wy - h / 2 / 2, src, w, h))
+			);
 		};
 		img.onerror = () => {
-			this.commit(createImage(wx - 200, wy - 150, dataUrl, 400, 300));
+			void this.toAssetSrc(dataUrl, 400, 300).then((src) =>
+				this.commit(createImage(wx - 200, wy - 150, src, 400, 300))
+			);
 		};
 		img.src = dataUrl;
 	}

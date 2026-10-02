@@ -2,6 +2,7 @@
 // Long debounce after the last edit + explicit flush when leaving the board.
 import { cssVar, type ResolvedTheme } from '$lib/objects/colors';
 import { renderThumbnail } from '$lib/io/thumbnail';
+import { cachedAssetUrl, isAssetSrc, resolveAssetUrl } from '$lib/io/assets';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 
 export interface ThumbnailSaverDeps {
@@ -17,6 +18,27 @@ export const THUMBNAIL_DEBOUNCE_MS = 10_000;
 
 export function createThumbnailSaver(deps: ThumbnailSaverDeps) {
 	let timer: ReturnType<typeof setTimeout> | null = null;
+	const images = new Map<string, HTMLImageElement>();
+
+	/** Asset-aware image getter for the offscreen render (M2-05). */
+	function getImage(src: string): HTMLImageElement | undefined {
+		let url = src;
+		if (isAssetSrc(src)) {
+			const cached = cachedAssetUrl(src);
+			if (!cached) {
+				void resolveAssetUrl(src);
+				return undefined;
+			}
+			url = cached;
+		}
+		let img = images.get(url);
+		if (!img) {
+			img = new Image();
+			img.src = url;
+			images.set(url, img);
+		}
+		return img;
+	}
 
 	async function capture(): Promise<void> {
 		const engine = deps.getEngine();
@@ -24,7 +46,8 @@ export function createThumbnailSaver(deps: ThumbnailSaverDeps) {
 		const theme = deps.getTheme();
 		const dataUrl = renderThumbnail(engine.store.toJSON(), {
 			theme,
-			background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013')
+			background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013'),
+			getImage
 		});
 		if (!dataUrl) return;
 		try {

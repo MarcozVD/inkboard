@@ -8,6 +8,7 @@ import { syncConnectors } from './connectors';
 import { createThumbnailSaver } from './thumbnails';
 import { attachVersionBridge } from './versionBridge.svelte';
 import { createVersion, saveThumbnail } from '$lib/io/persistence';
+import { migrateBoardAssets, onAssetResolved } from '$lib/io/assets';
 import type { CameraState } from '$lib/canvas/Camera';
 import type { Board, EditableObj, GridConfig } from '$lib/objects/types';
 import type { ResolvedTheme } from '$lib/objects/colors';
@@ -52,6 +53,7 @@ export class BoardRuntime {
 	private thumbnails: ReturnType<typeof createThumbnailSaver>;
 	private versionTimer: ReturnType<typeof setInterval> | null = null;
 	private editedSinceVersion = false;
+	private stopAssetListener: () => void = () => {};
 
 	constructor(private host: BoardRuntimeHost) {
 		this.engine = new CanvasEngine({
@@ -89,6 +91,8 @@ export class BoardRuntime {
 			theme: host.getTheme
 		});
 		this.renderLoop = new RenderLoop(() => this.renderer.render());
+		// M2-05: repaint once a background asset load finishes
+		this.stopAssetListener = onAssetResolved(() => this.markDirty());
 
 		this.session = new BoardSession({
 			boardId: host.boardId,
@@ -140,12 +144,18 @@ export class BoardRuntime {
 		// load existing board (or empty canvas for a fresh one)
 		this.session
 			.load()
-			.then((board: Board) => {
+			.then(async (board: Board) => {
+				// M2-05: inline data URLs → asset store (snapshot first, idempotent)
+				const assets = await migrateBoardAssets(board, {
+					snapshot: async () => {
+						await createVersion(this.host.boardId, 'Before asset migration');
+					}
+				});
 				// migrate pre-M1-10 default white ink to the semantic 'ink' value
-				const migrated = migrateLegacyInk(board.objects);
+				const ink = migrateLegacyInk(board.objects);
 				this.engine.load(board.objects);
 				this.host.onBoardLoaded(board);
-				if (migrated > 0) this.session.scheduleAutosave();
+				if (assets > 0 || ink > 0) this.session.scheduleAutosave();
 				this.host.onDirty();
 			})
 			.catch(() => this.host.onDirty());
@@ -193,6 +203,7 @@ export class BoardRuntime {
 		void this.thumbnails.flush();
 		void this.session.flushSave();
 		if (this.versionTimer) clearInterval(this.versionTimer);
+		this.stopAssetListener();
 		this.session.dispose();
 		resetUi();
 		this.unlistenClose?.();

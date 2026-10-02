@@ -2,7 +2,7 @@
 import type { Board, CameraState, CanvasObject } from '$lib/objects/types';
 import { DEFAULT_CAMERA } from '$lib/canvas/Camera';
 
-export const SCHEMA_VERSION = '1.0.0';
+export const SCHEMA_VERSION = '1.1.0';
 
 export interface BoardFile {
 	schemaVersion: string;

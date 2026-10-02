@@ -2,10 +2,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
-import type { Board, CameraState, CanvasObject, GridConfig } from '$lib/objects/types';
+import type { Board, CameraState, CanvasObject, GridConfig, ImageObject } from '$lib/objects/types';
 import { createText } from '$lib/objects/factory';
 import { AddObjectsCommand } from '$lib/canvas/commands';
 import { createVersion } from '$lib/io/persistence';
+import { resolveAssetSources } from '$lib/io/assets';
 import { serializeBoard } from '$lib/io/InternalFormat';
 import { boardToSvg } from '$lib/io/SvgExporter';
 import { boardToPngDataUrl } from '$lib/io/PngExporter';
@@ -84,7 +85,8 @@ export function downloadBlob(filename: string, blob: Blob): void {
 
 export async function exportBoard(ctx: TransferContext, format: ExportFormat): Promise<void> {
 	const meta = ctx.getMeta();
-	const objects = ctx.engine.store.toJSON();
+	// M2-05: exported files are portable — asset refs become inline data URLs
+	const objects = await resolveAssetSources(ctx.engine.store.toJSON());
 	const base = `inkboard-${ctx.boardId.slice(0, 8)}`;
 	try {
 		if (format === 'svg') {
@@ -98,10 +100,13 @@ export async function exportBoard(ctx: TransferContext, format: ExportFormat): P
 		}
 		if (format === 'png') {
 			const theme = themeController.resolved;
+			const getImage = createImageGetter();
+			await preloadImages(objects, getImage);
 			const dataUrl = await boardToPngDataUrl(objects, {
 				scale: 2,
 				theme,
-				background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013')
+				background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013'),
+				getImage
 			});
 			const res = await fetch(dataUrl);
 			downloadBlob(`${base}.png`, await res.blob());
@@ -129,20 +134,57 @@ export async function exportBoard(ctx: TransferContext, format: ExportFormat): P
 
 /** Export the current selection as a PNG download (§M1-11). */
 export async function exportSelectionPng(engine: CanvasEngine): Promise<void> {
-	const objects = engine.selectionManager.selected.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
-	if (objects.length === 0) return;
+	const selected = engine.selectionManager.selected.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
+	if (selected.length === 0) return;
 	try {
 		const theme = themeController.resolved;
+		const objects = await resolveAssetSources(selected);
+		const getImage = createImageGetter();
+		await preloadImages(objects, getImage);
 		const dataUrl = await boardToPngDataUrl(objects, {
 			scale: 2,
 			theme,
-			background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013')
+			background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013'),
+			getImage
 		});
 		const res = await fetch(dataUrl);
 		downloadBlob(`inkboard-selection-${Date.now()}.png`, await res.blob());
 	} catch (err) {
 		console.error('export selection failed', err);
 	}
+}
+
+/** Loader for offscreen renders; exporters pass it to `renderObject`. */
+function createImageGetter(): (src: string) => HTMLImageElement {
+	const cache = new Map<string, HTMLImageElement>();
+	return (src: string): HTMLImageElement => {
+		let img = cache.get(src);
+		if (!img) {
+			img = new Image();
+			img.src = src;
+			cache.set(src, img);
+		}
+		return img;
+	};
+}
+
+/** Wait for every image source to decode so offscreen exports include them. */
+async function preloadImages(objects: CanvasObject[], getImage: (src: string) => HTMLImageElement): Promise<void> {
+	const images = objects.filter((obj): obj is ImageObject => obj.type === 'image');
+	await Promise.all(
+		images.map(
+			(obj) =>
+				new Promise<void>((resolve) => {
+					const img = getImage(obj.src);
+					if (img.complete) {
+						resolve();
+						return;
+					}
+					img.onload = () => resolve();
+					img.onerror = () => resolve();
+				})
+		)
+	);
 }
 
 // ── images via clipboard / drag & drop ──

@@ -65,13 +65,13 @@ describe('createClipboard', () => {
 		return { engine, clipboard };
 	}
 
-	it('cut removes the selection and undo restores it', () => {
+	it('cut removes the selection and undo restores it', async () => {
 		const { engine, clipboard } = setup();
 		const rect = createShape(0, 0, 10, 10, 'rect');
 		engine.store.add(rect);
 		engine.selectionManager.select(rect.id);
 
-		clipboard.cutSelection();
+		await clipboard.cutSelection();
 		expect(engine.store.size()).toBe(0);
 
 		engine.history.undo();
@@ -83,7 +83,7 @@ describe('createClipboard', () => {
 		const rect = createShape(0, 0, 10, 10, 'rect');
 		engine.store.add(rect);
 		engine.selectionManager.select(rect.id);
-		clipboard.copySelection();
+		await clipboard.copySelection();
 
 		await clipboard.paste({ x: 0, y: 0 });
 		const first = engine.store.getAll().find((o) => o.id !== rect.id)!;

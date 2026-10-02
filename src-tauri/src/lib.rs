@@ -63,6 +63,8 @@ pub fn run() {
             commands::persistence::save_version,
             commands::persistence::list_versions,
             commands::persistence::restore_version,
+            commands::persistence::put_asset,
+            commands::persistence::get_asset,
             commands::import::inspect_import,
             commands::import::read_file_bytes,
         ])

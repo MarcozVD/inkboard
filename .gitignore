@@ -28,3 +28,6 @@ vite.config.ts.timestamp-*
 *.swp
 # test-results
 test-results/
+
+# benchmark results (M3 baseline artifacts)
+bench/results/

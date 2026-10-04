@@ -13,10 +13,11 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:e2e": "playwright test",
+		"bench": "playwright test --config bench/playwright.bench.config.ts",
 		"lint": "eslint .",
 		"lint:fix": "eslint . --fix",
-		"format": "prettier --write \"src/**/*.{ts,svelte,css,js}\" \"e2e/**/*.ts\" \"*.{ts,js,json}\"",
-		"format:check": "prettier --check \"src/**/*.{ts,svelte,css,js}\" \"e2e/**/*.ts\" \"*.{ts,js,json}\"",
+		"format": "prettier --write \"src/**/*.{ts,svelte,css,js}\" \"e2e/**/*.ts\" \"bench/**/*.ts\" \"*.{ts,js,json}\"",
+		"format:check": "prettier --check \"src/**/*.{ts,svelte,css,js}\" \"e2e/**/*.ts\" \"bench/**/*.ts\" \"*.{ts,js,json}\"",
 		"tauri": "tauri"
 	},
 	"devDependencies": {

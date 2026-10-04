@@ -8,6 +8,7 @@
 	import { createTextEditing } from '$lib/board/textEditing.svelte';
 	import { themeController } from '$lib/board/theme.svelte';
 	import { versionBridge } from '$lib/board/versionBridge.svelte';
+	import { installBenchBridge } from '$lib/board/benchBridge';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
@@ -277,6 +278,12 @@
 			onKeyDown,
 			onKeyUp,
 			onPaste
+		});
+		installBenchBridge({
+			getEngine: () => engine,
+			getCamera: () => camera,
+			setCamera: (c) => (camera = c),
+			getRuntime: () => runtime
 		});
 		syncShell();
 		uiActions.undo = deps.undo;

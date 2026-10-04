@@ -58,11 +58,15 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Secure import | **Works** since M2-08 — no paths from the webview, 100 MB checked from metadata, bounded ZIP parsing, images re-encoded in Rust, CSP defined and verified by hand in the desktop app |
 | PNG / JPG / SVG export | **Works** since M2-09 — export panel with format, area (board / selection / visible), scale 1×–4×, JPEG quality and transparent PNG/SVG; native save dialog in the desktop app, `<a download>` in the browser |
 | MS Whiteboard import | **Partial** since M2-11 (was done in the plan) — the extracted texts become stickies in a centered grid in one undo step; ink and shapes are not imported, by design (§17) |
-| PDF | Not implemented (M2-10) |
+| PDF | Not implemented (M2-10) — decided vectorial from the SVG in Rust with `usvg` + `svg2pdf` (D2) |
+| Window geometry / single instance | **Works** since M4-01 — size, position and maximized state are restored; a second launch focuses the running window and forwards its `argv` |
+| Open `.inkboard` by double-click | **Works** since M4-03 — extension registered in the bundle, the file received on `argv` is imported by Rust and the frontend only gets board ids |
+| Logs in release | **Works** since M4-04 — rotating file in the OS log dir (5 MB × 5), info level, panic hook, Settings → Open logs folder |
+| Release binary size | **Works** after M4-08 — 10.5 MB against the 15 MB budget, enforced by `build.yml` on every tagged or manual build |
 | Theme on canvas | **Works** since M1-10 (D1 option b) — dark / light / `system`, `ink` resolves per theme, exports resolve it too |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1 closed: M1-01…M1-13 done; M2-01…M2-08, M2-09 and M2-11 done, with M2-09 pending its manual Tauri check).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1 closed: M1-01…M1-13 done; M2-01…M2-08, M2-09 and M2-11 done, with M2-09 pending its manual Tauri check; M3 closed with its CI gate verified on GitHub Actions; M4 in progress with M4-01, M4-03, M4-04 and M4-08 done).
 
 ## Tech Stack
 
@@ -88,13 +92,19 @@ pnpm tauri dev        # Full desktop (Tauri + Vite)
 
 ```bash
 pnpm build            # Frontend → `build/`
-pnpm tauri build      # Desktop distributable
+pnpm tauri build      # Desktop distributable (installers under src-tauri/target/release/bundle/)
 ```
+
+**Windows build:** `pnpm tauri build` produces a signed-less installer, so SmartScreen will warn on first run — that is the current decision (D4 in `implementation_plan.md` §28), and signing comes before any public distribution. The release binary is 10.5 MB against the 15 MB budget (RNF-06), kept there by `opt-level = "s"`, fat LTO, one codegen unit and `strip` in `[profile.release]`. `.github/workflows/build.yml` builds it on `windows-latest` for `workflow_dispatch` and `v*` tags only and fails if the exe goes over 15 MB.
+
+**Opening `.inkboard` files:** the installers register the extension (M4-03), so double-clicking a `.inkboard` file in Explorer or the file manager opens it in Inkboard. If the app is already running, the existing window comes to the front and the board is imported there instead of opening a second instance (M4-01). The import path is the same validated one as the dialog: Rust reads the file, checks its size, imports assets and opens the board with a new id.
+
+**Logs:** the desktop app writes rotating logs to its OS log directory (`%LOCALAPPDATA%\com.inkboard.app\logs` on Windows) — 5 MB per file, the last 5 kept, info level in release and debug in dev, including panics. Settings → **Open logs folder** opens that folder in the file manager. In the browser build there are no file logs; use the devtools console.
 
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 186/186
+pnpm test                           # Unit (Vitest) — 188/188
 pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 65/65
 pnpm bench                          # Benchmarks (M3-01) — synthetic 2k/5k/10k boards
 pnpm check                          # Svelte / TS check
@@ -102,7 +112,7 @@ pnpm lint                           # ESLint (0 problems; rule banning `store.*`
 pnpm lint:fix                       # ESLint autofix
 pnpm format                         # Prettier write
 pnpm format:check                   # Prettier check
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 48/48
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 51/51
 ```
 
 **Line endings:** the repo is **LF everywhere** — `.gitattributes` sets `* text=auto eol=lf` (and marks binaries `binary`), and Prettier is pinned to `endOfLine: "lf"`. Without both halves, `format:check` fails on `windows-latest` with CRLF checkouts while passing on Linux.

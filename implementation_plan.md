@@ -1183,7 +1183,26 @@ El renderizador solo ejecuta cuando hay cambios (`isDirty = true`). Esto elimina
 | Carga de board con 1k objetos | < 1 s | `perf:load-1k` |
 | Selección rect con 5k objetos | < 50 ms | `perf:select-5k` |
 | Autosave board 5k objetos | < 500 ms (background) | `perf:autosave-5k` |
+| Autosave board 5k objetos | sin long tasks > 50 ms (RNF-05) | `perf:autosave-5k` |
+| Memoria (heap JS) con 5k objetos | < 300 MB (RNF-04) | `perf:mem-5k` |
 | Import archivo 50 MB | < 10 s | `perf:import-50mb` |
+
+#### Baseline 2026-10-04 (M3-01)
+
+Medido con `pnpm bench` (`bench/harness.bench.ts`); el JSON con todos los percentiles queda en `bench/results/<timestamp>.json`, fuera de git. Máquina de referencia: Windows 11 (10.0.26200), **Chromium headless 151.0.7922.34**, DPR 1, i5-12450HX (12 núcleos), 24 GB, Node 22.19.
+
+| Métrica | Objetivo | Baseline 2026-10-04 | Estado |
+|---------|----------|---------------------|--------|
+| Pan (FPS) | ≥ 60 con 2k | 2k **21,1** · 5k 9,1 · 10k 4,9 | ❌ |
+| Zoom (FPS) | ≥ 60 con 2k | 2k **15,8** · 5k 7,3 · 10k 4,0 | ❌ |
+| Latencia del lápiz (pointer → frame pintado) | < 16 ms | p50 **87,5 ms** · p95 **92,4 ms** | ❌ |
+| Carga de 1k objetos | < 1 s | **479 ms** | ✅ |
+| Marquee con 5k objetos | < 50 ms | **234 ms** | ❌ |
+| Autosave de 5k objetos | sin long tasks > 50 ms | **118 ms repartidos en 2 long tasks** (la mayor de 60 ms) | ❌ |
+| Heap JS con 5k objetos | < 300 MB | **79 MB** | ✅ |
+| RSS del proceso | (sin objetivo) | no medido por el harness | — |
+
+> **Advertencia:** el Chromium headless rasteriza **por software** (sin GPU), así que los valores absolutos son pesimistas respecto a la app real de escritorio. Sirven como línea base para comparar ejecuciones entre sí (mismo hardware, misma configuración) y para ver qué mueve la aguja, no como cifras de producción. El gap de pan/zoom y de latencia de lápiz es el que persiguen M3-02 (caché de contornos), M3-04 (LOD) y, si no basta, M3-07 (OffscreenCanvas); el long task del autosave es de M3-06. Los 234 ms del marquee incluyen el viaje de ida y vuelta de Playwright y el sondeo del harness, así que son una cota superior, y ninguna tarea de §24.7 los cubre todavía: el siguiente paso es medirlos dentro de la app para saber si son reales antes de abrir una M3-08.
 
 ---
 
@@ -1291,9 +1310,10 @@ fuzz/fuzz_targets/parse_json.rs    (JSON malformados)
 
 #### Performance Tests
 ```
-bench/render-10k-objects.ts        (FPS con 10k objetos)
-bench/selection-stress.ts          (selección de 5k objetos)
-bench/spatial-index.ts             (query performance)
+bench/generator.ts               (tableros sintéticos deterministas 2k/5k/10k)
+bench/harness.bench.ts           (pan, zoom, pen, carga, autosave, heap)
+bench/playwright.bench.config.ts (config propia de `pnpm bench`)
+bench/results/<timestamp>.json   (resultados, fuera de git)
 ```
 
 #### E2E Tests (Playwright con Tauri)
@@ -1533,7 +1553,7 @@ Primero medir, después optimizar. OffscreenCanvas solo si los números lo exige
 
 | ID | Tarea | Aceptación | Tam. |
 |----|-------|------------|------|
-| M3-01 | Harness de benchmarks: generador de boards sintéticos (2k/5k/10k objetos mixtos) y escenarios Playwright que miden el frame time de pan/zoom, la latencia del pen, la carga, las long tasks del autosave y la memoria. `pnpm bench` guarda los resultados en JSON versionado. | Baseline registrado para cada fila de la tabla de §19 | M |
+| M3-01 ✅ | Harness de benchmarks: generador de boards sintéticos (2k/5k/10k objetos mixtos) y escenarios Playwright que miden el frame time de pan/zoom, la latencia del pen, la carga, las long tasks del autosave y la memoria. `pnpm bench` guarda los resultados en un JSON con timestamp (fuera de git). Hecho: `bench/generator.ts` genera tableros deterministas (PRNG mulberry32 con semilla fija, mezcla de 40 % trazos, 22 % formas, 15 % texto, 15 % stickies y 8 % imágenes) y `bench/harness.bench.ts` mide pan y zoom por deltas de rAF, latencia pointer → frame pintado, carga de 1k objetos desde `localStorage`, long tasks del autosave con `PerformanceObserver` y heap con `performance.memory`; cada resultado incluye la metadata de la máquina y del navegador. `pnpm bench` usa `bench/playwright.bench.config.ts` (propio `testDir`, un worker, sin retries, timeout de 20 min, `--disable-frame-rate-limit` y `--disable-gpu-vsync` para que el frame time mida coste real de render, y `--enable-precise-memory-info`), o sea queda **fuera de la suite E2E y de la CI**. Los JSON caen en `bench/results/` y `.gitignore` los excluye. El puente `board/benchBridge.ts` expone `window.__inkboard` (cargar objetos, mover la cámara, marcar dirty, forzar autosave, leer heap) y **solo se instala en builds DEV**, así que no existe en los bundles de producción. | Baseline registrado para cada fila de la tabla de §19 (ver *Baseline 2026-10-04*) | M |
 | M3-02 | Caché de contornos: un `Path2D` por trazo, invalidado por versión (hoy `getStroke` corre para cada trazo visible en cada frame). | Pan con 2k trazos ≥ 60 FPS | S |
 | M3-03 | Cachés de layout de texto y de imágenes decodificadas (`createImageBitmap`, LRU por memoria, versiones reducidas para zoom bajo). | Memoria dentro de RNF-04 | M |
 | M3-04 | LOD: con zoom < 0,25, trazos como polilínea simplificada, texto de menos de 3 px como barras e imágenes en baja resolución. | Zoom-out con 5k objetos ≥ 60 FPS | S |

@@ -1,6 +1,6 @@
 [package]
 name = "inkboard"
-version = "0.1.0"
+version = "0.5.0"
 description = "Inkboard — infinite whiteboard app (Tauri 2 + SvelteKit)"
 authors = ["Inkboard"]
 license = ""

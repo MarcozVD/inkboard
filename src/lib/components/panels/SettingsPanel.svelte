@@ -293,7 +293,7 @@
 				<section class="sp-section">
 					<h3 class="sp-sec-title">About</h3>
 					<div class="sp-about">
-						<p>Inkboard v0.1.0</p>
+						<p>Inkboard v0.5.0</p>
 						<p>Monochrome Workshop</p>
 					</div>
 					{#if onOpenLogs}

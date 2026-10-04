@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. M2 has started: M2-01 moved the heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations), M2-02 brought board management to Home, M2-03 renders real 320×200 board thumbnails into that grid, M2-04 gave `board_versions` a purpose with an automatic/manual version history you can restore from, and M2-05 moved the images out of the board JSON into a content-addressed asset store. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog). See [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.2.0 — M0 and M1 complete):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (396 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. M2 has started: M2-01 moved the heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations), M2-02 brought board management to Home, M2-03 renders real 320×200 board thumbnails into that grid, M2-04 gave `board_versions` a purpose with an automatic/manual version history you can restore from, and M2-05 moved the images out of the board JSON into a content-addressed asset store, M2-06 added the `.inkboard` archive (Rust, desktop only) and M2-07 wired the internal JSON import. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog). See [Current status](#current-status) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -25,8 +25,8 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 - **Connectors** — straight connectors with arrowheads from any of the four side anchors of an object, or between free points, via the `C` tool; they follow the objects when moved, scaled or rotated, and survive the deletion of an endpoint as a free point (M1-09; orthogonal connectors come in M5)
 - **Lock** — lock and unlock with `Ctrl+Shift+L` or the context menu; locked objects stay out of marquee selections and the eraser, and show a padlock on the selection overlay (M1-06)
 - **Persistence** — SQLite + zstd via Rust when running in Tauri; `localStorage` fallback in browser (flushed on unmount, on `pagehide`/hidden, before returning Home and on window close — M0-06)
-- **Export** — PNG, SVG, JSON (client-side)
-- **Import** — images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)
+- **Export** — PNG, SVG, JSON (client-side) and `.inkboard`, a ZIP with `board.json`, `metadata.json` and the referenced assets built in Rust with a native save dialog (M2-06; **desktop app only**, the menu hides it in the browser)
+- **Import** — `.inkboard` archives (parsed in Rust with entry, size and object limits, unsafe paths rejected and every asset re-hashed against its name), the board's own JSON either as a new board or inserted into the current one as a single undo step, both validated before anything is written (M2-07); images (native dialog reads raw bytes, M0-15; manual check pending); MS Whiteboard ZIP (text extraction only)
 - **UI** — floating ToolBar, ContextToolbar, ContextMenu, Command palette (`Ctrl+K`), Create panel, Settings
 - **Multi-board** — home picker with search, favorites, grid view, rename and duplicate, sort by date or name, and a trash you can restore from or purge (M2-02)
 - **Board thumbnails** — each board card shows a real 320×200 render of its content, captured 10 s after the last edit and flushed when you leave the board; boards without one yet keep the color tint as fallback (M2-03)
@@ -52,7 +52,9 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Board JSON size with images | **Fixed** in M2-05 — the bytes live in `assets` (SQLite, or IndexedDB in the browser) and the JSON keeps only `asset:<sha256>` |
 | `object_count` in SQLite | **Works** after M0-14 (B15 fixed) |
 | Connectors / groups | **Works** since M1-09 and M1-05 — straight connectors with arrowheads (`C`) and groups (`Ctrl+G`); orthogonal connectors come in M5 |
-| PDF / JPG / `.inkboard` | Not implemented |
+| `.inkboard` archive | **Works** since M2-06 — Rust builds and parses the ZIP with limits and hash verification; desktop app only |
+| Internal JSON import | **Works** since M2-07 — validated on import, as a new board or inserted into the current one in one undo step |
+| PDF / JPG | Not implemented |
 | Theme on canvas | **Works** since M1-10 (D1 option b) — dark / light / `system`, `ink` resolves per theme, exports resolve it too |
 | Collaboration | UI stub |
 
@@ -88,14 +90,14 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 150/150
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 60/60
+pnpm test                           # Unit (Vitest) — 154/154
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 63/63
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
 pnpm lint:fix                       # ESLint autofix
 pnpm format                         # Prettier write
 pnpm format:check                   # Prettier check
-cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 27/27
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 35/35
 ```
 
 **Line endings:** the repo is **LF everywhere** — `.gitattributes` sets `* text=auto eol=lf` (and marks binaries `binary`), and Prettier is pinned to `endOfLine: "lf"`. Without both halves, `format:check` fails on `windows-latest` with CRLF checkouts while passing on Linux.
@@ -125,7 +127,8 @@ src/
     objects/      types, factory, renderers, bounds, geometry
     io/           persistence, InternalFormat, PngExporter, SvgExporter,
                   thumbnail (320×200 board render), assets (content-addressed
-                  image store), transfer (import/export/downloads)
+                  image store), importBoard (validated JSON import),
+                  transfer (import/export/downloads)
     input/        shortcuts (single shortcut table), InputController
                   (pointer, wheel, pinch)
     board/        BoardRuntime (wiring), BoardSession (load/autosave/flush),
@@ -142,7 +145,7 @@ src-tauri/
   src/
     commands/     health, persistence, import
     db/           SQLite schema + migrations
-    formats/      ms_whiteboard
+    formats/      ms_whiteboard, inkboard (.inkboard archive)
     geometry/     placeholder
   capabilities/   Tauri permission grants
 e2e/              Playwright (smoke + M0 editing suite)

@@ -67,10 +67,12 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Release binary size | **Works** after M4-08 — 13.3 MB against the 15 MB budget (up from 10.5 MB with the `usvg`/`svg2pdf` PDF path of M2-10), enforced by `build.yml` on every tagged or manual build |
 | In-app updates | **Works** since M4-05 — `tauri-plugin-updater` + `process`: silent check a few seconds after startup with a discreet notice, Settings → About → Check for updates, then install and relaunch behind a confirmation; downloaded in Rust, `process:allow-restart` added and `fs` still absent. **Not usable until a real release exists**: the signing secrets are not in the repo yet and `plugins.updater.pubkey` is still the Tauri template placeholder |
 | Release workflow | **Works** since M4-06 — `release.yml` builds NSIS + MSI, a universal macOS `.dmg` and AppImage + `.deb` on a `v*` tag or a manual run, into one draft release with `latest.json`; unsigned (D4), fails early with a clear error when the signing secrets are missing, and `scripts/check-versions.mjs` keeps the three version files in sync — see [Releases](#releases) |
+| macOS native chrome | **Works** since M4-02 — overlay title bar with the system traffic lights instead of our own buttons, plus a native app menu whose Edit items keep `Cmd+C/V` working in WKWebView. Verified by `cargo build` and unit tests only; there is no Mac on the dev machine, so the real check happens on the release artifacts (`implementation_plan.md` §24.8.1) |
+| Onboarding & accessibility | **Works** since M4-07 — the empty board shows three keyboard hints, focus is always visible, the context menu and command palette are fully keyboard navigable with ARIA roles, Settings is a modal that keeps Tab inside and closes on Escape, and `prefers-reduced-motion` is respected |
 | Theme on canvas | **Works** since M1-10 (D1 option b) — dark / light / `system`, `ink` resolves per theme, exports resolve it too |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1 closed: M1-01…M1-13 done; **M2 closed with its gate met**: M2-01…M2-11 all done, with M2-09 still pending its manual Tauri check; M3 closed with its CI gate verified on GitHub Actions; M4 in progress with M4-01, M4-03, M4-04, M4-05, M4-06 and M4-08 done, the first release still pending the signing secrets and a tag; see [Releases](#releases)).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1 closed: M1-01…M1-13 done; **M2 closed with its gate met**: M2-01…M2-11 all done, with M2-09 still pending its manual Tauri check; M3 closed with its CI gate verified on GitHub Actions; M4 in progress with all eight tasks done, the first release still pending the signing secrets, the real updater key and a tag; see [Releases](#releases)).
 
 ## Tech Stack
 
@@ -132,8 +134,8 @@ The desktop app checks `releases/latest/download/latest.json` a few seconds afte
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 200/200
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 70/70
+pnpm test                           # Unit (Vitest) — 203/203
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 75/75
 pnpm bench                          # Benchmarks (M3-01) — synthetic 2k/5k/10k boards
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)
@@ -223,6 +225,12 @@ bench/             M3 benchmarks (generator, harness.bench.ts, own Playwright co
 `BoardCanvas.svelte` is composition only (377 lines after M1-01 and the M2-09 refactor): it mounts a
 `BoardRuntime`, which owns the engine, renderer, input controller and save
 session, and renders the chrome components.
+
+## Changelog
+
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Everything
+so far is under `[Unreleased]`, grouped by milestone from M0 to M4, because no tag has been
+published yet.
 
 ## License
 

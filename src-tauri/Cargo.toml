@@ -42,6 +42,11 @@ zip = "2.1"
 # M2-08 — Re-encode de imágenes importadas (strip metadata)
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "tiff", "ico"] }
 
+# M2-10 — PDF vectorial desde el SVG (D2); versions must match svg2pdf 0.12 (usvg 0.43)
+svg2pdf = "0.12"
+usvg = { version = "0.43", default-features = false, features = ["text", "system-fonts"] }
+fontdb = { version = "0.21", features = ["fs"] }
+
 # M4-08 — RNF-06: release binary budget < 15 MB
 [profile.release]
 opt-level = "s"

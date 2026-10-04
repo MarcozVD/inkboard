@@ -16,7 +16,7 @@
 		onImport: (mode?: ImportMode) => void;
 	} = $props();
 
-	let format = $state<'png' | 'jpeg' | 'svg'>('png');
+	let format = $state<'png' | 'jpeg' | 'svg' | 'pdf'>('png');
 	let mode = $state<ExportMode>('board');
 	let scale = $state<ExportScale>(2);
 	let quality = $state('0.9');
@@ -37,11 +37,14 @@
 				class="em-select"
 				data-testid="export-format"
 				value={format}
-				onchange={(e) => (format = (e.target as HTMLSelectElement).value as 'png' | 'jpeg' | 'svg')}
+				onchange={(e) => (format = (e.target as HTMLSelectElement).value as 'png' | 'jpeg' | 'svg' | 'pdf')}
 			>
 				<option value="png">PNG</option>
 				<option value="jpeg">JPG</option>
 				<option value="svg">SVG</option>
+				{#if isTauri()}
+					<option value="pdf">PDF</option>
+				{/if}
 			</select>
 		</div>
 		<div class="em-row">
@@ -81,7 +84,7 @@
 					<option value="0.98">Maximum</option>
 				</select>
 			</label>
-		{:else}
+		{:else if format !== 'pdf'}
 			<label class="em-check">
 				<input type="checkbox" data-testid="export-transparent" bind:checked={transparent} />
 				Transparent background

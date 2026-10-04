@@ -22,9 +22,9 @@ export type ExportFormat = 'svg' | 'png' | 'json' | 'inkboard';
 /** `new` imports the file as a standalone board; `current` inserts it. */
 export type ImportMode = 'new' | 'current';
 
-/** Options for image exports (M2-09). */
+/** Options for image exports (M2-09/M2-10). `pdf` is Tauri-only. */
 export interface ExportImageOptions {
-	format: 'png' | 'jpeg' | 'svg';
+	format: 'png' | 'jpeg' | 'svg' | 'pdf';
 	mode: ExportMode;
 	scale: ExportScale;
 	/** JPEG quality 0..1 */
@@ -199,7 +199,7 @@ export async function exportImage(ctx: TransferContext, options: ExportImageOpti
 				? `inkboard-visible-${Date.now()}`
 				: `inkboard-${ctx.boardId.slice(0, 8)}`;
 	try {
-		if (options.format === 'svg') {
+		if (options.format === 'svg' || options.format === 'pdf') {
 			const svg = boardToSvg(objects, {
 				theme,
 				region: frame.region,
@@ -207,6 +207,15 @@ export async function exportImage(ctx: TransferContext, options: ExportImageOpti
 				height: frame.height,
 				background: transparent ? undefined : pageBg
 			});
+			if (options.format === 'pdf') {
+				// M2-10/D2: Rust converts the SVG to vector PDF (save dialog in Rust).
+				// Browser builds hide this option; no SVG fallback.
+				if (!isTauri()) return;
+				await invoke('export_pdf', new TextEncoder().encode(svg), {
+					headers: { 'x-name': `${base}.pdf` }
+				});
+				return;
+			}
 			await saveExportFile(new Blob([svg], { type: 'image/svg+xml' }), `${base}.svg`);
 			return;
 		}

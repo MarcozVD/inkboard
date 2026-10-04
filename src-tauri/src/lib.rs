@@ -117,6 +117,7 @@ pub fn run() {
             commands::import::import_pick,
             commands::import::export_inkboard,
             commands::import::save_export,
+            commands::import::export_pdf,
             commands::desktop::take_pending_opens,
             commands::desktop::open_logs_dir,
         ])

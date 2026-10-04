@@ -216,6 +216,49 @@ pub fn save_export(app: AppHandle, request: Request<'_>) -> Result<Option<String
     Ok(Some(path.display().to_string()))
 }
 
+/// Export a board as vector PDF from its SVG (M2-10). Raw SVG body plus
+/// `x-name`; the native save dialog runs in Rust (no webview paths).
+#[tauri::command]
+pub fn export_pdf(app: AppHandle, request: Request<'_>) -> Result<Option<String>, String> {
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let raw_name = sanitize_file_name(header("x-name").as_deref().unwrap_or("board.pdf"));
+    let file_name = if raw_name.to_ascii_lowercase().ends_with(".pdf") {
+        raw_name
+    } else {
+        format!("{raw_name}.pdf")
+    };
+    let svg = match request.body() {
+        InvokeBody::Raw(bytes) => {
+            String::from_utf8(bytes.clone()).map_err(|_| "SVG is not valid UTF-8".to_string())?
+        }
+        InvokeBody::Json(value) => value
+            .as_str()
+            .map(str::to_string)
+            .ok_or_else(|| "expected an SVG string".to_string())?,
+    };
+    let pdf = crate::formats::pdf::svg_to_pdf(&svg)?;
+
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export PDF")
+        .set_file_name(&file_name)
+        .add_filter("PDF", &["pdf"])
+        .blocking_save_file();
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, &pdf).map_err(|e| format!("cannot write file: {e}"))?;
+    Ok(Some(path.display().to_string()))
+}
+
 /// Sanitized suggested export name; always keeps an extension.
 fn suggested_export_name(name: Option<&str>) -> String {
     let sanitized = sanitize_file_name(name.unwrap_or("inkboard.png"));

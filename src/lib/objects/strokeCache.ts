@@ -9,7 +9,8 @@ import type { StrokeObject } from '$lib/objects/types';
 
 interface CacheEntry {
 	signature: string;
-	path: Path2D;
+	outline: number[];
+	path: Path2D | null;
 }
 
 /** Bound memory on huge boards; insertion order gives cheap FIFO eviction. */
@@ -56,36 +57,53 @@ function signature(stroke: StrokeObject): string {
 	].join('|');
 }
 
-/**
- * Cached fillable Path2D for a stroke; `null` when it has no drawable outline.
- * The returned path must be treated as immutable (the renderer only fills it).
- */
-export function strokeOutlinePath(stroke: StrokeObject): Path2D | null {
+function entryFor(stroke: StrokeObject): CacheEntry | null {
 	const points = stroke.smoothedPoints && stroke.smoothedPoints.length >= 4 ? stroke.smoothedPoints : stroke.points;
 	if (points.length < 4) return null;
 
 	const key = stroke.id;
 	const sig = signature(stroke);
 	const hit = cache.get(key);
-	if (hit && hit.signature === sig) return hit.path;
+	if (hit && hit.signature === sig) return hit;
 
 	const outline = outlineOf(stroke);
 	if (!outline || outline.length < 6) {
 		cache.delete(key);
 		return null;
 	}
-	const path = new Path2D();
-	path.moveTo(outline[0], outline[1]);
-	for (let i = 2; i < outline.length; i += 2) {
-		path.lineTo(outline[i], outline[i + 1]);
-	}
-	path.closePath();
-
 	if (!cache.has(key) && cache.size >= MAX_ENTRIES) {
 		const oldest = cache.keys().next().value;
 		if (oldest !== undefined) cache.delete(oldest);
 	}
-	cache.set(key, { signature: sig, path });
+	const entry: CacheEntry = { signature: sig, outline, path: null };
+	cache.set(key, entry);
+	return entry;
+}
+
+/**
+ * Cached flat outline `[x0,y0,x1,y1,…]` of a stroke. Shared by the canvas
+ * renderer (via `strokeOutlinePath`) and the SVG exporter (M3-02/M2-10).
+ * Treat the returned array as immutable.
+ */
+export function strokeOutlineFlat(stroke: StrokeObject): number[] | null {
+	return entryFor(stroke)?.outline ?? null;
+}
+
+/**
+ * Cached fillable Path2D for a stroke; `null` when it has no drawable outline.
+ * The returned path must be treated as immutable (the renderer only fills it).
+ */
+export function strokeOutlinePath(stroke: StrokeObject): Path2D | null {
+	const entry = entryFor(stroke);
+	if (!entry) return null;
+	if (entry.path) return entry.path;
+	const path = new Path2D();
+	path.moveTo(entry.outline[0], entry.outline[1]);
+	for (let i = 2; i < entry.outline.length; i += 2) {
+		path.lineTo(entry.outline[i], entry.outline[i + 1]);
+	}
+	path.closePath();
+	entry.path = path;
 	return path;
 }
 

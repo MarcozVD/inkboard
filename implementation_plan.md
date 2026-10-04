@@ -58,7 +58,7 @@
 - **`BoardCanvas.svelte` era un monolito de 1235 líneas** (render, input, atajos, autosave, import/export, menús y paleta). M1-01 lo partió en `canvas/Renderer.ts`, `input/InputController.ts`, `board/BoardRuntime.ts`, `board/BoardSession.ts`, `board/boardInteractions.ts` e `io/transfer.ts`, más los componentes `BoardChrome`, `CanvasHint`, `ExportMenu` y `ToolPalette`: ahora son 396 líneas de composición. Ahí siguen viviendo B07, B14 y B17, y parte de B12.
 - **Sin `store.*` fuera de los comandos:** desde M1-02 todo pasa por `engine.execute(cmd)` → store → historial → autosave → render, y `HistoryManager` agrupa (batch/transacción) o revierte (rollback) los pasos múltiples.
 - **Rendimiento:** `perfect-freehand` se recalcula para cada trazo visible en cada frame (`smoothedPoints` nunca se rellena). El autosave sigue serializando el board entero, pero ya no lleva los bytes de las imágenes: van al almacén de assets y el JSON solo carga con `asset:<hash>` (M2-05). Los comandos Tauri pesados ya no bloquean el hilo principal: son `async` y el trabajo de SQLite va por `spawn_blocking` (M2-01).
-- **Seguridad:** `csp: null`. `inspect_import` y `read_file_bytes` leen cualquier ruta que mande el webview. El ZIP se descomprime entero antes de comprobar su tamaño (zip bomb).
+- **Seguridad:** el import ya no acepta rutas del webview (M2-08): Rust abre el diálogo nativo (`import_pick`) y lee el archivo él mismo, comprueba los ≤ 100 MB por metadata antes de leer un byte, acota los ZIP por entrada con `size()` + `take()` y por número de entradas, y re-encodea cada imagen importada con el crate `image` (JPEG sigue JPEG, el resto a PNG; SVG pasa sin tocar). La CSP de `tauri.conf.json` ya no es `null` y los permisos `fs:default` y `dialog:default` se quitaron de las capabilities. **Pendiente: verificar la CSP a mano en la app de escritorio** — hasta ahora solo se comprobó que compila.
 - ~~**Tema:**~~ resuelto en M1-10 (D1 opción b): fondo, grid, overlay y colores por defecto salen de los tokens CSS, `system` sigue a `prefers-color-scheme` en vivo, el tema se persiste y se aplica al arrancar, y la tinta por defecto es el valor semántico `ink` que se resuelve por tema.
 - ~~**Sin UI de estilo:**~~ resuelta en M1-03: ContextToolbar y popover del ToolBar editan color, grosor, fill, stroke, dash, radio, opacidad y tipografía, cada cambio pasa por `UpdateStyle` y el último estilo se recuerda por tool.
 - **Código muerto:** `src-tauri/src/geometry/` (vacío). `src/lib/components/TopBar.svelte` se borró en M0-17 (nadie lo importaba).
@@ -83,7 +83,7 @@ cargo test --manifest-path src-tauri/Cargo.toml   # tests Rust
 pnpm tauri build                               # instaladores
 ```
 
-Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `save_thumbnail`, `get_thumbnail`, `save_version`, `list_versions`, `restore_version`, `put_asset`, `get_asset`, `inspect_import`, `read_file_bytes`.
+Comandos Tauri expuestos: `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `save_thumbnail`, `get_thumbnail`, `save_version`, `list_versions`, `restore_version`, `put_asset`, `get_asset`, `import_pick`, `export_inkboard`.
 
 ---
 
@@ -368,7 +368,7 @@ tokio = { version = "1", features = ["full"] }
 
 ### Tauri Commands expuestos al frontend
 
-> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `save_thumbnail`, `get_thumbnail`, `save_version`, `list_versions`, `restore_version`, `put_asset`, `get_asset`, `inspect_import`, `read_file_bytes`. De los de abajo solo faltan `export_png`, `export_pdf` y `compress_board`: el store de assets ya es SQLite (M2-05), y PNG y JPG se exportan desde TypeScript mientras que PDF se genera en Rust (M2-10).
+> **Hoy existen:** `health`, `save_board`, `load_board`, `list_boards`, `rename_board`, `duplicate_board`, `delete_board`, `restore_board`, `purge_board`, `set_favorite`, `save_thumbnail`, `get_thumbnail`, `save_version`, `list_versions`, `restore_version`, `put_asset`, `get_asset`, `import_pick`, `export_inkboard`. De los de abajo solo faltan `export_png`, `export_pdf` y `compress_board`: el store de assets ya es SQLite (M2-05), y PNG y JPG se exportan desde TypeScript mientras que PDF se genera en Rust (M2-10).
 
 ```rust
 #[tauri::command]
@@ -437,8 +437,6 @@ El objetivo es una app de escritorio rápida y ligera. Tauri 2 gana en todos los
         "core:resources:default",
         "core:menu:default",
         "core:tray:default",
-        "fs:default",
-        "dialog:default",
         "clipboard-manager:default"
       ]
     }
@@ -1330,16 +1328,16 @@ e2e/import-export.spec.ts
 
 ### Tauri Capabilities (mínimo necesario)
 ```
-✅ fs:read (directorio de datos de la app)
-✅ fs:write (directorio de datos de la app)
-✅ dialog:open (para seleccionar archivos)
-✅ dialog:save (para exportar)
+❌ fs:read (el import lo hace Rust con std::fs, el webview no pide rutas)
+❌ fs:write (idem al exportar)
+❌ dialog:open / dialog:save (el diálogo se abre desde Rust, no desde el webview)
 ✅ clipboard-manager:read
 ✅ clipboard-manager:write
 ❌ http (no necesario en v1)
 ❌ shell (no necesario)
 ❌ fs:read (rutas arbitrarias del sistema)
 ```
+M2-08 cerró los tres primeros `✅`: `import_pick` y `export_inkboard` abren el diálogo nativo con la API de Rust y leen/escriben con `std::fs`, así que el webview no necesita permiso alguno de `fs` ni de `dialog`.
 
 ### Sanitización de imports
 ```rust
@@ -1481,7 +1479,7 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M0-16 ✅ | CI mínima en GitHub Actions (Windows + Ubuntu): `pnpm install --frozen-lockfile`, `check`, `test`, Playwright (`pnpm exec playwright install --with-deps`) y `cargo test` (en Ubuntu, instalar `libwebkit2gtk-4.1-dev` y el resto de dependencias de sistema de Tauri). Script `test:e2e` en `package.json`. **Ejecutada en GitHub con éxito** (ya incluye `lint` y `format:check` desde M1-12). Estuvo en rojo una vez: `format:check` fallaba solo en `windows-latest` por finales de línea CRLF. Fix en M2-01 (`.gitattributes` con `eol=lf` + `endOfLine: "lf"` en `.prettierrc`); desde entonces verde en Windows y Linux. | `.github/workflows/ci.yml`, `.gitattributes`, `.prettierrc`, `package.json` | Un push con cualquier suite en rojo falla | S |
 | M0-17 ✅ | Limpieza: borrar `components/TopBar.svelte` y corregir README y PRODUCT.md con el estado real. | varios | — | S |
 
-\* M0-15 está implementada (`read_file_bytes` ya devuelve bytes crudos) pero su aceptación sigue sin verificar: necesita importar un PNG de 10 MB por el diálogo nativo en `pnpm tauri dev`. Trátala como abierta hasta cerrar esa comprobación.
+\* M0-15 está implementada (el import ya devuelve los bytes de la imagen, ahora sanitizados en Rust) pero su aceptación sigue sin verificar: necesita importar un PNG de 10 MB por el diálogo nativo en `pnpm tauri dev`. Trátala como abierta hasta cerrar esa comprobación.
 
 **Gate M0 — cerrado (2026-09-30)**
 - [x] E2E de M0-01 en verde en CI. *(52 E2E en verde; el workflow de M0-16 corrió en GitHub Actions, Windows y Ubuntu, y pasó con `lint`, `format:check`, `check`, unit, E2E y `cargo test`.)*
@@ -1516,12 +1514,14 @@ Orden: primero M0-01 (tests en rojo), después M0-02…M0-06 (los bugs que impid
 | M2-03 ✅ | Thumbnails reales: render offscreen del contenido del board a 320×200 → PNG (data URL) → `boards.thumbnail`. Debounce de 10 s desde la última edición (`THUMBNAIL_DEBOUNCE_MS`) y `flush()` en los caminos de salida (desmontaje, `pagehide`/`visibilitychange`, `onCloseRequested`), así que editar y salir deja el thumbnail puesto. Home los carga con `loadThumbnail` y conserva el tinte derivado del `id` como fallback cuando el board aún no tiene imagen; en browser se guardan en localStorage (`inkboard:thumbs`). Comandos `save_thumbnail` y `get_thumbnail`. | E2E (`e2e/thumbnail.spec.ts`): el thumbnail aparece en Home tras editar y salir · `cargo test` 25/25 | M |
 | M2-04 ✅ | Historial de versiones: la tabla `board_versions` pasa a usarse. Snapshot automático cada 5 min **de edición activa** (un flag que solo se rearma al editar), snapshot antes de importar (`transfer.ts`) y antes de restaurar, y manual ("Save version") en Settings → Datos, que lista etiqueta, fecha y un "Restore" por versión. Retención de 50 versiones o 30 días, aplicada al crear y al restaurar (`trim_versions` en Rust, `trimVersions` en el fallback de localStorage `inkboard:versions`). Restaurar nunca destruye: escribe una versión `Before restore` del board vivo antes de poner el snapshot, en los dos caminos, y refresca el board. Comandos `save_version`, `list_versions` y `restore_version`, más `board/versionBridge.svelte.ts` como estado para la UI. | Test Rust de retención (50 más recientes, nada de más de 30 días) y de restore no destructivo · E2E (`e2e/versions.spec.ts`) · `cargo test` 25/25 | M |
 | M2-05 ✅ | Almacén de assets: las imágenes salen del JSON del board a la tabla `assets(hash sha256, mime, bytes, width, height, created_at)`, migración `003_assets.sql`, y `ImageObject.src` pasa a ser `asset:<hash>`. `put_asset` recibe los bytes crudos en el body del invoke (mime, width y height por headers `x-*`) y devuelve el sha256; `get_asset` devuelve los bytes como `ArrayBuffer` y el front reconstruye el Blob (con el mime deducido de la cabecera, porque el comando no lo devuelve). Deduplicación por hash con `ON CONFLICT`. Todo el ciclo está en `io/assets.ts`: Blob/object URL con caché, cargas en segundo plano deduplicadas y `onAssetResolved` para repintar; `Renderer` y el thumbnail resuelven `asset:` antes de pintar. En browser, IndexedDB `inkboard-assets` (D3, ya tomada). Migración a schema `1.1.0` idempotente al cargar el board: solo toca los que aún tienen data URLs, escribe un snapshot `Before asset migration` en `board_versions` y solo entonces reescribe los `src`; insertar una imagen y pegarla ya la guardan como asset. Export JSON/SVG/PNG y el portapapeles incrustan la data URL para que los archivos y el payload sigan siendo portables. | El autosave de un board con una imagen grande baja de > 100 KB al tamaño del board sin las imágenes (unit con una data URL de 1,4 MB) · E2E (`e2e/assets.spec.ts`): la imagen insertada queda como `asset:<hash>`, los bytes están en el almacén y se decodifican tras recargar · `pnpm test` 150/150, `cargo test` 27/27 | L |
-| M2-06 ✅ | Formato `.inkboard` (§16): ZIP con `board.json` sin comprimir, `metadata.json` (format, formatVersion, id, name, version, schemaVersion) y un `assets/<sha256>.<ext>` por cada `asset:` referenciado. Export e import en Rust (`formats/inkboard.rs`, crate `zip`) con los comandos `export_inkboard` e `import_inkboard`: el export lee el board persistido y sus assets del almacén, así que ningún payload grande cruza el IPC, y el import parsea con límites (100 MB de archivo, 256 entradas, 25 MB por entrada, 100 MB totales, 50 MB de JSON, 10 000 objetos), rechaza paths inseguros (`/`, `..`, `\`), rehashea cada asset y falla si el hash no cuadra o si el board referencia un asset que no viene, y guarda los assets con deduplicación por hash. **Decisión: `.inkboard` solo existe en la app Tauri** (diálogo nativo de guardado y crate `zip`); en browser el botón no se muestra, y el import de JSON de M2-07 es el camino allí. Se detecta por extensión y por contenido (`looks_like_inkboard`), así que un `.inkboard` sin extensión también entra. | Roundtrip board → `.inkboard` → import idéntico, con los hashes de assets verificados (`cargo test` 35/35) | M |
+| M2-06 ✅ | Formato `.inkboard` (§16): ZIP con `board.json` sin comprimir, `metadata.json` (format, formatVersion, id, name, version, schemaVersion) y un `assets/<sha256>.<ext>` por cada `asset:` referenciado. Export e import en Rust (`formats/inkboard.rs`, crate `zip`): el export lee el board persistido y sus assets del almacén, así que ningún payload grande cruza el IPC, y el import parsea con límites (100 MB de archivo, 256 entradas, 25 MB por entrada, 100 MB totales, 50 MB de JSON, 10 000 objetos), rechaza paths inseguros (`/`, `..`, `\`), rehashea cada asset y falla si el hash no cuadra o si el board referencia un asset que no viene, y guarda los assets con deduplicación por hash. **Decisión: `.inkboard` solo existe en la app Tauri** (diálogo nativo de guardado y crate `zip`); en browser el botón no se muestra, y el import de JSON de M2-07 es el camino allí. Se detecta por extensión y por contenido (`looks_like_inkboard`), así que un `.inkboard` sin extensión también entra. | Roundtrip board → `.inkboard` → import idéntico, con los hashes de assets verificados (`cargo test` 35/35) | M |
 | M2-07 ✅ | Import del JSON propio: `io/importBoard.ts` valida el payload antes de tocar nada (JSON parseable, objeto `board`, `board.objects` como array, `id` y `type` en cada objeto, con los mismos límites que Rust: 50 MB y 10 000 objetos) y devuelve el board normalizado con `deserializeBoard`, que rellena los campos que falten. El menú Export separa las dos intenciones: "Import as new board…" crea un board con id nuevo, lo persiste y navega a él, e "Insert into board…" mete los objetos en el board vivo como un único `AddObjectsCommand`, o sea un paso de undo. Las imágenes que vengan incrustadas como data URL en un JSON ajeno vuelven al almacén de assets (M2-05), los ids se remapean para no chocar con lo que ya hay en el board, y sigue pasando el snapshot previo de M2-04. Funciona en browser y en Tauri, a diferencia de `.inkboard` (allí el `schemaVersion` solo lo valida Rust, dentro del parser del `.inkboard`). | E2E (`e2e/import-json.spec.ts`): insertar deshace y rehace en un solo paso, importar como board nuevo abre el board, y `.inkboard` no aparece en el menú fuera de Tauri · unit de los límites y del esquema | S |
-| M2-08 | Import seguro (§22): el comando Rust abre el diálogo y lee el archivo, sin aceptar rutas del webview. Comprobar el tamaño con la metadata antes de leer (≤ 100 MB); en ZIP, límite por entrada (`file.size()` + `take()`) y límite de entradas. Re-encode de imágenes con el crate `image`. Definir la CSP en `tauri.conf.json`. | `cargo-fuzz` 10 min sin panics; test de zip bomb | M |
+| M2-08 ✅* | Import seguro (§22): el webview ya no manda rutas. `inspect_import`, `read_file_bytes` e `import_inkboard` se sustituyen por un único `import_pick`, que abre el diálogo nativo con filtros por tipo y hace el pick, la lectura y el parseo en Rust; `export_inkboard` abre también el diálogo de guardado nativo. El tamaño se comprueba con `fs::metadata` (≤ 100 MB) **antes** de leer. Los dos parsers de ZIP acotan por entrada con `file.size()` + `take()` (25 MB) y por número de entradas (256), con tope total (100 MB en `.inkboard`, 50 MB de JSON en MS Whiteboard), tope de `metadata.json` (1 MB) y de textos extraídos (10 000), de modo que un zip bomb con cabeceras mentirosas no se descomprime entero. Las imágenes importadas se decodifican y re-encodan con el crate `image` (`formats/images.rs`):JPEG sigue JPEG, el resto a PNG, lo que strip de EXIF/XMP/ICC y descarta trucos de contenedor; la decodificación tiene límites de dimensión (20 000 px) y de memoria (512 MB), y SVG pasa sin re-encodear porque es texto vectorial. La detección de formato añade GIF/BMP/TIFF/ICO y magic bytes para imágenes sin extensión. CSP definida en `tauri.conf.json` (antes `null`) y `fs:default` + `dialog:default` fuera de las capabilities. | Tests de zip bomb, entradas de más, input truncado o mutado y EXIF: sin panics, rechazan con mensaje · *La CSP solo se validó compilando: **falta verificarla a mano en `pnpm tauri dev`** (que el board carga y pinta, que exportar e importar funcionan y que no aparece nada de remote). | M |
 | M2-09 | Export: JPG con calidad; modos board completo, selección o área visible; escala 1×–4×; fondo transparente opcional. En Tauri, diálogo nativo de guardado (`plugin-dialog` + `plugin-fs`); `<a download>` solo en el browser. | E2E en browser; manual en Tauri | M |
 | M2-10 | Fidelidad del SVG (rotación, star/polygon, puntas de flecha, contorno perfect-freehand, wrap de texto) y PDF vectorial generado desde ese SVG en Rust (`usvg` + `svg2pdf`, D2). | Diff visual PNG vs SVG rasterizado < 1 % | L |
 | M2-11 | MS Whiteboard: los textos extraídos entran como stickies en rejilla en el centro del viewport, en un solo paso de undo, con un mensaje honesto sobre el alcance (§17). | E2E con un ZIP de fixture | S |
+
+\* M2-08 está implementada y sus tests pasan, pero su cierre está a medias: la CSP de `tauri.conf.json` solo se validó compilando. Falta abrir `pnpm tauri dev` y comprobar que el board carga y pinta, que exportar e importar funcionan y que la consola no pide nada remoto. Trátala como abierta hasta cerrar esa comprobación. Nota: de los dos criterios de aceptación, el de `cargo-fuzz` no se ejecutó (la crate sigue fuera de `Cargo.toml` en §29) y se cubrió con los tests de zip bomb, entradas de más, input truncado o mutado y EXIF, que comprueban que no hay panics y que el error es mensaje.
 
 **Gate M2:** migración desde una DB v0.1 probada · roundtrip `.inkboard` sin pérdida · parsers fuzzeados sin panics · el webview no puede leer rutas arbitrarias.
 
@@ -1690,7 +1690,7 @@ WASM compilado descartado para el MVP: complejidad de compilación y bindgen sin
 Versiones reales de `package.json` y `src-tauri/Cargo.toml` (2026-09-30):
 
 - **Frontend:** svelte 5.57 · @sveltejs/kit 2.70 · vite 8.2 · vitest 4.1 · typescript 6.0 · @playwright/test 1.62 · rbush 4.0 · perfect-freehand 1.2 · uuid 14 · fast-check 4.10 (dev) · @tauri-apps/api 2.11 con los plugins fs, dialog y clipboard-manager.
-- **Rust:** tauri 2.11 · rusqlite 0.31 (bundled) · zstd 0.13 · sha2 0.10 · zip 2.1 · serde / serde_json · uuid · anyhow · tauri-plugin-fs, dialog, clipboard-manager y log.
+- **Rust:** tauri 2.11 · rusqlite 0.31 (bundled) · zstd 0.13 · sha2 0.10 · zip 2.1 · image 0.25 (M2-08) · serde / serde_json · uuid · anyhow · tauri-plugin-dialog, clipboard-manager y log. Con M2-08 el plugin `fs` deja de usarse en el import: el diálogo y la lectura se hacen dentro de Rust, así que las capabilities ya no piden `fs:default` ni `dialog:default`.
 
 **Nota sobre `perfect-freehand`:** esta librería (de Steve Ruiz, creador de tldraw) genera strokes de alta calidad con simulación de presión. Es la elección pragmática para el lápiz frente a implementar Catmull-Rom desde cero.
 
@@ -1700,7 +1700,7 @@ Dependencias que añade el plan:
 |-----------|-------------|----------|
 | M1 | `fast-check` (dev) — **añadida en M1-02** | Tests de propiedades de los comandos (M1-02) |
 | M1 | `eslint`, `typescript-eslint`, `eslint-plugin-svelte`, `globals`, `@eslint/js` (dev) — **añadidos en M1-12** | Lint en CI (M1-12) |
-| M2 | `image` | Re-encode de imágenes importadas (M2-08) |
+| M2 | `image` 0.25 (**añadida en M2-08**, sin features por defecto: png, jpeg, webp, gif, bmp, tiff, ico) | Re-encode de imágenes importadas (M2-08) |
 | M2 | `usvg`, `svg2pdf` | PDF vectorial (M2-10) |
 | M2 | `cargo-fuzz` (herramienta) | Fuzzing de parsers (M2-08) |
 | M4 | `tauri-plugin-window-state`, `tauri-plugin-single-instance`, `tauri-plugin-updater` | Estado de ventana, instancia única y updater |

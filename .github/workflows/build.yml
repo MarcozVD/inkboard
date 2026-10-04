@@ -1,0 +1,56 @@
+name: Build (M4)
+
+# Manual runs + release tags only (not on push/PR).
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows release build + size budget (RNF-06)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Frontend build runs through tauri's beforeBuildCommand.
+      - name: Build Tauri app (no bundle)
+        run: pnpm tauri build --no-bundle
+
+      - name: Check binary size (RNF-06: < 15 MB)
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/inkboard.exe"
+          if (-not (Test-Path $exe)) { Write-Error "missing $exe"; exit 1 }
+          $size = (Get-Item $exe).Length
+          $mb = [math]::Round($size / 1MB, 2)
+          Write-Host "binary size: $size bytes ($mb MB)"
+          if ($size -gt 15728640) {
+            Write-Error "binary $mb MB exceeds the 15 MB budget"
+            exit 1
+          }

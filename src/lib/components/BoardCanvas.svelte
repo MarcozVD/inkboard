@@ -9,6 +9,7 @@
 	import { themeController } from '$lib/board/theme.svelte';
 	import { versionBridge } from '$lib/board/versionBridge.svelte';
 	import { installBenchBridge } from '$lib/board/benchBridge';
+	import { isTauriRuntime, openLogsFolder, wireDesktopOpen } from '$lib/io/desktopOpen';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
@@ -303,8 +304,19 @@
 			goto(resolve('/'));
 		};
 		const detach = runtime.attach();
+		// M4-01/M4-03: boards opened by file association or a second instance
+		let unwireDesktop: (() => void) | null = null;
+		void wireDesktopOpen({
+			navigate: (id) => {
+				if (id !== boardId) void goto(resolve('/board/[id]', { id }));
+			}
+		}).then((dispose) => {
+			if (destroyed) dispose();
+			else unwireDesktop = dispose;
+		});
 		return () => {
 			destroyed = true;
+			unwireDesktop?.();
 			detach();
 			runtime?.dispose();
 		};
@@ -344,7 +356,8 @@
 			onThemeChange: (t) => themeController.set(t),
 			onLoadVersions: () => void versionBridge.load(),
 			onSaveVersion: () => void versionBridge.save(),
-			onRestoreVersion: (versionId: string) => void versionBridge.restore(versionId)
+			onRestoreVersion: (versionId: string) => void versionBridge.restore(versionId),
+			onOpenLogs: isTauriRuntime() ? () => void openLogsFolder() : undefined
 		}}
 	/>
 

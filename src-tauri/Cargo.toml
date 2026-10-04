@@ -21,6 +21,9 @@ tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-log = "2"
+# M4-01: window geometry + single instance
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -38,3 +41,10 @@ zip = "2.1"
 
 # M2-08 — Re-encode de imágenes importadas (strip metadata)
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "tiff", "ico"] }
+
+# M4-08 — RNF-06: release binary budget < 15 MB
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

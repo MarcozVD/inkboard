@@ -42,6 +42,7 @@
 			onLoadVersions: () => void;
 			onSaveVersion: () => void;
 			onRestoreVersion: (versionId: string) => void;
+			onOpenLogs?: () => void;
 		};
 	} = $props();
 
@@ -72,7 +73,8 @@
 		onThemeChange,
 		onLoadVersions,
 		onSaveVersion,
-		onRestoreVersion
+		onRestoreVersion,
+		onOpenLogs
 	} = $derived(actions);
 </script>
 
@@ -106,4 +108,5 @@
 	{onLoadVersions}
 	{onSaveVersion}
 	{onRestoreVersion}
+	{onOpenLogs}
 />

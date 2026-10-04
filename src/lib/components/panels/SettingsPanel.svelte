@@ -18,7 +18,8 @@
 		versions = [],
 		onLoadVersions,
 		onSaveVersion,
-		onRestoreVersion
+		onRestoreVersion,
+		onOpenLogs
 	}: {
 		open: boolean;
 		onClose: () => void;
@@ -34,6 +35,8 @@
 		onLoadVersions?: () => void;
 		onSaveVersion?: () => void;
 		onRestoreVersion?: (versionId: string) => void;
+		/** Tauri only: reveal the rotating log folder (M4-04) */
+		onOpenLogs?: () => void;
 	} = $props();
 
 	let panelEl: HTMLDivElement | undefined = $state();
@@ -228,6 +231,11 @@
 						<p>Inkboard v0.1.0</p>
 						<p>Monochrome Workshop</p>
 					</div>
+					{#if onOpenLogs}
+						<div class="sp-row">
+							<button class="sp-btn" data-testid="open-logs" onclick={onOpenLogs}>Open logs folder</button>
+						</div>
+					{/if}
 				</section>
 			</div>
 		</div>

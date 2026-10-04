@@ -2,7 +2,6 @@
 // M2-06 adds the `.inkboard` archive (Tauri only, Rust crate zip) and M2-07
 // wires the internal JSON import (new board or insert as one undo step).
 import { invoke } from '@tauri-apps/api/core';
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import type { Board, CameraState, CanvasObject, GridConfig, ImageObject } from '$lib/objects/types';
 import { createText } from '$lib/objects/factory';
@@ -105,17 +104,12 @@ export async function exportBoard(
 	const base = `inkboard-${ctx.boardId.slice(0, 8)}`;
 	try {
 		if (format === 'inkboard') {
-			// M2-06: Rust builds the ZIP from the persisted board + asset store.
-			// Browser builds are not supported (no zip crate / IndexedDB assets);
-			// the menu hides this option outside Tauri.
+			// M2-06/M2-08: Rust opens the save dialog and builds the ZIP from the
+			// persisted board + asset store (no paths from the webview).
+			// Browser builds are not supported; the menu hides this outside Tauri.
 			if (!isTauri()) return;
 			await opts.flush?.();
-			const path = await saveDialog({
-				defaultPath: `${sanitizeFilename(meta.name)}.inkboard`,
-				filters: [{ name: 'Inkboard board', extensions: ['inkboard'] }]
-			});
-			if (!path) return;
-			await invoke('export_inkboard', { boardId: ctx.boardId, path });
+			await invoke('export_inkboard', { boardId: ctx.boardId });
 			return;
 		}
 
@@ -256,82 +250,74 @@ export function dropImage(ctx: TransferContext, e: DragEvent, world: { x: number
 
 // ── import ──
 
+/** Payload returned by the Rust `import_pick` command (M2-08). */
+type ImportPayload =
+	| { format: 'json' | 'inkboard'; name: string; boardJson: string }
+	| { format: 'ms_whiteboard_zip'; name: string; title?: string | null; texts?: string[] }
+	| { format: 'image'; name: string; src: string; mime: string; width: number; height: number };
+
 export async function importFile(
 	ctx: TransferContext,
 	mode: ImportMode = 'new',
 	host?: Pick<TransferHost, 'onImportedBoard'>
 ): Promise<void> {
-	// pick a file — Tauri native dialog if available, else hidden input
-	let path: string | null = null;
-	let file: File | null = null;
+	// M2-08: in Tauri the whole pick + parse + sanitize happens in Rust; the
+	// webview never sees or passes a filesystem path.
 	if (isTauri()) {
 		try {
-			path = (await openDialog({
-				multiple: false,
-				filters: [{ name: 'Board files', extensions: ['inkboard', 'json', 'png', 'jpg', 'jpeg', 'webp', 'svg', 'zip'] }]
-			})) as string | null;
-		} catch {
-			path = null;
-		}
-		if (!path) return;
-	} else {
-		file = await pickFileFallback();
-		if (!file) return;
-	}
-
-	const world = { x: 0, y: 0 };
-
-	if (path) {
-		// Tauri path: Rust detects + parses everything
-		try {
-			const info = await invoke<{
-				format: string;
-				title?: string | null;
-				texts?: string[];
-				name?: string;
-			}>('inspect_import', { path });
-			if (info.format === 'inkboard') {
-				// M2-06: Rust parses the archive and stores its assets (dedup)
-				const imported = await invoke<{ boardJson: string }>('import_inkboard', { path });
-				await finishBoardImport(ctx, imported.boardJson, mode, host);
-				return;
-			}
-			if (info.format === 'json') {
-				const bytes = await invoke<ArrayBuffer>('read_file_bytes', { path });
-				await finishBoardImport(ctx, new TextDecoder().decode(bytes), mode, host);
-				return;
-			}
-			if (info.format === 'image') {
-				// image via Tauri path — raw bytes → Blob → data URL (B16)
-				const dataUrl = await readFileAsDataUrl(path, info.name ?? 'image');
-				ctx.engine.imageTool.insertImage(dataUrl, info.name ?? 'image', world.x, world.y);
-			} else if (info.format === 'ms_whiteboard_zip') {
-				insertImportedTexts(ctx.engine, info.title, info.texts ?? []);
-			} else {
-				console.warn('unsupported import format', info.format);
-			}
+			const payload = await invoke<ImportPayload | null>('import_pick');
+			if (!payload) return;
+			await applyImportPayload(ctx, payload, mode, host);
 		} catch (err) {
 			console.error('import failed', err);
 		}
-	} else if (file) {
-		if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
-			// M2-07: internal JSON import works in the browser too
-			await finishBoardImport(ctx, await file.text(), mode, host);
-			return;
-		}
-		if (file.type.startsWith('image/')) {
-			const reader = new FileReader();
-			reader.onload = () => {
-				ctx.engine.imageTool.insertImage(reader.result as string, file.name, world.x, world.y);
-			};
-			reader.readAsDataURL(file);
-		} else {
-			// legacy fallback: any other file imports as plain text lines
-			const text = await file.text();
-			insertImportedTexts(ctx.engine, null, text.split('\n').filter(Boolean));
-		}
+		return;
+	}
+
+	const file = await pickFileFallback();
+	if (!file) return;
+
+	if (file.name.toLowerCase().endsWith('.json') || file.type === 'application/json') {
+		// M2-07: internal JSON import works in the browser too
+		await finishBoardImport(ctx, await file.text(), mode, host);
+		return;
+	}
+	if (file.type.startsWith('image/')) {
+		const reader = new FileReader();
+		reader.onload = () => {
+			ctx.engine.imageTool.insertImage(reader.result as string, file.name, 0, 0);
+		};
+		reader.readAsDataURL(file);
+	} else {
+		// legacy fallback: any other file imports as plain text lines
+		const text = await file.text();
+		insertImportedTexts(ctx.engine, null, text.split('\n').filter(Boolean));
 	}
 	ctx.onDirty?.();
+}
+
+/** Apply a Rust `import_pick` payload to the live session. */
+async function applyImportPayload(
+	ctx: TransferContext,
+	payload: ImportPayload,
+	mode: ImportMode,
+	host?: Pick<TransferHost, 'onImportedBoard'>
+): Promise<void> {
+	switch (payload.format) {
+		case 'json':
+		case 'inkboard':
+			await finishBoardImport(ctx, payload.boardJson, mode, host);
+			return;
+		case 'ms_whiteboard_zip':
+			insertImportedTexts(ctx.engine, payload.title, payload.texts ?? []);
+			ctx.onDirty?.();
+			return;
+		case 'image':
+			// Rust already sanitized and stored the asset (M2-08)
+			ctx.engine.imageTool.insertAsset(payload.src, payload.name);
+			ctx.onDirty?.();
+			return;
+	}
 }
 
 /** Validate and apply an internal JSON board payload (M2-06/M2-07). */
@@ -357,18 +343,6 @@ async function finishBoardImport(
 	host?.onImportedBoard?.(created);
 }
 
-function sanitizeFilename(name: string): string {
-	// strip path separators and Windows-reserved characters
-	const clean = name
-		.trim()
-		.replace(/[<>:"/\\|?*]/g, '-')
-		.split('')
-		.filter((char) => char.charCodeAt(0) >= 32)
-		.join('')
-		.replace(/\s+/g, ' ');
-	return clean || 'board';
-}
-
 /** Import texts as one undoable step (B13) through the mutation API. */
 export function insertImportedTexts(engine: CanvasEngine, title: string | null | undefined, texts: string[]): void {
 	const lines = [...(title ? [title] : []), ...texts];
@@ -385,25 +359,5 @@ function pickFileFallback(): Promise<File | null> {
 		input.onchange = () => resolve(input.files?.[0] ?? null);
 		input.oncancel = () => resolve(null);
 		input.click();
-	});
-}
-
-function mimeForName(name: string): string {
-	const lower = name.toLowerCase();
-	if (lower.endsWith('.svg')) return 'image/svg+xml';
-	if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-	if (lower.endsWith('.webp')) return 'image/webp';
-	return 'image/png';
-}
-
-/** Raw bytes from the Rust side → Blob → data URL, no spread over the byte array (B16). */
-async function readFileAsDataUrl(path: string, name: string): Promise<string> {
-	const bytes = await invoke<ArrayBuffer>('read_file_bytes', { path });
-	const blob = new Blob([bytes], { type: mimeForName(name) });
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => resolve(reader.result as string);
-		reader.onerror = () => reject(reader.error);
-		reader.readAsDataURL(blob);
 	});
 }

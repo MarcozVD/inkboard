@@ -35,3 +35,6 @@ sha2 = "0.10"
 
 # Fase 13 — Importación
 zip = "2.1"
+
+# M2-08 — Re-encode de imágenes importadas (strip metadata)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "tiff", "ico"] }

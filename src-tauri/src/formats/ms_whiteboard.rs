@@ -44,8 +44,20 @@ pub fn detect_format(filename: &str, bytes: &[u8]) -> ImportFormat {
         || lower.ends_with(".jpg")
         || lower.ends_with(".jpeg")
         || lower.ends_with(".webp")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".bmp")
+        || lower.ends_with(".tif")
+        || lower.ends_with(".tiff")
+        || lower.ends_with(".ico")
         || lower.ends_with(".svg")
     {
+        return ImportFormat::Image;
+    }
+    // magic-byte detection for extension-less raster images (M2-08)
+    if matches!(
+        crate::formats::images::sniff(bytes),
+        "image/png" | "image/jpeg" | "image/gif" | "image/webp"
+    ) {
         return ImportFormat::Image;
     }
     ImportFormat::Unknown
@@ -60,17 +72,32 @@ pub struct MsWhiteboardContent {
     pub texts: Vec<String>,
 }
 
+// Limits (M2-08 / plan §22): entry count and bounded inflation.
+pub const MAX_ZIP_ENTRIES: usize = 256;
+pub const MAX_ENTRY_BYTES: u64 = 25 * 1024 * 1024;
+pub const MAX_TOTAL_JSON_BYTES: u64 = 50 * 1024 * 1024;
+pub const MAX_TEXTS: usize = 10_000;
+
 /// Try to parse a MS Whiteboard ZIP export, extracting any text it contains.
-/// Returns None when the archive can't be read as a whiteboard export.
+/// Entry count and inflation are bounded: declared sizes are checked first and
+/// every read is additionally capped with `take()`, so a zip bomb cannot
+/// exhaust memory even if its headers lie.
 pub fn parse_ms_whiteboard_zip(data: &[u8]) -> Result<MsWhiteboardContent, String> {
     let reader = std::io::Cursor::new(data);
     let mut archive = zip::ZipArchive::new(reader).map_err(|e| format!("invalid zip: {e}"))?;
+    if archive.len() > MAX_ZIP_ENTRIES {
+        return Err(format!(
+            "too many entries: {} (max {MAX_ZIP_ENTRIES})",
+            archive.len()
+        ));
+    }
 
     let mut content = MsWhiteboardContent {
         title: None,
         texts: Vec::new(),
     };
     let mut saw_whiteboard_json = false;
+    let mut total: u64 = 0;
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).map_err(|e| format!("zip entry: {e}"))?;
@@ -84,15 +111,30 @@ pub fn parse_ms_whiteboard_zip(data: &[u8]) -> Result<MsWhiteboardContent, Strin
         }
         saw_whiteboard_json = true;
 
-        let mut buf = Vec::new();
-        file.read_to_end(&mut buf)
-            .map_err(|e| format!("read zip entry: {e}"))?;
-        // size limit — refuse absurd JSON
-        if buf.len() > 50 * 1024 * 1024 {
+        // declared size first — reject oversized entries without inflating them
+        let declared = file.size();
+        if declared > MAX_ENTRY_BYTES {
+            return Err("whiteboard json entry too large".to_string());
+        }
+        total = total.saturating_add(declared);
+        if total > MAX_TOTAL_JSON_BYTES {
             return Err("whiteboard json too large".to_string());
         }
 
+        // hard cap on the actual stream, whatever the central directory says
+        let mut limited = (&mut file).take(MAX_ENTRY_BYTES + 1);
+        let mut buf = Vec::new();
+        limited
+            .read_to_end(&mut buf)
+            .map_err(|e| format!("read zip entry: {e}"))?;
+        if buf.len() as u64 > MAX_ENTRY_BYTES {
+            return Err("whiteboard json entry too large".to_string());
+        }
+
         extract_text_from_json(&buf, &mut content);
+        if content.texts.len() > MAX_TEXTS {
+            content.texts.truncate(MAX_TEXTS);
+        }
     }
 
     if !saw_whiteboard_json {

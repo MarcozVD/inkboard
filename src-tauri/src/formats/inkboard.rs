@@ -23,6 +23,7 @@ pub const MAX_ENTRIES: usize = 256;
 pub const MAX_ENTRY_BYTES: u64 = 25 * 1024 * 1024;
 pub const MAX_TOTAL_BYTES: u64 = 100 * 1024 * 1024;
 pub const MAX_JSON_BYTES: usize = 50 * 1024 * 1024;
+pub const MAX_METADATA_BYTES: u64 = 1024 * 1024;
 pub const MAX_OBJECTS: usize = 10_000;
 
 /// Parsed `.inkboard` archive.
@@ -241,8 +242,12 @@ pub fn parse_zip(bytes: &[u8]) -> Result<InkboardArchive, String> {
         }
 
         if name == BOARD_ENTRY {
+            // hard cap the stream, whatever the central directory declares
             let mut buf = Vec::new();
-            file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            (&mut file)
+                .take(MAX_JSON_BYTES as u64 + 1)
+                .read_to_end(&mut buf)
+                .map_err(|e| e.to_string())?;
             if buf.len() > MAX_JSON_BYTES {
                 return Err("board.json is too large".to_string());
             }
@@ -251,7 +256,13 @@ pub fn parse_zip(bytes: &[u8]) -> Result<InkboardArchive, String> {
             );
         } else if name == METADATA_ENTRY {
             let mut buf = Vec::new();
-            file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            (&mut file)
+                .take(MAX_METADATA_BYTES + 1)
+                .read_to_end(&mut buf)
+                .map_err(|e| e.to_string())?;
+            if buf.len() as u64 > MAX_METADATA_BYTES {
+                return Err("metadata.json is too large".to_string());
+            }
             metadata = Some(
                 serde_json::from_slice(&buf).map_err(|e| format!("invalid metadata.json: {e}"))?,
             );
@@ -260,7 +271,13 @@ pub fn parse_zip(bytes: &[u8]) -> Result<InkboardArchive, String> {
                 continue;
             }
             let mut buf = Vec::new();
-            file.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            (&mut file)
+                .take(MAX_ENTRY_BYTES + 1)
+                .read_to_end(&mut buf)
+                .map_err(|e| e.to_string())?;
+            if buf.len() as u64 > MAX_ENTRY_BYTES {
+                return Err(format!("zip entry too large: {name}"));
+            }
             let hash = hex(Sha256::digest(&buf));
             let stem = rest.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(rest);
             if is_sha256_hex(stem) && !stem.eq_ignore_ascii_case(&hash) {

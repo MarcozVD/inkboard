@@ -3,7 +3,7 @@ import { BaseTool, type ToolContext, type ToolPointerEvent } from './BaseTool';
 import { createImage } from '$lib/objects/factory';
 import type { CanvasObject } from '$lib/objects/types';
 import { AddObjectsCommand } from '$lib/canvas/commands';
-import { ASSET_PREFIX, parseDataUrl, putAsset } from '$lib/io/assets';
+import { ASSET_PREFIX, parseDataUrl, putAsset, resolveAssetUrl } from '$lib/io/assets';
 
 export class ImageTool extends BaseTool {
 	private hiddenInput: HTMLInputElement | null = null;
@@ -102,6 +102,26 @@ export class ImageTool extends BaseTool {
 			);
 		};
 		img.src = dataUrl;
+	}
+
+	/** Insert an image already sanitized + stored by Rust (M2-08). */
+	insertAsset(src: string, _name: string): void {
+		const img = new Image();
+		void resolveAssetUrl(src)
+			.then((url) => {
+				if (!url) throw new Error('asset unavailable');
+				img.onload = () => {
+					const w = img.width;
+					const h = img.height;
+					this.commit(createImage(-w / 4, -h / 4, src, w, h));
+				};
+				img.onerror = () => this.commit(createImage(-200, -150, src, 400, 300));
+				img.src = url;
+			})
+			.catch((err) => {
+				console.error('asset insert failed', err);
+				this.commit(createImage(-200, -150, src, 400, 300));
+			});
 	}
 
 	pointerMove(_e: ToolPointerEvent): void {}

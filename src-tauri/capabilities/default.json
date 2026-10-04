@@ -17,8 +17,6 @@
     "core:resources:default",
     "core:menu:default",
     "core:tray:default",
-    "fs:default",
-    "dialog:default",
     "clipboard-manager:default"
   ]
 }

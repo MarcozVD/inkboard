@@ -180,6 +180,41 @@ fn validate_board_json_checks_structure_and_limits() {
 }
 
 #[test]
+fn parse_rejects_zip_bomb_without_inflating() {
+    // board.json declares > MAX_ENTRY_BYTES: rejected before any inflation
+    let size = (inkboard::MAX_ENTRY_BYTES + 1) as usize;
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("board.json", options).unwrap();
+        zip.write_all(&vec![0u8; size]).unwrap();
+        zip.finish().unwrap();
+    }
+    assert!(buf.len() < 1024 * 1024, "bomb should compress tiny");
+    let err = inkboard::parse_zip(&buf).unwrap_err();
+    assert!(err.contains("too large"), "got: {err}");
+}
+
+#[test]
+fn parse_survives_truncated_and_mutated_archives() {
+    let board = board_json_with_object_count(0);
+    let valid = inkboard::build_zip(&board, &[]).unwrap();
+
+    for cut in [0usize, 1, 3, 10, valid.len() / 2, valid.len() - 1] {
+        let _ = inkboard::parse_zip(&valid[..cut]);
+    }
+    for i in 0..valid.len() {
+        let mut mutated = valid.clone();
+        mutated[i] ^= 0xFF;
+        let _ = inkboard::parse_zip(&mutated);
+    }
+    assert!(inkboard::parse_zip(b"not a zip at all").is_err());
+    assert!(inkboard::parse_zip(b"PK\x03\x04garbage").is_err());
+}
+
+#[test]
 fn detect_inkboard_by_extension_and_content() {
     assert_eq!(
         detect_format("board.inkboard", b"not a zip"),

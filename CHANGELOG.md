@@ -7,12 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The desktop app is still at `0.1.0` in `package.json`, `src-tauri/tauri.conf.json` and
-`src-tauri/Cargo.toml`, and **no tag has been published yet**, so everything below is
-unreleased. It is grouped by milestone from `implementation_plan.md` §24, keeping the task
-IDs so any line can be traced back to the plan. Milestones M0 to M3 are complete with
-their gates met; M4 has all its tasks implemented and tested but cannot be exercised until
-the first release is published.
+Nothing yet.
+
+## [0.5.0] - 2026-10-04
+
+First versioned build of the desktop app. The three version files read `0.5.0`, but **no
+tag has been pushed yet**: the release still waits on the updater signing secrets and the
+real public key, so nothing is published from GitHub yet. Grouped by milestone from
+`implementation_plan.md` §24, keeping the task IDs so any line traces back to the plan.
+Milestones M0 to M3 are complete with their gates met; M4 has all its tasks implemented and
+tested but cannot be exercised end to end until that first release exists.
 
 ### Milestone M0 — v0.1.1, núcleo usable
 
@@ -153,6 +157,11 @@ All tasks implemented and tested. Not usable end to end until a first release ex
 
 - Binary size measured in CI, failing the build over 15 MB (RNF-06). The release binary is
   13.3 MB.
+- The E2E suite no longer loses its first click on a cold runner: Vite prebundles the app's
+  dependencies up front, a Playwright `globalSetup` warms the dev server once, and the app
+  sets a `data-ready` hydration signal that the helpers wait for. The first two tests had
+  been failing only on `windows-latest` because dependency discovery reloaded the page
+  mid-click.
 
 #### Known gaps before the first release
 

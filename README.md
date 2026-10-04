@@ -4,7 +4,7 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 
 **Stack:** SvelteKit 5 + Tauri 2 + Rust. Design system: "Monochrome Workshop" (`DESIGN.md`).
 
-**Status (v0.2.0 shipped; M0, M1, M2 and M3 closed, M4 in progress):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (377 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. **M2 closed (v0.3.0) with its gate met**: heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations, a v0.1 database migrated without data loss), board management in Home, real 320×200 thumbnails, version history with retention, images in a content-addressed asset store outside the board JSON, the `.inkboard` archive, internal JSON import, a hardened import path where the webview never passes filesystem paths (bounded ZIP parsing, images re-encoded in Rust, CSP verified by hand), export as an options panel saved through a Rust command, a **faithful SVG exporter with vector PDF generated from it in Rust** (M2-10), and MS Whiteboard texts as a centered grid of sticky notes in one undo step. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog) and the manual check of the native save dialog for image and PDF exports. See [Current status](#current-status) and `implementation_plan.md` §0.2.
+**Status (v0.5.0 beta, not tagged yet; M0, M1, M2 and M3 closed, M4 implemented):** Every bug from the audit is fixed and the editor is feature-complete for v0.2.0. M0 closed (M0-01…M0-17) with the window controls verified by hand and CI green on Windows and Ubuntu; M1 closed (M1-01…M1-13) with its gate met: `BoardCanvas.svelte` split into modules (377 lines), `engine.execute` as the only mutation path, editable styles, clipboard, groups, connectors, grid snap, keyboard nudge, precise resize, the shortcuts overlay and full context menu, ESLint + Prettier in CI, and light/dark/system themes on the canvas. **M2 closed (v0.3.0) with its gate met**: heavy Tauri commands off the main thread (`spawn_blocking`, SQLite in WAL, `user_version` migrations, a v0.1 database migrated without data loss), board management in Home, real 320×200 thumbnails, version history with retention, images in a content-addressed asset store outside the board JSON, the `.inkboard` archive, internal JSON import, a hardened import path where the webview never passes filesystem paths (bounded ZIP parsing, images re-encoded in Rust, CSP verified by hand), export as an options panel saved through a Rust command, a **faithful SVG exporter with vector PDF generated from it in Rust** (M2-10), and MS Whiteboard texts as a centered grid of sticky notes in one undo step. Still open: the M0-15 native-dialog import check (a PNG of 10 MB through the native dialog) and the manual check of the native save dialog for image and PDF exports. The app version is **0.5.0** across `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, but no tag has been pushed: M4's installers, updater and per-OS checks all happen with the first real release. See [Current status](#current-status), [Releases](#releases) and `implementation_plan.md` §0.2.
 
 ## Features
 
@@ -228,9 +228,9 @@ session, and renders the chrome components.
 
 ## Changelog
 
-`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Everything
-so far is under `[Unreleased]`, grouped by milestone from M0 to M4, because no tag has been
-published yet.
+`CHANGELOG.md` follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The
+`[0.5.0] - 2026-10-04` section groups everything by milestone from M0 to M4; `[Unreleased]`
+is still empty because no tag has been pushed yet.
 
 ## License
 

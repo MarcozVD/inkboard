@@ -16,8 +16,8 @@
 	import { toggleLockSelection } from '$lib/board/lock';
 	import { nudgeSelection } from '$lib/board/nudge';
 	import { buildContextMenu, buildPaletteCommands, buildSelectionToolbar, type BoardActionDeps } from '$lib/board/boardInteractions';
-	import { createTransferHandlers, dropImage, exportSelectionPng, type ExportFormat } from '$lib/io/transfer';
-	import type { EditableObj, GridConfig, ShapeType } from '$lib/objects/types';
+	import { createTransferHandlers, dropImage, exportSelectionPng, type ExportFormat, type ImportMode } from '$lib/io/transfer';
+	import type { Board, EditableObj, GridConfig, ShapeType } from '$lib/objects/types';
 	import { ui, uiActions } from '$lib/stores/ui.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -54,8 +54,14 @@
 		getBoardId: () => boardId,
 		getEngine: () => engine,
 		onDirty: () => markDirty(),
-		getMeta: transferMeta
+		getMeta: transferMeta,
+		flush: () => runtime?.session.flushSave() ?? Promise.resolve(),
+		onImportedBoard: (board) => void openImportedBoard(board)
 	});
+	async function openImportedBoard(board: Board) {
+		await runtime?.session.flushSave();
+		await goto(resolve('/board/[id]', { id: board.id }));
+	}
 	const styles = createStyleBridge({ getEngine: () => engine, onDirty: () => markDirty() });
 	const clipboard = createClipboard({
 		getEngine: () => engine,
@@ -347,7 +353,7 @@
 				if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
 			},
 			onExport: deps.onExport,
-			onImport: () => void transfer.import(),
+			onImport: (mode?: ImportMode) => void transfer.import(mode),
 			onCloseSettings: () => (showSettings = false),
 			onGridChange: (g: GridConfig) => {
 				grid = g;

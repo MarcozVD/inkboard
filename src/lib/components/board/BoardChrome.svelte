@@ -8,7 +8,7 @@
 	import { CREATE_ITEMS, TOOLBAR_TOOLS } from '$lib/board/boardInteractions';
 	import type { StyleControl } from '$lib/board/styleControls';
 	import type { BoardVersionMeta, GridConfig, ShapeType } from '$lib/objects/types';
-	import type { ExportFormat } from '$lib/io/transfer';
+	import type { ExportFormat, ImportMode } from '$lib/io/transfer';
 
 	let {
 		state,
@@ -34,7 +34,7 @@
 			onStickyColor: (index: number) => void;
 			onCreate: (id: string) => void;
 			onExport: (format: ExportFormat) => void;
-			onImport: () => void;
+			onImport: (mode?: ImportMode) => void;
 			onCloseSettings: () => void;
 			onGridChange: (grid: GridConfig) => void;
 			onThemeChange: (theme: 'dark' | 'light' | 'system') => void;

@@ -12,6 +12,7 @@ use std::io::Read;
 /// Detected import format for a byte stream.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum ImportFormat {
+    Inkboard,
     MsWhiteboardZip,
     Json,
     Image,
@@ -21,6 +22,9 @@ pub enum ImportFormat {
 /// Detect format from extension + magic bytes.
 pub fn detect_format(filename: &str, bytes: &[u8]) -> ImportFormat {
     let lower = filename.to_lowercase();
+    if lower.ends_with(".inkboard") || crate::formats::inkboard::looks_like_inkboard(bytes) {
+        return ImportFormat::Inkboard;
+    }
     // ZIP magic: PK\x03\x04
     if bytes.len() >= 4
         && bytes[0] == 0x50

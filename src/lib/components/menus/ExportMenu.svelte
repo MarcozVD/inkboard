@@ -1,6 +1,7 @@
 <script lang="ts">
 	// ExportMenu — export/import popover anchored under the floating toolbar.
-	import type { ExportFormat } from '$lib/io/transfer';
+	// `.inkboard` (M2-06) is Tauri-only; JSON import (M2-07) works everywhere.
+	import { isTauri, type ExportFormat, type ImportMode } from '$lib/io/transfer';
 
 	let {
 		open,
@@ -9,7 +10,7 @@
 	}: {
 		open: boolean;
 		onExport: (format: ExportFormat) => void;
-		onImport: () => void;
+		onImport: (mode?: ImportMode) => void;
 	} = $props();
 </script>
 
@@ -18,8 +19,12 @@
 		<button data-testid="export-png" onclick={() => onExport('png')}>Export PNG</button>
 		<button data-testid="export-svg" onclick={() => onExport('svg')}>Export SVG</button>
 		<button data-testid="export-json" onclick={() => onExport('json')}>Export JSON</button>
+		{#if isTauri()}
+			<button data-testid="export-inkboard" onclick={() => onExport('inkboard')}>Export .inkboard</button>
+		{/if}
 		<div class="export-menu-divider"></div>
-		<button data-testid="import-file" onclick={onImport}>Import file…</button>
+		<button data-testid="import-file" onclick={() => onImport('new')}>Import as new board…</button>
+		<button data-testid="insert-file" onclick={() => onImport('current')}>Insert into board…</button>
 	</div>
 {/if}
 

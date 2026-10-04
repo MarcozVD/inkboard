@@ -24,6 +24,9 @@ tauri-plugin-log = "2"
 # M4-01: window geometry + single instance
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
+# M4-05: updates (D4: unsigned beta)
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -27,9 +27,16 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1NjZDMjI5QjNBMUIyNzIKUldSeXNxR3pLY0ptMWJ6b3ZZQ0lheWNIejBEU1hhSjFobW0wTzFqNTNBUnVRUDZURnNuTEpRWjBLCg==",
+      "endpoints": ["https://github.com/MarcozVD/inkboard/releases/latest/download/latest.json"]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
         "ext": ["inkboard"],

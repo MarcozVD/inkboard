@@ -8,6 +8,7 @@
 	import { createTextEditing } from '$lib/board/textEditing.svelte';
 	import { themeController } from '$lib/board/theme.svelte';
 	import { versionBridge } from '$lib/board/versionBridge.svelte';
+	import { updater } from '$lib/board/updateBridge.svelte';
 	import { installBenchBridge } from '$lib/board/benchBridge';
 	import { isTauriRuntime, openLogsFolder, wireDesktopOpen } from '$lib/io/desktopOpen';
 	import { BoardRuntime } from '$lib/board/BoardRuntime';
@@ -304,6 +305,11 @@
 			goto(resolve('/'));
 		};
 		const detach = runtime.attach();
+		// M4-05: discreet update check shortly after startup
+		let updateTimer: ReturnType<typeof setTimeout> | null = null;
+		if (updater.enabled) {
+			updateTimer = setTimeout(() => void updater.check(true), 3000);
+		}
 		// M4-01/M4-03: boards opened by file association or a second instance
 		let unwireDesktop: (() => void) | null = null;
 		void wireDesktopOpen({
@@ -316,6 +322,7 @@
 		});
 		return () => {
 			destroyed = true;
+			if (updateTimer) clearTimeout(updateTimer);
 			unwireDesktop?.();
 			detach();
 			runtime?.dispose();
@@ -331,7 +338,7 @@
 	<BoardNotice />
 
 	<BoardChrome
-		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme: themeController.choice, versions: versionBridge.versions }}
+		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme: themeController.choice, versions: versionBridge.versions, updateStatus: updater.status, updateVersion: updater.version, updateError: updater.error, updatePercent: updater.percent }}
 		actions={{
 			onSelectTool: (t) => setTool(t as ToolId),
 			onToggleCreate: () => (showCreatePanel = !showCreatePanel),
@@ -357,7 +364,9 @@
 			onLoadVersions: () => void versionBridge.load(),
 			onSaveVersion: () => void versionBridge.save(),
 			onRestoreVersion: (versionId: string) => void versionBridge.restore(versionId),
-			onOpenLogs: isTauriRuntime() ? () => void openLogsFolder() : undefined
+			onOpenLogs: isTauriRuntime() ? () => void openLogsFolder() : undefined,
+			onCheckUpdates: updater.enabled ? () => void updater.check(false) : undefined,
+			onInstallUpdate: updater.enabled ? () => void updater.install() : undefined
 		}}
 	/>
 

@@ -61,6 +61,9 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // M4-05: updater + process (restart after install)
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             // M4-04: log panics before the process unwinds
             std::panic::set_hook(Box::new(|info| {

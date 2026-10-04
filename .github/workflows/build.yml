@@ -42,7 +42,7 @@ jobs:
       - name: Build Tauri app (no bundle)
         run: pnpm tauri build --no-bundle
 
-      - name: Check binary size (RNF-06: < 15 MB)
+      - name: 'Check binary size (RNF-06: under 15 MB)'
         shell: pwsh
         run: |
           $exe = "src-tauri/target/release/inkboard.exe"

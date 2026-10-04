@@ -3,6 +3,7 @@
 	// Sections: Canvas, Interaction, Appearance, Data, About.
 	import Icon from '$lib/components/ui/Icon.svelte';
 	import type { BoardVersionMeta } from '$lib/objects/types';
+	import type { UpdateStatus } from '$lib/board/updateBridge.svelte';
 
 	let {
 		open,
@@ -19,7 +20,13 @@
 		onLoadVersions,
 		onSaveVersion,
 		onRestoreVersion,
-		onOpenLogs
+		onOpenLogs,
+		updateStatus = 'idle',
+		updateVersion = null,
+		updateError = null,
+		updatePercent = null,
+		onCheckUpdates,
+		onInstallUpdate
 	}: {
 		open: boolean;
 		onClose: () => void;
@@ -37,7 +44,32 @@
 		onRestoreVersion?: (versionId: string) => void;
 		/** Tauri only: reveal the rotating log folder (M4-04) */
 		onOpenLogs?: () => void;
+		updateStatus?: UpdateStatus;
+		updateVersion?: string | null;
+		updateError?: string | null;
+		updatePercent?: number | null;
+		onCheckUpdates?: () => void;
+		onInstallUpdate?: () => void;
 	} = $props();
+
+	function updateStatusText(): string {
+		switch (updateStatus) {
+			case 'checking':
+				return 'Checking for updates…';
+			case 'up-to-date':
+				return 'You are up to date.';
+			case 'available':
+				return `Version ${updateVersion ?? ''} is available.`;
+			case 'downloading':
+				return `Downloading… ${updatePercent ?? 0}%`;
+			case 'installing':
+				return 'Installing…';
+			case 'error':
+				return updateError ?? 'Update check failed.';
+			default:
+				return '';
+		}
+	}
 
 	let panelEl: HTMLDivElement | undefined = $state();
 
@@ -235,6 +267,33 @@
 						<div class="sp-row">
 							<button class="sp-btn" data-testid="open-logs" onclick={onOpenLogs}>Open logs folder</button>
 						</div>
+					{/if}
+					{#if onCheckUpdates}
+						<div class="sp-row">
+							<button
+								class="sp-btn"
+								data-testid="check-updates"
+								disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+								onclick={onCheckUpdates}>Check for updates</button
+							>
+						</div>
+						{#if updateStatus !== 'idle'}
+							<p class="sp-value" data-testid="update-status">{updateStatusText()}</p>
+						{/if}
+						{#if updateStatus === 'available' || updateStatus === 'downloading'}
+							<div class="sp-row">
+								<button
+									class="sp-btn"
+									data-testid="install-update"
+									disabled={updateStatus === 'downloading'}
+									onclick={onInstallUpdate}
+								>
+									{updateStatus === 'downloading'
+										? `Downloading… ${updatePercent ?? 0}%`
+										: `Install ${updateVersion ?? ''} and restart`}
+								</button>
+							</div>
+						{/if}
 					{/if}
 				</section>
 			</div>

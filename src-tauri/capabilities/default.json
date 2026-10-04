@@ -17,6 +17,8 @@
     "core:resources:default",
     "core:menu:default",
     "core:tray:default",
-    "clipboard-manager:default"
+    "clipboard-manager:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

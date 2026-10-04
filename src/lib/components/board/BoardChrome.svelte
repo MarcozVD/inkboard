@@ -9,6 +9,7 @@
 	import type { StyleControl } from '$lib/board/styleControls';
 	import type { BoardVersionMeta, GridConfig, ShapeType } from '$lib/objects/types';
 	import type { ExportFormat, ExportImageOptions, ImportMode } from '$lib/io/transfer';
+	import type { UpdateStatus } from '$lib/board/updateBridge.svelte';
 
 	let {
 		state,
@@ -25,6 +26,10 @@
 			grid: GridConfig;
 			theme: 'dark' | 'light' | 'system';
 			versions: BoardVersionMeta[];
+			updateStatus: UpdateStatus;
+			updateVersion: string | null;
+			updateError: string | null;
+			updatePercent: number | null;
 		};
 		actions: {
 			onSelectTool: (id: string) => void;
@@ -43,6 +48,8 @@
 			onSaveVersion: () => void;
 			onRestoreVersion: (versionId: string) => void;
 			onOpenLogs?: () => void;
+			onCheckUpdates?: () => void;
+			onInstallUpdate?: () => void;
 		};
 	} = $props();
 
@@ -56,7 +63,11 @@
 		showSettings,
 		grid,
 		theme,
-		versions
+		versions,
+		updateStatus,
+		updateVersion,
+		updateError,
+		updatePercent
 	} = $derived(state);
 	const {
 		onSelectTool,
@@ -74,7 +85,9 @@
 		onLoadVersions,
 		onSaveVersion,
 		onRestoreVersion,
-		onOpenLogs
+		onOpenLogs,
+		onCheckUpdates,
+		onInstallUpdate
 	} = $derived(actions);
 </script>
 
@@ -109,4 +122,10 @@
 	{onSaveVersion}
 	{onRestoreVersion}
 	{onOpenLogs}
+	{updateStatus}
+	{updateVersion}
+	{updateError}
+	{updatePercent}
+	{onCheckUpdates}
+	{onInstallUpdate}
 />

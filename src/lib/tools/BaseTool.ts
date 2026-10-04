@@ -25,6 +25,8 @@ export interface ToolContext {
 	discardAdded: (id: string) => void;
 	/** current grid config (snap, §M1-07) */
 	grid?: () => GridConfig;
+	/** mark the in-progress object so the renderer can use a static layer (M3-02) */
+	setLiveObject?: (id: string | null) => void;
 }
 
 export abstract class BaseTool {

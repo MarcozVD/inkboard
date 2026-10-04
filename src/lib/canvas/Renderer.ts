@@ -4,6 +4,7 @@ import type { CameraState } from '$lib/canvas/Camera';
 import type { GridConfig } from '$lib/objects/types';
 import { renderObject } from '$lib/objects/renderers';
 import type { CanvasEngine } from '$lib/canvas/CanvasEngine';
+import type { ObjectStore, ObjectStoreEvent } from '$lib/canvas/ObjectStore';
 import { cssVar, resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 import { LEGACY_GRID, GRID } from '$lib/objects/colors';
 import { cachedAssetUrl, isAssetSrc, resolveAssetUrl } from '$lib/io/assets';
@@ -17,6 +18,8 @@ export interface RendererDeps {
 	/** canvas box in CSS px */
 	view: () => { width: number; height: number };
 	theme: () => ResolvedTheme;
+	/** object being drawn right now → static-layer fast path (M3-02) */
+	liveObjectId?: () => string | null;
 }
 
 interface CanvasPalette {
@@ -29,6 +32,12 @@ interface CanvasPalette {
 
 export class Renderer {
 	private imageCache = new Map<string, HTMLImageElement>();
+	/** offscreen copy of the scene without the live draft (M3-02) */
+	private staticCanvas: HTMLCanvasElement | null = null;
+	private staticKey: string | null = null;
+	private staticDirty = true;
+	private unsubscribeStore: (() => void) | null = null;
+	private subscribedStore: ObjectStore | null = null;
 	private paletteTheme: ResolvedTheme | null = null;
 	private palette: CanvasPalette = {
 		bg: '#0f1013',
@@ -64,10 +73,46 @@ export class Renderer {
 		const view = this.deps.view();
 		const theme = this.deps.theme();
 		this.refreshPalette(theme);
+		this.ensureStoreSubscription(engine);
 
+		// M3-02: during a draw gesture the static scene is painted once and only
+		// the live draft is re-rendered per frame.
+		const liveId = this.deps.liveObjectId?.() ?? null;
+		const live = liveId ? engine.store.get(liveId) : undefined;
+		if (live) {
+			const key = `${camera.x}|${camera.y}|${camera.zoom}|${dpr}|${view.width}x${view.height}|${theme}`;
+			if (this.staticDirty || !this.staticCanvas || this.staticKey !== key) {
+				this.paintStatic(engine, live.id, camera, view, dpr, theme);
+				this.staticKey = key;
+				this.staticDirty = false;
+			}
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			if (this.staticCanvas) ctx.drawImage(this.staticCanvas, 0, 0);
+			ctx.save();
+			ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y);
+			renderObject(ctx, live, { getImage: (src) => this.getImage(src), theme });
+			ctx.restore();
+		} else {
+			this.staticKey = null;
+			this.paintScene(ctx, engine, camera, view, dpr, theme, null);
+		}
+
+		this.drawSelectionOverlay(ctx, engine, camera, dpr);
+	}
+
+	/** Scene painter shared by the live canvas and the static layer. */
+	private paintScene(
+		ctx: CanvasRenderingContext2D,
+		engine: CanvasEngine,
+		camera: CameraState,
+		view: { width: number; height: number },
+		dpr: number,
+		theme: ResolvedTheme,
+		excludeId: string | null
+	): void {
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.fillStyle = this.palette.bg;
-		ctx.fillRect(0, 0, canvas.width, canvas.height);
+		ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
 		this.drawGrid(ctx, camera, view.width, view.height, dpr);
 
@@ -84,11 +129,62 @@ export class Renderer {
 		ctx.save();
 		ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y);
 		for (const obj of visible) {
+			if (obj.id === excludeId) continue;
 			renderObject(ctx, obj, { getImage: (src) => this.getImage(src), theme });
 		}
 		ctx.restore();
+	}
 
-		this.drawSelectionOverlay(ctx, engine, camera, dpr);
+	private paintStatic(
+		engine: CanvasEngine,
+		excludeId: string,
+		camera: CameraState,
+		view: { width: number; height: number },
+		dpr: number,
+		theme: ResolvedTheme
+	): void {
+		const canvas = this.deps.canvas();
+		if (!canvas) return;
+		if (!this.staticCanvas) this.staticCanvas = document.createElement('canvas');
+		if (this.staticCanvas.width !== canvas.width || this.staticCanvas.height !== canvas.height) {
+			this.staticCanvas.width = canvas.width;
+			this.staticCanvas.height = canvas.height;
+		}
+		const staticCtx = this.staticCanvas.getContext('2d');
+		if (!staticCtx) return;
+		this.paintScene(staticCtx, engine, camera, view, dpr, theme, excludeId);
+	}
+
+	/** Force the next gesture frame to rebuild the static layer. */
+	invalidateStatic(): void {
+		this.staticDirty = true;
+	}
+
+	private ensureStoreSubscription(engine: CanvasEngine): void {
+		const store = engine.store;
+		if (this.subscribedStore === store) return;
+		this.unsubscribeStore?.();
+		this.subscribedStore = store;
+		this.unsubscribeStore = store.onChange((ev) => this.onStoreChange(ev));
+	}
+
+	private onStoreChange(ev: ObjectStoreEvent): void {
+		const liveId = this.deps.liveObjectId?.() ?? null;
+		const onlyLive =
+			liveId !== null &&
+			ev.added.length === 0 &&
+			ev.removed.length === 0 &&
+			ev.modified.length > 0 &&
+			ev.modified.every((id) => id === liveId);
+		if (!onlyLive) this.staticDirty = true;
+	}
+
+	dispose(): void {
+		this.unsubscribeStore?.();
+		this.unsubscribeStore = null;
+		this.subscribedStore = null;
+		this.staticCanvas = null;
+		this.staticKey = null;
 	}
 
 	private getImage(src: string): HTMLImageElement | undefined {

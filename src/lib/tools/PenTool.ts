@@ -43,6 +43,7 @@ export class PenTool extends BaseTool {
 		});
 		this.active = stroke;
 		this.ctx.execute(new AddObjectsCommand(this.ctx.store, [stroke]));
+		this.ctx.setLiveObject?.(stroke.id);
 		this.ctx.onDirty();
 	}
 
@@ -64,6 +65,7 @@ export class PenTool extends BaseTool {
 
 	pointerUp(_e: ToolPointerEvent): void {
 		if (!this.active) return;
+		this.ctx.setLiveObject?.(null);
 		// simplify only if large enough (keeps fidelity for short strokes)
 		if (this.active.points.length > 90) {
 			this.active.points = simplifyStroke(this.active.points, 0.5);
@@ -76,6 +78,7 @@ export class PenTool extends BaseTool {
 	}
 
 	reset(): void {
+		this.ctx.setLiveObject?.(null);
 		this.active = null;
 		this.lastPoint = null;
 	}

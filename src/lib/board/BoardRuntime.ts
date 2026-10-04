@@ -88,11 +88,15 @@ export class BoardRuntime {
 			grid: host.getGrid,
 			dpr: () => this.input.dpr,
 			view: host.getView,
-			theme: host.getTheme
+			theme: host.getTheme,
+			liveObjectId: () => this.engine.liveObjectId
 		});
 		this.renderLoop = new RenderLoop(() => this.renderer.render());
-		// M2-05: repaint once a background asset load finishes
-		this.stopAssetListener = onAssetResolved(() => this.markDirty());
+		// M2-05: repaint once a background asset load finishes (M3-02: static layer too)
+		this.stopAssetListener = onAssetResolved(() => {
+			this.renderer.invalidateStatic();
+			this.markDirty();
+		});
 
 		this.session = new BoardSession({
 			boardId: host.boardId,
@@ -204,6 +208,7 @@ export class BoardRuntime {
 		void this.session.flushSave();
 		if (this.versionTimer) clearInterval(this.versionTimer);
 		this.stopAssetListener();
+		this.renderer.dispose();
 		this.session.dispose();
 		resetUi();
 		this.unlistenClose?.();

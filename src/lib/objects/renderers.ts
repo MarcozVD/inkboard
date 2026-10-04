@@ -1,6 +1,6 @@
 // Object renderers — Canvas 2D drawing for every object type (§3).
-import { getStroke } from 'perfect-freehand';
 import { wrapText } from '$lib/objects/textLayout';
+import { strokeOutlinePath } from '$lib/objects/strokeCache';
 import { resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 import type {
 	CanvasObject,
@@ -84,37 +84,11 @@ function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject, theme: Res
 	}
 	if (style.compositeOperation) ctx.globalCompositeOperation = style.compositeOperation;
 
-	if (s.smoothedPoints && s.smoothedPoints.length >= 4) {
-		// pre-computed outline (set by tools after gesture) — cheap path
-		drawOutline(ctx, s.smoothedPoints);
-	} else {
-		// live outline via perfect-freehand (pressure-aware, smooth)
-		const input: number[][] = [];
-		for (let i = 0; i < pts.length; i += 3) {
-			input.push([pts[i], pts[i + 1], pts[i + 2]]);
-		}
-		const outline = getStroke(input, {
-			size: style.width,
-			thinning: style.isHighlighter ? 0.35 : 0.65,
-			smoothing: 0.5,
-			simulatePressure: false,
-			start: { taper: style.isHighlighter ? 0 : 40, cap: true },
-			end: { taper: style.isHighlighter ? 0 : 40, cap: true }
-		});
-		drawOutline(ctx, outline.flat());
-	}
+	// M3-02: outline (and its perfect-freehand computation) is cached per stroke
+	const path = strokeOutlinePath(s);
+	if (!path) return;
+	ctx.fill(path);
 	ctx.restore();
-}
-
-function drawOutline(ctx: CanvasRenderingContext2D, flatOutline: number[]) {
-	if (flatOutline.length < 6) return;
-	ctx.beginPath();
-	ctx.moveTo(flatOutline[0], flatOutline[1]);
-	for (let i = 2; i < flatOutline.length; i += 2) {
-		ctx.lineTo(flatOutline[i], flatOutline[i + 1]);
-	}
-	ctx.closePath();
-	ctx.fill();
 }
 
 // ── Shapes ──

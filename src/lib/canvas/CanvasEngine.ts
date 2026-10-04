@@ -26,6 +26,7 @@ export class CanvasEngine {
 
 	private tools = new Map<ToolId, BaseTool>();
 	private _activeTool: ToolId = 'select';
+	private _liveObjectId: string | null = null;
 
 	readonly selectTool: SelectTool;
 	readonly textTool: TextTool;
@@ -51,7 +52,10 @@ export class CanvasEngine {
 			onGestureEnd: this.onGestureEnd,
 			execute: (cmd: Command) => this.execute(cmd),
 			discardAdded: (id: string) => this.discardAdded(id),
-			grid: opts.grid
+			grid: opts.grid,
+			setLiveObject: (id: string | null) => {
+				this._liveObjectId = id;
+			}
 		};
 
 		this.selectTool = new SelectTool(ctx);
@@ -73,6 +77,11 @@ export class CanvasEngine {
 
 	get activeTool(): ToolId {
 		return this._activeTool;
+	}
+
+	/** Object being drawn right now (M3-02 static layer), if any. */
+	get liveObjectId(): string | null {
+		return this._liveObjectId;
 	}
 
 	/** Activate a tool. Returns false when the tool is not implemented (B10). */

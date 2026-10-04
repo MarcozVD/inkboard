@@ -30,6 +30,7 @@ export class ShapeTool extends BaseTool {
 		const obj = createShape(this.start.x, this.start.y, 0.01, 0.01, this.config.shape, this.config.style);
 		this.ctx.execute(new AddObjectsCommand(this.ctx.store, [obj]));
 		this.draft = obj.id;
+		this.ctx.setLiveObject?.(obj.id);
 		this.ctx.onDirty();
 	}
 
@@ -67,6 +68,7 @@ export class ShapeTool extends BaseTool {
 
 	pointerUp(_e: ToolPointerEvent): void {
 		if (!this.draft) return;
+		this.ctx.setLiveObject?.(null);
 		const obj = this.ctx.store.get(this.draft);
 		if (obj && obj.transform.width < 4 && obj.transform.height < 4) {
 			// accidental click — discard the tiny shape and its history entry
@@ -79,6 +81,7 @@ export class ShapeTool extends BaseTool {
 	}
 
 	reset(): void {
+		this.ctx.setLiveObject?.(null);
 		this.start = null;
 		this.draft = null;
 	}

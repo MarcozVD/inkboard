@@ -52,6 +52,7 @@ export class ConnectorTool extends BaseTool {
 		if (hit) connector.startObjectId = hit.objectId;
 		this.draft = connector;
 		this.ctx.execute(new AddObjectsCommand(this.ctx.store, [connector]));
+		this.ctx.setLiveObject?.(connector.id);
 		this.ctx.onDirty();
 	}
 
@@ -70,6 +71,7 @@ export class ConnectorTool extends BaseTool {
 
 	pointerUp(_e: ToolPointerEvent): void {
 		if (!this.draft) return;
+		this.ctx.setLiveObject?.(null);
 		if (!this.moved) {
 			// click without drag — discard the draft and its history entry
 			this.ctx.discardAdded(this.draft.id);
@@ -84,6 +86,7 @@ export class ConnectorTool extends BaseTool {
 	}
 
 	reset(): void {
+		this.ctx.setLiveObject?.(null);
 		this.draft = null;
 		this.start = null;
 		this.moved = false;

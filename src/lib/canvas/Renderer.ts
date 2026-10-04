@@ -8,6 +8,8 @@ import type { ObjectStore, ObjectStoreEvent } from '$lib/canvas/ObjectStore';
 import { cssVar, resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 import { LEGACY_GRID, GRID } from '$lib/objects/colors';
 import { cachedAssetUrl, isAssetSrc, resolveAssetUrl } from '$lib/io/assets';
+import { profileNow, renderProfile } from '$lib/canvas/renderProfile';
+import { ImageCache } from '$lib/canvas/imageCache';
 
 export interface RendererDeps {
 	canvas: () => HTMLCanvasElement | null;
@@ -20,6 +22,8 @@ export interface RendererDeps {
 	theme: () => ResolvedTheme;
 	/** object being drawn right now → static-layer fast path (M3-02) */
 	liveObjectId?: () => string | null;
+	/** decoded/reduced image became available → repaint (M3-03) */
+	onContentReady?: () => void;
 }
 
 interface CanvasPalette {
@@ -31,7 +35,7 @@ interface CanvasPalette {
 }
 
 export class Renderer {
-	private imageCache = new Map<string, HTMLImageElement>();
+	private images = new ImageCache({ onReady: () => this.deps.onContentReady?.() });
 	/** offscreen copy of the scene without the live draft (M3-02) */
 	private staticCanvas: HTMLCanvasElement | null = null;
 	private staticKey: string | null = null;
@@ -90,14 +94,20 @@ export class Renderer {
 			if (this.staticCanvas) ctx.drawImage(this.staticCanvas, 0, 0);
 			ctx.save();
 			ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y);
-			renderObject(ctx, live, { getImage: (src) => this.getImage(src), theme });
+			renderObject(ctx, live, {
+				getImage: (src) => this.imageSource(src, camera.zoom),
+				theme,
+				zoom: camera.zoom
+			});
 			ctx.restore();
 		} else {
 			this.staticKey = null;
 			this.paintScene(ctx, engine, camera, view, dpr, theme, null);
 		}
 
+		const overlayStart = profileNow();
 		this.drawSelectionOverlay(ctx, engine, camera, dpr);
+		if (renderProfile.enabled) renderProfile.add('overlay', profileNow() - overlayStart);
 	}
 
 	/** Scene painter shared by the live canvas and the static layer. */
@@ -110,13 +120,19 @@ export class Renderer {
 		theme: ResolvedTheme,
 		excludeId: string | null
 	): void {
+		const profiling = renderProfile.enabled;
+		if (profiling) renderProfile.bump('frames');
+		let mark = profileNow();
+
 		ctx.setTransform(1, 0, 0, 1, 0, 0);
 		ctx.fillStyle = this.palette.bg;
 		ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
 		this.drawGrid(ctx, camera, view.width, view.height, dpr);
+		if (profiling) renderProfile.add('bg+grid', profileNow() - mark);
 
 		// viewport culling (§19)
+		mark = profileNow();
 		const [wx0, wy0] = screenToWorld(0, 0, camera);
 		const [wx1, wy1] = screenToWorld(view.width, view.height, camera);
 		const visible = engine.store.queryViewport({
@@ -125,14 +141,43 @@ export class Renderer {
 			width: wx1 - wx0,
 			height: wy1 - wy0
 		});
+		if (profiling) {
+			renderProfile.add('query+sort', profileNow() - mark);
+			renderProfile.bump('visible', visible.length);
+		}
 
+		mark = profileNow();
 		ctx.save();
 		ctx.setTransform(dpr * camera.zoom, 0, 0, dpr * camera.zoom, dpr * camera.x, dpr * camera.y);
+		const options = {
+			getImage: (src: string) => this.imageSource(src, camera.zoom),
+			theme,
+			zoom: camera.zoom
+		};
 		for (const obj of visible) {
 			if (obj.id === excludeId) continue;
-			renderObject(ctx, obj, { getImage: (src) => this.getImage(src), theme });
+			if (profiling) {
+				const objectStart = profileNow();
+				renderObject(ctx, obj, options);
+				renderProfile.add(`render:${obj.type}`, profileNow() - objectStart);
+			} else {
+				renderObject(ctx, obj, options);
+			}
+		}
+
+		// M3-05: objects dragged without a spatial re-sync are drawn even when
+		// the stale index says they left the viewport.
+		const deferred = engine.store.deferredObjects();
+		if (deferred.length > 0) {
+			const seen = new Set<string>();
+			for (const obj of visible) seen.add(obj.id);
+			for (const obj of deferred) {
+				if (obj.id === excludeId || seen.has(obj.id)) continue;
+				renderObject(ctx, obj, options);
+			}
 		}
 		ctx.restore();
+		if (profiling) renderProfile.add('render:total', profileNow() - mark);
 	}
 
 	private paintStatic(
@@ -185,9 +230,11 @@ export class Renderer {
 		this.subscribedStore = null;
 		this.staticCanvas = null;
 		this.staticKey = null;
+		this.images.clear();
 	}
 
-	private getImage(src: string): HTMLImageElement | undefined {
+	/** Resolve `asset:` sources and serve a ready decoded image (M3-03/M3-04). */
+	private imageSource(src: string, zoom: number): CanvasImageSource | undefined {
 		let url = src;
 		if (isAssetSrc(src)) {
 			const cached = cachedAssetUrl(src);
@@ -198,13 +245,7 @@ export class Renderer {
 			}
 			url = cached;
 		}
-		let img = this.imageCache.get(url);
-		if (!img) {
-			img = new Image();
-			img.src = url;
-			this.imageCache.set(url, img);
-		}
-		return img;
+		return this.images.getForZoom(url, zoom);
 	}
 
 	private worldToScreen(camera: CameraState, wx: number, wy: number): [number, number] {

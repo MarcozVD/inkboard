@@ -7,11 +7,13 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { boardExtent, generateBoard } from './generator';
 import type { BenchBridge, BenchMemory } from '../src/lib/board/benchBridge';
+import type { RenderProfile } from '../src/lib/canvas/renderProfile';
 import type { CanvasObject, CameraState } from '../src/lib/objects/types';
 
 declare global {
 	interface Window {
 		__inkboard?: BenchBridge;
+		__renderProfile?: RenderProfile;
 		__pen?: { samples: number[]; pending: number | null; running: boolean };
 		__longTasks?: { start: number; duration: number }[];
 	}
@@ -176,6 +178,11 @@ async function measureMarquee(page: Page, expected: number): Promise<number> {
 	await page.mouse.move(box.x + 4, box.y + 4);
 	await page.mouse.down();
 	await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4, { steps: 6 });
+	// let the drag frames drain so the timer measures the release path only
+	await page.evaluate(
+		() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+	);
+	await page.waitForTimeout(50);
 	const start = performance.now();
 	await page.mouse.up();
 	await page.waitForFunction((count) => (window.__inkboard?.selectionCount() ?? 0) >= count, expected, {
@@ -282,11 +289,75 @@ test('M3-01 baseline — synthetic 2k/5k/10k boards', async ({ page, browser }) 
 		zoom[`${size}`] = stats(await measureFrames(page, 'zoom', FRAMES));
 		console.log(`[bench] ${size} pan fps=${pan[`${size}`].fps.toFixed(1)} zoom fps=${zoom[`${size}`].fps.toFixed(1)}`);
 
+		if (size === 2000) {
+			await fitCamera(page, size);
+			const profile = await page.evaluate(async () => {
+				const prof = window.__renderProfile;
+				const api = window.__inkboard;
+				if (!prof || !api) return null;
+				prof.enabled = true;
+				prof.reset();
+				await new Promise<void>((resolve) => {
+					const start = api.camera();
+					let frame = 0;
+					const step = () => {
+						frame++;
+						api.setCamera({
+							x: start.x + Math.sin(frame / 18) * 400,
+							y: start.y + Math.cos(frame / 24) * 250
+						});
+						if (frame >= 120) resolve();
+						else requestAnimationFrame(step);
+					};
+					requestAnimationFrame(step);
+				});
+				prof.enabled = false;
+				return { top: prof.top(15), counters: { ...prof.counters } };
+			});
+			if (profile) {
+				results.profile2kPan = profile;
+				console.log('[bench] profile 2k pan (per frame, ms):');
+				for (const row of profile.top.slice(0, 8)) {
+					console.log(
+						`  ${row.phase.padEnd(16)} perFrame=${row.perFrame.toFixed(2)} total=${row.total.toFixed(1)} max=${row.max.toFixed(2)}`
+					);
+				}
+				console.log(`  visible/frame=${((profile.counters.visible ?? 0) / (profile.counters.frames || 1)).toFixed(0)}`);
+			}
+		}
+
 		if (size === 5000) {
 			await fitCamera(page, size);
 			const pen = stats(await measurePen(page));
 			await fitCamera(page, size);
+			await page.evaluate(() => {
+				const prof = window.__renderProfile;
+				if (prof) {
+					prof.enabled = true;
+					prof.reset();
+				}
+			});
 			const marqueeMs = await measureMarquee(page, size);
+			const marqueeProfile = await page.evaluate(() => {
+				const prof = window.__renderProfile;
+				if (!prof) return null;
+				prof.enabled = false;
+				return {
+					top: prof.top(6),
+					select: prof.phases['select:rect'] ?? null,
+					ctxbar: prof.phases['ui:ctxbar'] ?? null
+				};
+			});
+			if (marqueeProfile) {
+				results.marqueeProfile = marqueeProfile;
+				console.log('[bench] marquee 5k profile:');
+				for (const row of marqueeProfile.top) {
+					console.log(`  ${row.phase.padEnd(16)} total=${row.total.toFixed(1)} count=${row.count}`);
+				}
+				console.log(
+					`  select:rect=${marqueeProfile.select?.total.toFixed(1) ?? 'n/a'}ms ui:ctxbar=${marqueeProfile.ctxbar?.total.toFixed(1) ?? 'n/a'}ms`
+				);
+			}
 			const autosave = await measureAutosave(page);
 			const memory: BenchMemory | null = await page.evaluate(() => window.__inkboard?.memory() ?? null);
 			results.pen = pen;

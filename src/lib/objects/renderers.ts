@@ -1,6 +1,7 @@
 // Object renderers — Canvas 2D drawing for every object type (§3).
 import { wrapText } from '$lib/objects/textLayout';
 import { strokeOutlinePath } from '$lib/objects/strokeCache';
+import { isLowDetail, textAsBars } from '$lib/canvas/lod';
 import { resolveColor, type ResolvedTheme } from '$lib/objects/colors';
 import type {
 	CanvasObject,
@@ -20,17 +21,23 @@ import type {
 export function renderObject(
 	ctx: CanvasRenderingContext2D,
 	obj: CanvasObject,
-	opts: { getImage?: (src: string) => HTMLImageElement | undefined; theme?: ResolvedTheme } = {}
+	opts: {
+		getImage?: (src: string) => CanvasImageSource | undefined;
+		theme?: ResolvedTheme;
+		/** current zoom for level-of-detail decisions (M3-04); default 1 */
+		zoom?: number;
+	} = {}
 ): void {
 	if (!obj.visible) return;
 	const theme = opts.theme ?? 'dark';
+	const zoom = opts.zoom ?? 1;
 
 	// Geometric types (stroke, connector) store world-space coords directly in
 	// their points/points, so they must NOT receive the local transform.
 	if (obj.type === 'stroke' || obj.type === 'connector') {
 		ctx.save();
 		ctx.globalAlpha = obj.style.opacity ?? 1;
-		if (obj.type === 'stroke') renderStroke(ctx, obj, theme);
+		if (obj.type === 'stroke') renderStroke(ctx, obj, theme, zoom);
 		else renderConnector(ctx, obj, theme);
 		ctx.restore();
 		return;
@@ -54,10 +61,10 @@ export function renderObject(
 			renderShape(ctx, obj, theme);
 			break;
 		case 'text':
-			renderText(ctx, obj, theme);
+			renderText(ctx, obj, theme, zoom);
 			break;
 		case 'sticky_note':
-			renderStickyNote(ctx, obj);
+			renderStickyNote(ctx, obj, zoom);
 			break;
 		case 'image':
 			renderImage(ctx, obj, opts.getImage);
@@ -70,7 +77,7 @@ export function renderObject(
 
 // ── Stroke ──
 
-function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject, theme: ResolvedTheme) {
+function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject, theme: ResolvedTheme, zoom: number) {
 	const pts = s.points;
 	if (pts.length < 4) return;
 
@@ -83,6 +90,19 @@ function renderStroke(ctx: CanvasRenderingContext2D, s: StrokeObject, theme: Res
 		ctx.globalAlpha = (style.opacity ?? 1) * 0.4;
 	}
 	if (style.compositeOperation) ctx.globalCompositeOperation = style.compositeOperation;
+
+	// M3-04: at low zoom a cheap polyline replaces the cached outline
+	if (isLowDetail(zoom)) {
+		ctx.lineCap = 'round';
+		ctx.lineJoin = 'round';
+		ctx.lineWidth = Math.max(style.width, 1 / Math.max(zoom, 0.0001));
+		ctx.beginPath();
+		ctx.moveTo(pts[0], pts[1]);
+		for (let i = 3; i < pts.length; i += 3) ctx.lineTo(pts[i], pts[i + 1]);
+		ctx.stroke();
+		ctx.restore();
+		return;
+	}
 
 	// M3-02: outline (and its perfect-freehand computation) is cached per stroke
 	const path = strokeOutlinePath(s);
@@ -214,9 +234,25 @@ function drawArrowHead(ctx: CanvasRenderingContext2D, w: number, h: number, colo
 
 // ── Text ──
 
-function renderText(ctx: CanvasRenderingContext2D, t: TextObject, theme: ResolvedTheme) {
+function renderText(ctx: CanvasRenderingContext2D, t: TextObject, theme: ResolvedTheme, zoom: number) {
 	const style = t.style;
 	const size = style.fontSize;
+
+	// M3-04: sub-3px text becomes bars at low zoom
+	if (isLowDetail(zoom) && textAsBars(size, zoom)) {
+		ctx.save();
+		ctx.fillStyle = resolveColor(style.color, theme);
+		const lineHeight = size * (style.lineHeight || 1.3);
+		const lineCount = t.content.split('\n').length;
+		const barWidth = Math.max(4, t.transform.width);
+		const barHeight = Math.max(1, size * 0.7);
+		for (let i = 0; i < lineCount; i++) {
+			ctx.fillRect(0, i * lineHeight + lineHeight * 0.15, barWidth, barHeight);
+		}
+		ctx.restore();
+		return;
+	}
+
 	ctx.save();
 	ctx.font = `${style.fontStyle === 'italic' ? 'italic ' : ''}${style.fontWeight === 'bold' ? 'bold ' : ''}${size}px ${style.fontFamily}`;
 	ctx.fillStyle = resolveColor(style.color, theme);
@@ -254,7 +290,7 @@ export function stickyNoteColors(): string[] {
 	return STICKY_NOTE_COLORS;
 }
 
-function renderStickyNote(ctx: CanvasRenderingContext2D, n: StickyNoteObject) {
+function renderStickyNote(ctx: CanvasRenderingContext2D, n: StickyNoteObject, zoom = 1) {
 	const { width: w, height: h } = n.transform;
 	const style = n.style;
 	ctx.save();
@@ -275,7 +311,20 @@ function renderStickyNote(ctx: CanvasRenderingContext2D, n: StickyNoteObject) {
 	ctx.closePath();
 	ctx.fill();
 
-	// text
+	// text (M3-04: bars instead of glyphs when it would be sub-3px)
+	if (isLowDetail(zoom) && textAsBars(style.fontSize, zoom)) {
+		ctx.fillStyle = style.textColor;
+		const lineHeight = style.fontSize * 1.3;
+		const lineCount = n.content.split('\n').length;
+		const barWidth = Math.max(4, w - style.padding * 2);
+		const barHeight = Math.max(1, style.fontSize * 0.6);
+		for (let i = 0; i < lineCount; i++) {
+			ctx.fillRect(style.padding, style.padding + i * lineHeight, barWidth, barHeight);
+		}
+		ctx.restore();
+		return;
+	}
+
 	ctx.font = `${style.fontSize}px ${style.fontFamily}`;
 	ctx.fillStyle = style.textColor;
 	ctx.textBaseline = 'top';
@@ -292,19 +341,20 @@ function renderStickyNote(ctx: CanvasRenderingContext2D, n: StickyNoteObject) {
 function renderImage(
 	ctx: CanvasRenderingContext2D,
 	img: ImageObject,
-	getImage?: (src: string) => HTMLImageElement | undefined
+	getImage?: (src: string) => CanvasImageSource | undefined
 ) {
 	const { width: w, height: h } = img.transform;
 	if (w <= 0 || h <= 0) return;
 
 	const el = getImage?.(img.src);
-	if (el && el.complete && el.naturalWidth > 0) {
+	const size = imageSourceSize(el);
+	if (el && size) {
 		const crop = img.cropRect;
 		if (crop) {
-			const sx = (crop.x / img.originalWidth) * el.naturalWidth;
-			const sy = (crop.y / img.originalHeight) * el.naturalHeight;
-			const sw = (crop.w / img.originalWidth) * el.naturalWidth;
-			const sh = (crop.h / img.originalHeight) * el.naturalHeight;
+			const sx = (crop.x / img.originalWidth) * size.width;
+			const sy = (crop.y / img.originalHeight) * size.height;
+			const sw = (crop.w / img.originalWidth) * size.width;
+			const sh = (crop.h / img.originalHeight) * size.height;
 			ctx.drawImage(el, sx, sy, sw, sh, 0, 0, w, h);
 		} else {
 			ctx.drawImage(el, 0, 0, w, h);
@@ -316,6 +366,21 @@ function renderImage(
 		ctx.strokeStyle = 'rgba(128,128,128,0.5)';
 		ctx.strokeRect(0, 0, w, h);
 	}
+}
+
+/** Natural size of a drawable image, or null while it is not ready. */
+function imageSourceSize(source: CanvasImageSource | undefined): { width: number; height: number } | null {
+	if (!source) return null;
+	if (typeof HTMLImageElement !== 'undefined' && source instanceof HTMLImageElement) {
+		return source.complete && source.naturalWidth > 0
+			? { width: source.naturalWidth, height: source.naturalHeight }
+			: null;
+	}
+	const sized = source as { width?: number; height?: number };
+	if (sized.width && sized.height && sized.width > 0) {
+		return { width: sized.width, height: sized.height };
+	}
+	return null;
 }
 
 // ── Connector ──

@@ -14,6 +14,9 @@ type MeasurableStyle = {
 
 let measuringCtx: CanvasRenderingContext2D | null | undefined;
 const widthCache = new Map<string, number>();
+/** Wrap results are stable per (font, width, content) — cache them (M3-03). */
+const wrapCache = new Map<string, string[]>();
+const WRAP_CACHE_MAX = 4000;
 
 function getMeasuringContext(): CanvasRenderingContext2D | null {
 	if (measuringCtx !== undefined) return measuringCtx;
@@ -52,6 +55,19 @@ export function measureText(text: string, style: MeasurableStyle): number {
 
 /** Word-wrap `content` to `maxWidth` world px (keeps explicit newlines). */
 export function wrapText(content: string, maxWidth: number, style: MeasurableStyle): string[] {
+	const key = `${fontString(style as TextStyle)}|${maxWidth.toFixed(2)}|${content}`;
+	const cached = wrapCache.get(key);
+	if (cached) return cached;
+	const lines = computeWrap(content, maxWidth, style);
+	if (wrapCache.size >= WRAP_CACHE_MAX) {
+		const oldest = wrapCache.keys().next().value;
+		if (oldest !== undefined) wrapCache.delete(oldest);
+	}
+	wrapCache.set(key, lines);
+	return lines;
+}
+
+function computeWrap(content: string, maxWidth: number, style: MeasurableStyle): string[] {
 	const lines: string[] = [];
 	for (const paragraph of content.split('\n')) {
 		if (!paragraph || maxWidth <= 0) {
@@ -71,6 +87,16 @@ export function wrapText(content: string, maxWidth: number, style: MeasurableSty
 		lines.push(current);
 	}
 	return lines;
+}
+
+/** Drop the measurement + wrap caches (tests / hard resets). */
+export function clearTextLayoutCache(): void {
+	widthCache.clear();
+	wrapCache.clear();
+}
+
+export function textLayoutCacheSize(): number {
+	return wrapCache.size;
 }
 
 export interface TextLayout {

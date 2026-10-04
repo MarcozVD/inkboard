@@ -15,6 +15,8 @@ export class ObjectStore {
 	private objects = new Map<string, CanvasObject>();
 	private spatial = new SpatialIndex();
 	private nextZ = 0;
+	/** ids mutated without a spatial re-sync (M3-05 drag) */
+	private deferred = new Set<string>();
 
 	/** Listeners receive a summary of the last mutation batch. */
 	private listeners = new Set<(ev: ObjectStoreEvent) => void>();
@@ -77,6 +79,7 @@ export class ObjectStore {
 		const obj = this.objects.get(id);
 		if (!obj) return false;
 		this.objects.delete(id);
+		this.deferred.delete(id);
 		this.spatial.remove(id, getObjectBounds(obj));
 		this.emit({ added: [], modified: [], removed: [id] });
 		return true;
@@ -88,6 +91,7 @@ export class ObjectStore {
 			const obj = this.objects.get(id);
 			if (!obj) continue;
 			this.objects.delete(id);
+			this.deferred.delete(id);
 			this.spatial.remove(id, getObjectBounds(obj));
 			removed.push(id);
 		}
@@ -110,11 +114,16 @@ export class ObjectStore {
 
 	/** Viewport culling candidates (§19), in paint order (zIndex ascending). */
 	queryViewport(viewport: Rect): CanvasObject[] {
-		return this.spatial
-			.queryViewport(viewport)
-			.map((id) => this.objects.get(id)!)
-			.filter(Boolean)
-			.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+		const ids = this.spatial.queryViewport(viewport);
+		const out: CanvasObject[] = new Array(ids.length);
+		let count = 0;
+		for (const id of ids) {
+			const obj = this.objects.get(id);
+			if (obj) out[count++] = obj;
+		}
+		out.length = count;
+		out.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+		return out;
 	}
 
 	/** Candidates for point hit-testing (§14) */
@@ -247,11 +256,41 @@ export class ObjectStore {
 		for (const id of ids) {
 			const obj = this.objects.get(id);
 			if (!obj) continue;
+			this.deferred.delete(id);
 			this.spatial.remove(id, getObjectBounds(obj));
 			this.spatial.insert(id, getObjectBounds(obj));
 			modified.push(id);
 		}
 		if (modified.length) this.emit({ added: [], modified, removed: [] });
+	}
+
+	/**
+	 * Emit a change for objects whose geometry moved without re-syncing the
+	 * spatial index. The renderer still draws them via `deferredObjects`;
+	 * `notifyMoved` flushes the index once at gesture end (§M3-05).
+	 */
+	markChanged(ids: string[]): void {
+		const modified: string[] = [];
+		for (const id of ids) {
+			const obj = this.objects.get(id);
+			if (!obj) continue;
+			obj.updatedAt = Date.now();
+			this.deferred.add(id);
+			modified.push(id);
+		}
+		if (modified.length) this.emit({ added: [], modified, removed: [] });
+	}
+
+	/** Objects mutated without a spatial re-sync, for unculled drawing. */
+	deferredObjects(): CanvasObject[] {
+		if (this.deferred.size === 0) return [];
+		const out: CanvasObject[] = [];
+		for (const id of this.deferred) {
+			const obj = this.objects.get(id);
+			if (obj) out.push(obj);
+		}
+		out.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+		return out;
 	}
 
 	/**
@@ -272,6 +311,7 @@ export class ObjectStore {
 
 	clear(): void {
 		this.objects.clear();
+		this.deferred.clear();
 		this.spatial.clear();
 		this.nextZ = 0;
 		this.emit({ added: [], modified: [], removed: [] });

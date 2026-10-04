@@ -89,7 +89,11 @@ export class BoardRuntime {
 			dpr: () => this.input.dpr,
 			view: host.getView,
 			theme: host.getTheme,
-			liveObjectId: () => this.engine.liveObjectId
+			liveObjectId: () => this.engine.liveObjectId,
+			onContentReady: () => {
+				this.renderer.invalidateStatic();
+				this.markDirty();
+			}
 		});
 		this.renderLoop = new RenderLoop(() => this.renderer.render());
 		// M2-05: repaint once a background asset load finishes (M3-02: static layer too)

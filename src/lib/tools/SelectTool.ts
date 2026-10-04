@@ -10,6 +10,7 @@ import type { CanvasObject, Transform } from '$lib/objects/types';
 import type { Rect, Vec2 } from '$lib/utils/math';
 import { toBBox } from '$lib/utils/math';
 import { UpdateTransformCommand } from '$lib/canvas/commands';
+import { profileNow, renderProfile } from '$lib/canvas/renderProfile';
 import {
 	applyGeometry,
 	captureGeometry,
@@ -37,6 +38,8 @@ export class SelectTool extends BaseTool {
 	private startBounds: Rect | null = null;
 	private activeHandle: HandleId | null = null;
 	private rectStart: Vec2 = { x: 0, y: 0 };
+	/** shift state captured during the marquee (pointerup carries none) */
+	private rectShift = false;
 	private moved = false;
 	/** group the user has entered with a double click (one nesting level) */
 	private enteredGroupId: string | null = null;
@@ -138,19 +141,25 @@ export class SelectTool extends BaseTool {
 				this.applyRotate(world, shift);
 				break;
 			case 'rect-select':
-				this.applyRectSelect(world, shift);
+				// M3-05: only the marquee moves; the selection is computed on release
+				this.rectShift = shift;
 				break;
 		}
 		this.ctx.onDirty();
 	}
 
 	pointerUp(_e: ToolPointerEvent): void {
-		if (this.mode === 'rect-select' && !this.moved) {
-			// simple click on empty space → clear selection
-			this.sel.clear();
-			this.cb.onSelectionChange?.([]);
-		}
-		if (this.mode !== 'idle' && this.mode !== 'rect-select' && this.moved) {
+		if (this.mode === 'rect-select') {
+			if (!this.moved) {
+				// simple click on empty space → clear selection
+				this.sel.clear();
+				this.cb.onSelectionChange?.([]);
+			} else {
+				// M3-05: the rect selection is computed once, on release
+				this.applyRectSelect(this.lastWorld, this.rectShift);
+			}
+		} else if (this.mode !== 'idle' && this.moved) {
+			// the transform command re-syncs the spatial index once (M3-05)
 			this.commitTransform();
 			this.ctx.onGestureEnd?.();
 		}
@@ -163,6 +172,9 @@ export class SelectTool extends BaseTool {
 
 	/** Called when the tool is deselected mid-gesture — drop any transient state. */
 	reset(): void {
+		if (this.startGeometries.size > 0) {
+			this.ctx.store.notifyMoved([...this.startGeometries.keys()]);
+		}
 		this.mode = 'idle';
 		this.activeHandle = null;
 		this.startGeometries.clear();
@@ -228,7 +240,7 @@ export class SelectTool extends BaseTool {
 			}
 			obj.updatedAt = Date.now();
 		}
-		this.ctx.store.notifyMoved(this.sel.selected);
+		this.ctx.store.markChanged(this.sel.selected);
 	}
 
 	private applyResize(world: Vec2, shift: boolean): void {
@@ -240,7 +252,7 @@ export class SelectTool extends BaseTool {
 			const start = this.startGeometries.get(selId);
 			if (obj && start && !obj.locked && obj.type !== 'stroke' && obj.type !== 'connector') {
 				this.applySingleResize(obj, start.transform, world, shift);
-				this.ctx.store.notifyMoved(this.sel.selected);
+				this.ctx.store.markChanged(this.sel.selected);
 				return;
 			}
 		}
@@ -294,7 +306,7 @@ export class SelectTool extends BaseTool {
 			}
 			obj.updatedAt = Date.now();
 		}
-		this.ctx.store.notifyMoved(this.sel.selected);
+		this.ctx.store.markChanged(this.sel.selected);
 	}
 
 	/** Resize a single object along its local axes; crossing an edge flips it (§M1-13). */
@@ -350,7 +362,7 @@ export class SelectTool extends BaseTool {
 			rotateObject(obj, c, delta);
 			obj.updatedAt = Date.now();
 		}
-		this.ctx.store.notifyMoved(this.sel.selected);
+		this.ctx.store.markChanged(this.sel.selected);
 	}
 
 	private applyRectSelect(world: Vec2, shift: boolean): void {
@@ -360,9 +372,11 @@ export class SelectTool extends BaseTool {
 			width: Math.abs(world.x - this.rectStart.x),
 			height: Math.abs(world.y - this.rectStart.y)
 		};
+		const started = profileNow();
 		this.sel.selectInRect(rect, shift);
 		// a hit on a group member selects the whole group
 		this.sel.selectMany(expandSelection(this.ctx.store, this.sel.selected), true);
+		if (renderProfile.enabled) renderProfile.add('select:rect', profileNow() - started);
 		this.cb.onSelectionChange?.(this.sel.selected);
 	}
 

@@ -13,6 +13,7 @@
 	import { createStyleBridge } from '$lib/board/styleBridge.svelte';
 	import { createClipboard } from '$lib/board/clipboard';
 	import { createZoomActions } from '$lib/board/zoomActions';
+	import { profileNow, renderProfile } from '$lib/canvas/renderProfile';
 	import { resolveDoubleClick, groupSelection, ungroupSelection } from '$lib/board/groups';
 	import { toggleLockSelection } from '$lib/board/lock';
 	import { nudgeSelection } from '$lib/board/nudge';
@@ -141,8 +142,10 @@
 		markDirty();
 	};
 	function updateCtxBar() {
+		const started = profileNow();
 		ctxBar = engine ? buildSelectionToolbar(engine, camera, deps) : null;
 		styles.touch();
+		if (renderProfile.enabled) renderProfile.add('ui:ctxbar', profileNow() - started);
 	}
 	function onDblClick(e: MouseEvent) {
 		if (!engine || !runtime || activeTool !== 'select') return;

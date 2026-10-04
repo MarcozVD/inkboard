@@ -7,6 +7,7 @@ const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8B
 
 async function createBoard(page: Page): Promise<string> {
 	await page.goto('/');
+	await page.waitForSelector('body[data-ready="true"]', { timeout: 30_000 });
 	await page.getByTestId('new-board').click();
 	await page.waitForURL(/\/board\/[0-9a-f-]{36,}/);
 	const url = page.url();

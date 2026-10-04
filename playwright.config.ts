@@ -1,6 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
+	// Warm Vite (dep discovery can reload the page) before the first test.
+	globalSetup: './e2e/global-setup.ts',
 	// Inkboard dev server runs on port 1420 (Tauri requirement).
 	// Playwright hits the Vite dev server directly.
 	use: {

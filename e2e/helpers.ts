@@ -43,9 +43,15 @@ export interface Point {
 	y: number;
 }
 
+/** Wait until SvelteKit mounted the app (hydration signal, M4-CI fix). */
+export async function waitForAppReady(page: Page): Promise<void> {
+	await page.waitForSelector('body[data-ready="true"]', { timeout: 30_000 });
+}
+
 /** Create a board from Home and return its id. */
 export async function createBoard(page: Page): Promise<string> {
 	await page.goto('/');
+	await waitForAppReady(page);
 	await page.getByTestId('new-board').click();
 	await page.waitForURL(/\/board\/[0-9a-f-]{36,}/);
 	await page.locator('canvas.board-canvas').waitFor({ state: 'visible' });
@@ -54,6 +60,7 @@ export async function createBoard(page: Page): Promise<string> {
 
 export async function openBoard(page: Page, id: string): Promise<void> {
 	await page.goto(`/board/${id}/`);
+	await waitForAppReady(page);
 	await page.locator('canvas.board-canvas').waitFor({ state: 'visible' });
 }
 

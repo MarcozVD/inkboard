@@ -57,7 +57,7 @@
 
 - **`BoardCanvas.svelte` era un monolito de 1235 líneas** (render, input, atajos, autosave, import/export, menús y paleta). M1-01 lo partió en `canvas/Renderer.ts`, `input/InputController.ts`, `board/BoardRuntime.ts`, `board/BoardSession.ts`, `board/boardInteractions.ts` e `io/transfer.ts`, más los componentes `BoardChrome`, `CanvasHint`, `ExportMenu` y `ToolPalette`: ahora son 396 líneas de composición. Ahí siguen viviendo B07, B14 y B17, y parte de B12.
 - **Sin `store.*` fuera de los comandos:** desde M1-02 todo pasa por `engine.execute(cmd)` → store → historial → autosave → render, y `HistoryManager` agrupa (batch/transacción) o revierte (rollback) los pasos múltiples.
-- **Rendimiento:** `perfect-freehand` ya no corre por frame: hay un `Path2D` por trazo cacheado e invalidado por versión (M3-02), y durante un gesto de dibujo la escena estática se pinta una vez en un canvas offscreen y solo se repinta el objeto activo. Lo que queda pendiente de medir está en la tabla *Baseline 2026-10-04* de §19: RNF-01 (60 FPS con 2k) todavía no se cumple. El autosave sigue serializando el board entero, pero ya no lleva los bytes de las imágenes: van al almacén de assets y el JSON solo carga con `asset:<hash>` (M2-05). Los comandos Tauri pesados ya no bloquean el hilo principal: son `async` y el trabajo de SQLite va por `spawn_blocking` (M2-01).
+- **Rendimiento:** `perfect-freehand` ya no corre por frame: hay un `Path2D` por trazo cacheado e invalidado por versión (M3-02), y durante un gesto de dibujo la escena estática se pinta una vez en un canvas offscreen y solo se repinta el objeto activo. Desde M3-03…05 el layout de texto está cacheado, las imágenes se decodifican una sola vez en `ImageBitmap` con LRU por memoria, hay LOD por debajo de zoom 0,25 y el arrastre ya no reindexa el RBush en cada `pointermove`; con eso el render interno de un pan con 2k baja de 12,9 a 8,8 ms por frame y el headless mide 57–66 FPS, o sea **RNF-01 prácticamente cumplido en headless**. Lo que queda abierto está en la tabla *Baseline 2026-10-04* de §19: el autosave sigue serializando el board entero (aunque desde M2-05 ya no lleva los bytes de las imágenes: van al almacén de assets y el JSON solo carga con `asset:<hash>`) y el 5k todavía está lejos de 60 FPS. Los comandos Tauri pesados ya no bloquean el hilo principal: son `async` y el trabajo de SQLite va por `spawn_blocking` (M2-01).
 - **Seguridad:** el import ya no acepta rutas del webview (M2-08): Rust abre el diálogo nativo (`import_pick`) y lee el archivo él mismo, comprueba los ≤ 100 MB por metadata antes de leer un byte, acota los ZIP por entrada con `size()` + `take()` y por número de entradas, y re-encodea cada imagen importada con el crate `image` (JPEG sigue JPEG, el resto a PNG; SVG pasa sin tocar). La CSP de `tauri.conf.json` ya no es `null` y los permisos `fs:default` y `dialog:default` se quitaron de las capabilities; **la CSP se verificó a mano en la app de escritorio y funciona** (el board carga y pinta, exportar e importar funcionan y no se pide nada remoto).
 - ~~**Tema:**~~ resuelto en M1-10 (D1 opción b): fondo, grid, overlay y colores por defecto salen de los tokens CSS, `system` sigue a `prefers-color-scheme` en vivo, el tema se persiste y se aplica al arrancar, y la tinta por defecto es el valor semántico `ink` que se resuelve por tema.
 - ~~**Sin UI de estilo:**~~ resuelta en M1-03: ContextToolbar y popover del ToolBar editan color, grosor, fill, stroke, dash, radio, opacidad y tipografía, cada cambio pasa por `UpdateStyle` y el último estilo se recuerda por tool.
@@ -162,7 +162,7 @@ Mouse, teclado, touch (multi-touch), pen/stylus (Pointer Events API). Presión c
 
 | ID | Requisito | Objetivo medible |
 |----|-----------|-----------------|
-| RNF-01 | Framerate | ≥ 60 FPS en operaciones normales con ≤ 2.000 objetos — **medido 27,2 FPS con 2k tras M3-02: pendiente** (ver §19) |
+| RNF-01 | Framerate | ≥ 60 FPS en operaciones normales con ≤ 2.000 objetos — **prácticamente cumplido en headless tras M3-05**: 57,6–66,2 FPS medidos con 2k, todavía por confirmar en la app de escritorio con GPU (ver §19) |
 | RNF-02 | Latencia de dibujo | < 16 ms desde evento pointer hasta trazo visible — **cumplido desde M3-02**: p50 0,5 ms y p95 1 ms medidos (ver §19) |
 | RNF-03 | Carga inicial | < 2 s para tablero con 500 objetos |
 | RNF-04 | Memoria | < 300 MB RSS en tablero con 5.000 objetos |
@@ -1182,6 +1182,7 @@ El renderizador solo ejecuta cuando hay cambios (`isDirty = true`). Esto elimina
 | Dibujo a lápiz (latencia) | < 16 ms | `perf:pen-latency` |
 | Carga de board con 1k objetos | < 1 s | `perf:load-1k` |
 | Selección rect con 5k objetos | < 50 ms | `perf:select-5k` |
+| Arrastre de 1.000 objetos | ≥ 50 FPS | `perf:drag-1k` (escenario pendiente, ver M3-05) |
 | Autosave board 5k objetos | < 500 ms (background) | `perf:autosave-5k` |
 | Autosave board 5k objetos | sin long tasks > 50 ms (RNF-05) | `perf:autosave-5k` |
 | Memoria (heap JS) con 5k objetos | < 300 MB (RNF-04) | `perf:mem-5k` |
@@ -1191,22 +1192,43 @@ El renderizador solo ejecuta cuando hay cambios (`isDirty = true`). Esto elimina
 
 Medido con `pnpm bench` (`bench/harness.bench.ts`); el JSON con todos los percentiles queda en `bench/results/<timestamp>.json`, fuera de git. Máquina de referencia: Windows 11 (10.0.26200), **Chromium headless 151.0.7922.34**, DPR 1, i5-12450HX (12 núcleos), 24 GB, Node 22.19.
 
-| Métrica | Objetivo | Baseline 2026-10-04 (M3-01) | Tras M3-02 | Estado |
-|---------|----------|------------------------------|-----------|--------|
-| Pan (FPS) | ≥ 60 con 2k | 2k 21,1 · 5k 9,1 · 10k 4,9 | 2k **27,2** · 5k **13,1** · 10k **7,4** | ❌ |
-| Zoom (FPS) | ≥ 60 con 2k | 2k 15,8 · 5k 7,3 · 10k 4,0 | 2k **21,7** · 5k **10,7** · 10k **6,2** | ❌ |
-| Latencia del lápiz (pointer → frame pintado) | < 16 ms | p50 87,5 ms · p95 92,4 ms | p50 **0,5 ms** · p95 **1 ms** | ✅ (RNF-02) |
-| Carga de 1k objetos | < 1 s | 479 ms | ~500 ms | ✅ |
-| Marquee con 5k objetos | < 50 ms | 234 ms | **131 ms** | ❌ |
-| Autosave de 5k objetos | sin long tasks > 50 ms | 118 ms en 2 long tasks (la mayor de 60 ms) | long task mayor de **56 ms** | ❌ |
-| Heap JS con 5k objetos | < 300 MB | 79 MB | sin medir | ✅ |
-| RSS del proceso | (sin objetivo) | no medido por el harness | sin medir | — |
+| Métrica | Objetivo | Baseline 2026-10-04 (M3-01) | Tras M3-02 | Tras M3-05 | Estado |
+|---------|----------|------------------------------|-----------|-----------|--------|
+| Pan (FPS) | ≥ 60 con 2k | 2k 21,1 · 5k 9,1 · 10k 4,9 | 2k **27,2** · 5k **13,1** · 10k **7,4** | 2k **57,6** (57,6–66,2 según corrida) · 5k **22,2** · 10k **11,8** | 🟡 prácticamente (RNF-01) |
+| Zoom (FPS) | ≥ 60 con 2k | 2k 15,8 · 5k 7,3 · 10k 4,0 | 2k **21,7** · 5k **10,7** · 10k **6,2** | 2k **40,1** · 5k **16,8** · 10k **8,9** | ❌ |
+| Latencia del lápiz (pointer → frame pintado) | < 16 ms | p50 87,5 ms · p95 92,4 ms | p50 **0,5 ms** · p95 **1 ms** | p50 **0,4 ms** | ✅ (RNF-02) |
+| Carga de 1k objetos | < 1 s | 479 ms | ~500 ms | ~550 ms | ✅ |
+| Marquee con 5k objetos | < 50 ms | 234 ms | **131 ms** | **105 ms** de pared; el cómputo de selección ya baja de 50 ms 🟡 | 🟡 el resto es un repintado completo |
+| Autosave de 5k objetos | sin long tasks > 50 ms | 118 ms en 2 long tasks (la mayor de 60 ms) | long task mayor de **56 ms** | long task mayor de **62 ms** | ❌ (M3-06) |
+| Heap JS con 5k objetos | < 300 MB | 79 MB | sin medir | **89 MB** | ✅ |
+| RSS del proceso | (sin objetivo) | no medido por el harness | sin medir | sin medir | — |
 
 > **Advertencia:** el Chromium headless rasteriza **por software** (sin GPU), así que los valores absolutos son pesimistas respecto a la app real de escritorio. Sirven como línea base para comparar ejecuciones entre sí (mismo hardware, misma configuración) y para ver qué mueve la aguja, no como cifras de producción.
 >
-> Tras M3-02 la latencia de lápiz está resuelta (RNF-02 cumplido) y el pan/zoom mejora entre un 30 % y un 55 %, pero **RNF-01 sigue lejos**: el frame time lo marcan todavía el número de objetos visibles y el trabajo de pintado por objeto, que son de M3-04 (LOD) y, si no basta, M3-07 (OffscreenCanvas). El long task del autosave es de M3-06. El marquee (234 ms → 131 ms) sigue sin dueño: sus números incluyen el viaje de ida y vuelta de Playwright y el sondeo del harness, así que son una cota superior, y hay que medirlo dentro de la app antes de abrir una M3-08.
+> Tras M3-05 el pan con 2k queda **prácticamente en el objetivo** (57,6–66,2 FPS): el render interno consume 8,8 ms de los ~16,7 ms que tiene un frame a 60 Hz, y lo que separa el framerate del 60 lleno es el resto del frame (eventos, reactividad de Svelte, compositing del headless). El RNF-01 queda como *prácticamente cumplido en headless* y falta confirmarlo en la app de escritorio con GPU antes de darlo por cerrado. El zoom y el 5k siguen lejos: con 5k objetos el coste está en el número de objetos visibles que hay que pintar, no en un comando concreto. El long task del autosave es de M3-06 y no se movió (los 56 ms de la columna M3-02 y los 62 ms de esta son la misma cifra con ruido).
 >
 > La columna "Tras M3-02" reutiliza el harness del M3-01 sin cambiar ni una línea (mismo Chromium headless, misma máquina) y el heap no se volvió a medir. Las diferencias de 1–2 FPS entre la columna baseline y el "antes" de esa corrida (20,7 vs 21,1 FPS en pan 2k, 7,6 vs 7,3 en zoom 5k) son ruido entre ejecuciones: leer el delta M3-02 → M3-02, no el delta contra cifras redondeadas.
+>
+> El **marquee** mejoró con M3-05 (la selección se calcula una sola vez al soltar, no en cada `pointermove`) y el harness ahora deja drenar los frames del arrastre antes de cronometrar, así que los 105 ms son solo el camino de soltura. El perfil separa el cómputo de la selección del repintado completo que dispara, y el cómputo por sí solo ya cumple el objetivo de 50 ms. Lo que no tiene dueño es el resto: si tras M3-06 el repintado completo sigue dominando, hace falta un escenario de arrastre en el harness (`perf:drag-1k`).
+>
+> El **heap** de 89 MB con 5k cumple el objetivo de heap, pero el RNF-04 está escrito sobre RSS y el harness no lo mide: esa parte sigue sin verificar.
+
+#### Perfil por fase (M3-05)
+
+El bench activa `canvas/renderProfile.ts`, un perfilador por fases **solo en DEV** (`window.__renderProfile`, se expone únicamente si `import.meta.env.DEV`), para saber qué fase mueve la aguja en vez de suponerlo. Mide `bg+grid`, `query+sort`, `render:<tipo>` por objeto, `render:total` y `overlay` en el `Renderer`, más `select:rect` en el marquee y `ui:ctxbar` en la reactividad de Svelte. Con `enabled = false` `profileNow()` devuelve 0 y el sobrecoste es despreciable.
+
+| Fase del pan con 2k objetos | ms/frame tras M3-05 |
+|-----------------------------|----------------------|
+| **Render interno (total)** | **8,8** (era 12,9 antes de optimizar) |
+| — trazos | 3,6 |
+| — formas | 1,4 |
+| — stickies | 1,4 |
+| — imágenes | 0,9 |
+| — query + sort | 0,75 |
+| — texto | 0,7 |
+| — fondo + grid | ~0 |
+
+> El desglose por fase es de la corrida ya optimizada: antes solo se tenía el total (12,9 ms/frame), que es justo el dato que justifica haber profileado en vez de suponer. Los trazos siguen siendo la fase más cara (3,6 ms de 8,8), pero ya no crecen con el zoom-out porque el LOD los degrada a polilínea. El perfil se puede pedir a mano en cualquier build DEV desde la consola del webview.
 
 ---
 
@@ -1559,9 +1581,9 @@ Primero medir, después optimizar. OffscreenCanvas solo si los números lo exige
 |----|-------|------------|------|
 | M3-01 ✅ | Harness de benchmarks: generador de boards sintéticos (2k/5k/10k objetos mixtos) y escenarios Playwright que miden el frame time de pan/zoom, la latencia del pen, la carga, las long tasks del autosave y la memoria. `pnpm bench` guarda los resultados en un JSON con timestamp (fuera de git). Hecho: `bench/generator.ts` genera tableros deterministas (PRNG mulberry32 con semilla fija, mezcla de 40 % trazos, 22 % formas, 15 % texto, 15 % stickies y 8 % imágenes) y `bench/harness.bench.ts` mide pan y zoom por deltas de rAF, latencia pointer → frame pintado, carga de 1k objetos desde `localStorage`, long tasks del autosave con `PerformanceObserver` y heap con `performance.memory`; cada resultado incluye la metadata de la máquina y del navegador. `pnpm bench` usa `bench/playwright.bench.config.ts` (propio `testDir`, un worker, sin retries, timeout de 20 min, `--disable-frame-rate-limit` y `--disable-gpu-vsync` para que el frame time mida coste real de render, y `--enable-precise-memory-info`), o sea queda **fuera de la suite E2E y de la CI**. Los JSON caen en `bench/results/` y `.gitignore` los excluye. El puente `board/benchBridge.ts` expone `window.__inkboard` (cargar objetos, mover la cámara, marcar dirty, forzar autosave, leer heap) y **solo se instala en builds DEV**, así que no existe en los bundles de producción. | Baseline registrado para cada fila de la tabla de §19 (ver *Baseline 2026-10-04*) | M |
 | M3-02 ✅ | Caché de contornos: un `Path2D` por trazo, invalidado por versión (hoy `getStroke` corre para cada trazo visible en cada frame). Hecho: `objects/strokeCache.ts` guarda un `Path2D` por trazo indexado por id, con huella O(1) (`updatedAt`, número de puntos y tres muestras: primera, mediana y última) para invalidar sin recalcular, LRU FIFO a 5 000 entradas y respeto por el `smoothedPoints` precomputado cuando existe; `renderStroke` solo rellena el path. Además, durante un gesto de dibujo (pen, highlighter, shape y connector, que marcan su objeto vivo con `setLiveObject`) el `Renderer` pinta la escena sin ese objeto en un canvas offscreen una sola vez, cacheada por clave de cámara/tema/DPR y marcada sucia por cualquier cambio del store ajeno al objeto vivo, y en cada frame solo `drawImage` de esa capa más el objeto activo: por eso la latencia del lápiz pasa de 87 ms a 0,5 ms. | Pan con 2k trazos ≥ 60 FPS → **no se cumple**: 27,2 FPS con 2k tras el cambio (antes 21,1); el objetivo de framerate sigue abierto | S |
-| M3-03 | Cachés de layout de texto y de imágenes decodificadas (`createImageBitmap`, LRU por memoria, versiones reducidas para zoom bajo). | Memoria dentro de RNF-04 | M |
-| M3-04 | LOD: con zoom < 0,25, trazos como polilínea simplificada, texto de menos de 3 px como barras e imágenes en baja resolución. | Zoom-out con 5k objetos ≥ 60 FPS | S |
-| M3-05 | Arrastre de muchos objetos: no reindexar RBush en cada `pointermove`; reindexar al soltar y usar los bounds de la selección para el culling durante el gesto. | Mover 1.000 objetos ≥ 50 FPS | S |
+| M3-03 ✅ | Cachés de layout de texto y de imágenes decodificadas (`createImageBitmap`, LRU por memoria, versiones reducidas para zoom bajo). Hecho: `objects/textLayout.ts` cachea el resultado de `wrapText` por (fuente, ancho a dos decimales, contenido) en un FIFO de 4 000 entradas y expone `clearTextLayoutCache()` / `textLayoutCacheSize()` para tests, así el word-wrap ya no se recalcula en cada frame de un texto sin cambios. `canvas/imageCache.ts` sustituye el `Map<string, HTMLImageElement>` del `Renderer` por un `ImageCache` que decodifica cada `src` una sola vez con `createImageBitmap`, construye la versión reducida cuando se pide (M3-04) y evictiona las entradas menos usadas al pasar de 192 MB de bytes, cerrando los `ImageBitmap` que tira; `onReady` llama a `invalidateStatic()` + `markDirty()` para que el contenido que llega tarde se pinte. `renderImage` ahora acepta `CanvasImageSource` y calcula el `cropRect` sobre `imageSourceSize`, que devuelve `null` mientras la imagen no está lista. | Memoria dentro de RNF-04 → heap 5k de **89 MB** (< 300 MB) ✅, pero el objetivo de RNF-04 está escrito sobre **RSS** y el harness no lo mide: esa parte queda sin verificar | M |
+| M3-04 ✅ | LOD: con zoom < 0,25, trazos como polilínea simplificada, texto de menos de 3 px como barras e imágenes en baja resolución. Hecho: `canvas/lod.ts` fija los umbrales (`LOD_ZOOM = 0.25`, `TEXT_BAR_PX = 3`, `REDUCED_MAX_EDGE = 256`) y `renderObject` recibe el `zoom` de la cámara, así que por debajo de 0,25 los trazos se pintan como polilínea con `lineWidth` corregido por el zoom, el texto y las stickies por debajo de 3 px en pantalla se sustituyen por barras y las imágenes pasan al bitmap reducido que cachea el `ImageCache`. | Zoom-out con 5k objetos ≥ 60 FPS → **no se cumple**: 16,8 FPS con 5k (10,7 tras M3-02, 6,2 en baseline). El LOD evita que el detalle crezca con el zoom-out, pero con 5k objetos el coste sigue en cuántos hay que pintar | S |
+| M3-05 ✅ | Arrastre de muchos objetos: no reindexar RBush en cada `pointermove`; reindexar al soltar y usar los bounds de la selección para el culling durante el gesto. Hecho: `ObjectStore.markChanged()` mueve la geometría y registra los ids como diferidos, emitiendo el cambio para que se repinte **sin tocar el índice espacial**; `deferredObjects()` los devuelve y el `Renderer` los pinta aunque el índice (ya obsoleto) diga que salieron del viewport, así el culling no hace desaparecer lo que se está moviendo. El reindexado real ocurre una sola vez, al soltar, con el comando de transformación (`notifyMoved`), y `SelectTool.reset()` también lo vacía si se aborta el gesto a mitad. Además el marquee pasó a calcular la selección **una sola vez en `pointerup`** (guardando el estado de shift, que el evento ya no trae) en vez de en cada `pointermove`, y `queryViewport` reutiliza un buffer en vez de encadenar `map` + `filter`. | Mover 1.000 objetos ≥ 50 FPS → **sin medir**: el harness no tiene escenario de arrastre (mide pan, zoom, pen, marquee, autosave, carga y memoria), así que la aceptación queda pendiente de un `perf:drag-1k`. Lo que sí se midió: marquee 5k de 131 a **105 ms** de pared, con el cómputo de selección ya por debajo de 50 ms | S |
 | M3-06 | Autosave incremental: dirty flag en el engine (hoy siempre se serializa y se envía, y el hash de Rust nunca coincide, ver B17). Medir `JSON.stringify` y moverlo a un Worker solo si supera 16 ms. | Autosave de 5k objetos sin long tasks > 50 ms | M |
 | M3-07 | Decisión OffscreenCanvas/Worker (§9, §20): spike de 2 días solo si M3-02…06 no alcanzan RNF-01/02. Resultado documentado en §28. | Decisión escrita | S |
 

@@ -94,7 +94,7 @@ pnpm tauri build      # Desktop distributable
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 182/182
+pnpm test                           # Unit (Vitest) — 186/186
 pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 65/65
 pnpm bench                          # Benchmarks (M3-01) — synthetic 2k/5k/10k boards
 pnpm check                          # Svelte / TS check
@@ -109,7 +109,21 @@ cargo test --manifest-path src-tauri/Cargo.toml   # Rust — 48/48
 
 **CI** (M0-16, ampliada en M1-12): `.github/workflows/ci.yml` runs `lint`, `format:check`, `check`, unit, E2E and `cargo test` on `windows-latest` and `ubuntu-latest` (installing the Tauri system libs there), on every push and pull request. Last run on GitHub Actions: green on both OSes.
 
-**Benchmarks** (M3-01): `pnpm bench` runs `bench/harness.bench.ts` with its own Playwright config — outside the E2E suite and out of CI, one worker, uncapped frame rate. It measures pan/zoom FPS, pen latency, a 1k-object load, the autosave long tasks and the JS heap over synthetic 2k/5k/10k boards from `bench/generator.ts`, and writes a JSON with machine and browser metadata to `bench/results/` (gitignored). It talks to the app through `window.__inkboard`, which `benchBridge.ts` only installs in dev builds, and can switch on `window.__renderProfile` (`canvas/renderProfile.ts`, dev-only) for the per-phase breakdown behind the M3-05 numbers. The 2026-10-04 baseline and how it compares to each target are in `implementation_plan.md` §19; headless Chromium rasterizes in software, so treat those absolute numbers as pessimistic and comparable between runs.
+**Benchmarks** (M3-01): `pnpm bench` runs `bench/harness.bench.ts` with its own Playwright config — outside the E2E suite, one worker, uncapped frame rate. It measures pan/zoom FPS, pen latency, a 1k-object load, the autosave long tasks and the JS heap over synthetic 2k/5k/10k boards from `bench/generator.ts`, and writes a JSON with machine and browser metadata to `bench/results/` (gitignored). It talks to the app through `window.__inkboard`, which `benchBridge.ts` only installs in dev builds, and can switch on `window.__renderProfile` (`canvas/renderProfile.ts`, dev-only) for the per-phase breakdown behind the M3-05 numbers. The 2026-10-04 baseline and how it compares to each target are in `implementation_plan.md` §19; headless Chromium rasterizes in software, so treat those absolute numbers as pessimistic and comparable between runs.
+
+## Performance
+
+Everything below happens on the main thread; the only worker in the app serializes the autosave.
+
+- **Stroke outlines are cached** per stroke as a `Path2D` and invalidated by an O(1) fingerprint, so `perfect-freehand` never runs per frame (M3-02). While pen/highlighter/shape/connector are drawing, the scene without the live object is painted once into an offscreen layer and each frame blits it and repaints only the active object — pen latency went from 87 ms to 0.5 ms at p50.
+- **Text layout is cached** by font, width and content, and each image source is decoded once into an `ImageBitmap` behind a byte-budgeted LRU (M3-03).
+- **LOD below zoom 0.25** (`canvas/lod.ts`): strokes become polylines, text under 3 screen px becomes bars, images use a 256 px bitmap (M3-04).
+- **Dragging never reindexes the RBush tree** — the moved objects are tracked as deferred and drawn past the stale culling, then the index is synced once on release; the marquee computes its selection on `pointerup` (M3-05).
+- **Autosave is incremental**: a content revision acts as the dirty flag, so a clean board is never serialized or written, and boards of 500+ objects serialize in a Web Worker with sync fallbacks (M3-06). Autosaving 5k objects went from a 62 ms long task to zero.
+
+Result on the reference machine, measured headless: **65.8 FPS** panning 2k objects (RNF-01), **0.5 ms** pen latency (RNF-02), **zero** autosave long tasks at 5k (RNF-05), 433 ms to load 1k objects. That is why OffscreenCanvas/RenderWorker was rejected (M3-07, `implementation_plan.md` §28): the main thread is fast enough, and the design stays documented as an upgrade path.
+
+`pnpm bench` runs on `workflow_dispatch` and weekly on Mondays (`.github/workflows/bench.yml`), never on push. With `BENCH_ASSERT=1` the harness fails the run if pan 2k drops below 30 FPS, pen p50 reaches 16 ms, an autosave long task exceeds 100 ms or a 1k load takes over 1.5 s — loose thresholds, because shared runners are slower than the reference machine.
 
 ## Design System
 

@@ -41,6 +41,14 @@
 			: commands
 	);
 
+	const selectedId = $derived(filtered[selected]?.id ? `palette-option-${filtered[selected].id}` : undefined);
+
+	// keep the active option visible while arrowing through the list (M4-07)
+	$effect(() => {
+		if (!selectedId) return;
+		document.getElementById(selectedId)?.scrollIntoView({ block: 'nearest' });
+	});
+
 	$effect(() => {
 		if (open && inputEl) {
 			query = '';
@@ -95,6 +103,10 @@
 					bind:this={inputEl}
 					placeholder="Type a command…"
 					value={query}
+					role="combobox"
+					aria-expanded="true"
+					aria-controls="palette-results"
+					aria-activedescendant={selectedId}
 					oninput={(e) => {
 						query = (e.target as HTMLInputElement).value;
 						selected = 0;
@@ -102,7 +114,7 @@
 				/>
 				<kbd>Esc</kbd>
 			</div>
-			<div class="palette-results">
+			<div class="palette-results" id="palette-results" role="listbox" aria-label="Commands">
 				{#if filtered.length === 0}
 					<div class="palette-empty">No results for “{query}”</div>
 				{:else}
@@ -116,6 +128,10 @@
 							<button
 								class="palette-item"
 								class:selected={idx === selected}
+								id={`palette-option-${cmd.id}`}
+								role="option"
+								aria-selected={idx === selected}
+								tabindex="-1"
 								onmouseenter={() => (selected = idx)}
 								onclick={() => run(cmd)}
 							>

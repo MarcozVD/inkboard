@@ -6,9 +6,16 @@
 	import { ui, uiActions } from '$lib/stores/ui.svelte';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
+	import { isMacos } from '$lib/utils/platform';
 
 	let editing = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
+	// resolved on mount to avoid SSR/hydration mismatches (M4-02)
+	let macos = $state(false);
+	onMount(() => {
+		macos = isMacos();
+	});
 	// board vs home is decided by the route, not by leftover ui state (B14)
 	const isBoard = $derived(($page.route.id ?? '').startsWith('/board'));
 
@@ -38,7 +45,7 @@
 	}
 </script>
 
-<header class="topbar">
+<header class="topbar" class:macos>
 	<div class="left" data-tauri-drag-region>
 		<Icon name="image" size={22} class="brand-icon" />
 		{#if editing}
@@ -98,11 +105,13 @@
 		<ToolButton icon="share" label="Share" disabled />
 		<ToolButton icon="settings" label="Settings" onclick={() => uiActions.openSettings?.()} />
 		<span class="divider"></span>
-		<div class="window-controls">
-			<button class="wc-btn" aria-label="Minimize" onclick={minimize}><Icon name="minimize" /></button>
-			<button class="wc-btn" aria-label="Maximize" onclick={toggleMaximize}><Icon name="maximize" /></button>
-			<button class="wc-btn wc-close" aria-label="Close" onclick={close}><Icon name="close" /></button>
-		</div>
+		{#if !macos}
+			<div class="window-controls">
+				<button class="wc-btn" aria-label="Minimize" onclick={minimize}><Icon name="minimize" /></button>
+				<button class="wc-btn" aria-label="Maximize" onclick={toggleMaximize}><Icon name="maximize" /></button>
+				<button class="wc-btn wc-close" aria-label="Close" onclick={close}><Icon name="close" /></button>
+			</div>
+		{/if}
 	</div>
 </header>
 
@@ -124,6 +133,11 @@
 		gap: var(--space-sm);
 		height: 100%;
 		overflow: hidden;
+	}
+
+	/* macOS: leave room for the native traffic lights (M4-02) */
+	.topbar.macos .left {
+		padding-left: 72px;
 	}
 
 	:global(.brand-icon) {

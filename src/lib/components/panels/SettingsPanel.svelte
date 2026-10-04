@@ -52,6 +52,36 @@
 		onInstallUpdate?: () => void;
 	} = $props();
 
+	/** Keep Tab inside the dialog (M4-07). */
+	function onPanelKey(e: KeyboardEvent): void {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			onClose();
+			return;
+		}
+		if (e.key !== 'Tab' || !panelEl) {
+			e.stopPropagation();
+			return;
+		}
+		const focusable = Array.from(
+			panelEl.querySelectorAll<HTMLElement>(
+				'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+			)
+		).filter((el) => el.offsetParent !== null);
+		if (focusable.length === 0) return;
+		const first = focusable[0];
+		const last = focusable[focusable.length - 1];
+		const active = document.activeElement;
+		if (e.shiftKey && (active === first || active === panelEl)) {
+			e.preventDefault();
+			last.focus();
+		} else if (!e.shiftKey && active === last) {
+			e.preventDefault();
+			first.focus();
+		}
+		e.stopPropagation();
+	}
+
 	function updateStatusText(): string {
 		switch (updateStatus) {
 			case 'checking':
@@ -76,6 +106,8 @@
 	$effect(() => {
 		if (!open) return;
 		onLoadVersions?.();
+		// focus the dialog so Escape and Tab work from the keyboard (M4-07)
+		queueMicrotask(() => panelEl?.focus());
 		function onDocClick(e: MouseEvent) {
 			if (panelEl && !panelEl.contains(e.target as Node)) onClose();
 		}
@@ -106,13 +138,14 @@
 			class="settings-panel"
 			bind:this={panelEl}
 			onclick={(e) => e.stopPropagation()}
-			onkeydown={(e) => e.stopPropagation()}
+			onkeydown={onPanelKey}
 			role="dialog"
-			aria-label="Settings"
+			aria-modal="true"
+			aria-labelledby="sp-title"
 			tabindex="-1"
 		>
 			<div class="sp-header">
-				<span class="sp-title">Settings</span>
+				<span class="sp-title" id="sp-title">Settings</span>
 				<button class="sp-close" aria-label="Close settings" onclick={onClose}>
 					<Icon name="close" size={14} />
 				</button>

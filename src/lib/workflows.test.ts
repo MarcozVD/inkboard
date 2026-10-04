@@ -37,11 +37,7 @@ describe('release workflow (M4-06)', () => {
 
 	it('builds on the three platforms with NSIS/MSI, universal macOS and AppImage/deb', () => {
 		const include = workflow.jobs.release.strategy.matrix.include;
-		expect(include.map((entry) => entry.platform)).toEqual([
-			'windows-latest',
-			'macos-latest',
-			'ubuntu-22.04'
-		]);
+		expect(include.map((entry) => entry.platform)).toEqual(['windows-latest', 'macos-latest', 'ubuntu-22.04']);
 		const macArgs = include.find((entry) => entry.platform === 'macos-latest')?.args ?? '';
 		expect(macArgs).toContain('universal-apple-darwin');
 		expect(stepText).toContain('libwebkit2gtk-4.1-dev');

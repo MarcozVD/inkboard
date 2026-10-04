@@ -20,6 +20,38 @@ use commands::persistence::DbState;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+/// Native macOS app menu (M4-02). The Edit submenu uses predefined items so
+/// Cmd+C/V/X/A/Z keep working inside WKWebView inputs and the webview.
+/// Compiled on every desktop target (so `cargo check` verifies it) and only
+/// installed on macOS.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn build_app_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{MenuBuilder, SubmenuBuilder};
+
+    let app_menu = SubmenuBuilder::new(app, "Inkboard")
+        .about(None)
+        .separator()
+        .services()
+        .separator()
+        .hide()
+        .hide_others()
+        .show_all()
+        .separator()
+        .quit()
+        .build()?;
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
+    MenuBuilder::new(app).items(&[&app_menu, &edit_menu]).build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -71,6 +103,10 @@ pub fn run() {
             }));
 
             app.manage(PendingOpens::default());
+
+            // M4-02: native app menu with predefined Edit items on macOS
+            #[cfg(target_os = "macos")]
+            app.set_menu(build_app_menu(app.handle())?)?;
 
             // SQLite persistence — one DB per app data dir
             let data_dir = app

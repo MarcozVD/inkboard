@@ -98,6 +98,12 @@ textarea {
 	font-family: inherit;
 }
 
+/* visible keyboard focus everywhere (M4-07) */
+:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+}
+
 /* thin scrollbars for panels */
 ::-webkit-scrollbar {
 	width: 8px;

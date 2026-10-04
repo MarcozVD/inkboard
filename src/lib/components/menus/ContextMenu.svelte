@@ -28,6 +28,51 @@
 	} = $props();
 
 	let menuEl: HTMLDivElement | undefined = $state();
+	let itemEls: HTMLButtonElement[] = $state([]);
+
+	function selectableIndices(): number[] {
+		return items.map((item, i) => (!item.separator && !item.disabled ? i : -1)).filter((i) => i >= 0);
+	}
+
+	function focusFirst(): void {
+		const [first] = selectableIndices();
+		if (first !== undefined) itemEls[first]?.focus();
+	}
+
+	/** Arrow-key navigation across enabled items (M4-07). */
+	function move(delta: number): void {
+		const selectable = selectableIndices();
+		if (selectable.length === 0) return;
+		const current = itemEls.findIndex((el) => el === document.activeElement);
+		const position = selectable.indexOf(current);
+		const next = selectable[(position + delta + selectable.length) % selectable.length];
+		itemEls[next]?.focus();
+	}
+
+	function onMenuKey(e: KeyboardEvent): void {
+		if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			move(1);
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			move(-1);
+		} else if (e.key === 'Home') {
+			e.preventDefault();
+			focusFirst();
+		} else if (e.key === 'End') {
+			e.preventDefault();
+			const selectable = selectableIndices();
+			const last = selectable.at(-1);
+			if (last !== undefined) itemEls[last]?.focus();
+		} else if (e.key === 'Escape') {
+			e.preventDefault();
+			onClose();
+		}
+	}
+
+	$effect(() => {
+		if (x !== -1 && y !== -1) queueMicrotask(focusFirst);
+	});
 
 	// clamp to viewport
 	$effect(() => {
@@ -65,16 +110,18 @@
 </script>
 
 {#if x !== -1 && y !== -1}
-	<div class="context-menu" bind:this={menuEl} role="menu">
+	<div class="context-menu" bind:this={menuEl} role="menu" tabindex="-1" onkeydown={onMenuKey}>
 		{#each items as item, i (i)}
 			{#if item.separator}
 				<div class="cm-sep"></div>
 			{:else}
 				<button
+					bind:this={itemEls[i]}
 					class="cm-item"
 					class:danger={item.danger}
 					disabled={item.disabled}
 					role="menuitem"
+					tabindex="-1"
 					onclick={() => pick(item)}
 				>
 					{#if item.icon}

@@ -327,45 +327,72 @@ test('M3-01 baseline — synthetic 2k/5k/10k boards', async ({ page, browser }) 
 		}
 
 		if (size === 5000) {
+			const enableProfile = () =>
+				page.evaluate(() => {
+					const prof = window.__renderProfile;
+					if (prof) {
+						prof.enabled = true;
+						prof.reset();
+					}
+				});
+			const disableProfile = () =>
+				page.evaluate(() => {
+					const prof = window.__renderProfile;
+					if (prof) prof.enabled = false;
+				});
+
 			await fitCamera(page, size);
 			const pen = stats(await measurePen(page));
+
 			await fitCamera(page, size);
-			await page.evaluate(() => {
+			const stringify5kMs = await page.evaluate(() => window.__inkboard?.stringifyProbe() ?? -1);
+
+			await enableProfile();
+			const autosave = await measureAutosave(page);
+			const autosaveProfile = await page.evaluate(() => {
 				const prof = window.__renderProfile;
-				if (prof) {
-					prof.enabled = true;
-					prof.reset();
-				}
+				return {
+					build: prof?.phases['save:build']?.total ?? 0,
+					serialize: prof?.phases['save:serialize']?.total ?? 0,
+					persist: prof?.phases['save:persist']?.total ?? 0,
+					worker: typeof Worker !== 'undefined'
+				};
 			});
+			await disableProfile();
+
+			await fitCamera(page, size);
+			await enableProfile();
 			const marqueeMs = await measureMarquee(page, size);
 			const marqueeProfile = await page.evaluate(() => {
 				const prof = window.__renderProfile;
-				if (!prof) return null;
-				prof.enabled = false;
 				return {
-					top: prof.top(6),
-					select: prof.phases['select:rect'] ?? null,
-					ctxbar: prof.phases['ui:ctxbar'] ?? null
+					top: prof?.top(6) ?? [],
+					select: prof?.phases['select:rect'] ?? null,
+					ctxbar: prof?.phases['ui:ctxbar'] ?? null
 				};
 			});
-			if (marqueeProfile) {
-				results.marqueeProfile = marqueeProfile;
-				console.log('[bench] marquee 5k profile:');
-				for (const row of marqueeProfile.top) {
-					console.log(`  ${row.phase.padEnd(16)} total=${row.total.toFixed(1)} count=${row.count}`);
-				}
-				console.log(
-					`  select:rect=${marqueeProfile.select?.total.toFixed(1) ?? 'n/a'}ms ui:ctxbar=${marqueeProfile.ctxbar?.total.toFixed(1) ?? 'n/a'}ms`
-				);
-			}
-			const autosave = await measureAutosave(page);
+			await disableProfile();
+
 			const memory: BenchMemory | null = await page.evaluate(() => window.__inkboard?.memory() ?? null);
 			results.pen = pen;
 			results.marquee5kMs = marqueeMs;
 			results.autosave5k = autosave;
+			results.autosaveProfile = autosaveProfile;
+			results.stringify5kMs = stringify5kMs;
+			results.marqueeProfile = marqueeProfile;
 			results.memory5k = memory;
 			console.log(
-				`[bench] 5k pen p95=${pen.p95.toFixed(1)}ms marquee=${marqueeMs.toFixed(1)}ms autosaveLongTasks=${autosave.count}`
+				`[bench] 5k JSON.stringify=${stringify5kMs.toFixed(1)}ms save(build=${autosaveProfile.build.toFixed(1)} serialize=${autosaveProfile.serialize.toFixed(1)} persist=${autosaveProfile.persist.toFixed(1)})`
+			);
+			console.log('[bench] marquee 5k profile:');
+			for (const row of marqueeProfile.top) {
+				console.log(`  ${row.phase.padEnd(16)} total=${row.total.toFixed(1)} count=${row.count}`);
+			}
+			console.log(
+				`  select:rect=${marqueeProfile.select?.total.toFixed(1) ?? 'n/a'}ms ui:ctxbar=${marqueeProfile.ctxbar?.total.toFixed(1) ?? 'n/a'}ms`
+			);
+			console.log(
+				`[bench] 5k pen p95=${pen.p95.toFixed(1)}ms marquee=${marqueeMs.toFixed(1)}ms autosaveLongTasks=${autosave.count} max=${autosave.maxMs.toFixed(1)}ms`
 			);
 		}
 	}
@@ -387,10 +414,43 @@ test('M3-01 baseline — synthetic 2k/5k/10k boards', async ({ page, browser }) 
 	results.load1kMs = performance.now() - start;
 	console.log(`[bench] load ${LOAD_OBJECTS} objects: ${(results.load1kMs as number).toFixed(0)}ms`);
 
+	// ── thresholds (loose: CI runners are slower than the reference machine) ──
+	const thresholds = {
+		pan2kFps: 30,
+		penP50Ms: 16,
+		autosaveMaxLongTaskMs: 100,
+		load1kMs: 1500
+	};
+	results.thresholds = thresholds;
+
 	// ── output ──
 	const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 	const output = process.env.BENCH_OUTPUT ?? path.join('bench', 'results', `${stamp}.json`);
 	fs.mkdirSync(path.dirname(output), { recursive: true });
 	fs.writeFileSync(output, JSON.stringify(results, null, 2));
 	console.log(`[bench] wrote ${output}`);
+
+	if (process.env.BENCH_ASSERT === '1') {
+		const pan2k = (pan['2000']?.fps ?? 0) >= thresholds.pan2kFps;
+		const pen = ((results.pen as Stats | undefined)?.p50 ?? Infinity) < thresholds.penP50Ms;
+		const autosaveOk =
+			((results.autosave5k as { maxMs?: number } | undefined)?.maxMs ?? Infinity) <= thresholds.autosaveMaxLongTaskMs;
+		const load = (results.load1kMs as number) < thresholds.load1kMs;
+		const checks: [string, boolean, string][] = [
+			['pan 2k FPS', pan2k, `${pan['2000']?.fps.toFixed(1)} ≥ ${thresholds.pan2kFps}`],
+			['pen p50', pen, `${(results.pen as Stats | undefined)?.p50.toFixed(2)}ms < ${thresholds.penP50Ms}ms`],
+			[
+				'autosave max long task',
+				autosaveOk,
+				`${(results.autosave5k as { maxMs?: number }).maxMs?.toFixed(1)}ms ≤ ${thresholds.autosaveMaxLongTaskMs}ms`
+			],
+			['load 1k', load, `${(results.load1kMs as number).toFixed(0)}ms < ${thresholds.load1kMs}ms`]
+		];
+		console.log('[bench] threshold check (BENCH_ASSERT=1):');
+		for (const [name, ok, detail] of checks) console.log(`  ${ok ? 'ok ' : 'FAIL'} ${name}: ${detail}`);
+		const failed = checks.filter(([, ok]) => !ok);
+		if (failed.length > 0) {
+			throw new Error(`bench thresholds failed: ${failed.map(([name]) => name).join(', ')}`);
+		}
+	}
 });

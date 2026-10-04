@@ -1,0 +1,48 @@
+name: Bench (M3 gate)
+
+# NOT on push/PR: weekly schedule + manual trigger only.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: pnpm bench (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright (chromium)
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Loose thresholds for slow CI runners (reference machine: i5-12450HX):
+      # pan 2k ≥ 30 FPS | pen p50 < 16 ms | autosave max long task ≤ 100 ms | load 1k < 1500 ms
+      - name: Run benchmark with gate thresholds
+        run: pnpm bench
+        env:
+          BENCH_ASSERT: '1'
+
+      - name: Upload bench results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results
+          path: bench/results/*.json
+          if-no-files-found: ignore

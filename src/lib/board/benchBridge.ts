@@ -30,6 +30,8 @@ export interface BenchBridge {
 	setCamera(patch: Partial<CameraState>): void;
 	markDirty(): void;
 	scheduleAutosave(): void;
+	/** ms spent by JSON.stringify on the current board (M3-06 measurement) */
+	stringifyProbe(): number;
 	memory(): BenchMemory | null;
 }
 
@@ -56,6 +58,14 @@ export function installBenchBridge(deps: BenchBridgeDeps): void {
 		},
 		markDirty: () => deps.getRuntime()?.markDirty(),
 		scheduleAutosave: () => deps.getRuntime()?.session.scheduleAutosave(),
+		stringifyProbe: () => {
+			const engine = deps.getEngine();
+			if (!engine) return 0;
+			const objects = engine.store.toJSON();
+			const start = performance.now();
+			JSON.stringify({ schemaVersion: '1.1.0', version: 1, board: { objects } });
+			return performance.now() - start;
+		},
 		memory: () => {
 			const memory = (performance as Performance & { memory?: BenchMemory }).memory;
 			if (!memory) return null;

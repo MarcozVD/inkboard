@@ -130,14 +130,17 @@ function updateLsBoard(id: string, mutate: (board: Board) => void): void {
 
 // ── Public API ──
 
-export async function saveBoard(board: Board): Promise<void> {
-	const json = serializeBoard(board);
-	const name = board.name || 'Untitled';
+/** Persist an already-serialized board (M3-06: serialization may be off-thread). */
+export async function saveBoardJson(boardId: string, name: string, json: string): Promise<void> {
 	if (isTauri()) {
-		await tauriSaveBoard(board.id, name, json);
+		await tauriSaveBoard(boardId, name, json);
 	} else {
-		lsPut(board.id, json);
+		lsPut(boardId, json);
 	}
+}
+
+export async function saveBoard(board: Board): Promise<void> {
+	await saveBoardJson(board.id, board.name || 'Untitled', serializeBoard(board));
 }
 
 export async function loadBoard(boardId: string, defaultName = 'Untitled'): Promise<Board> {

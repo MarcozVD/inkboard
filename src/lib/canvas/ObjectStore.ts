@@ -17,6 +17,12 @@ export class ObjectStore {
 	private nextZ = 0;
 	/** ids mutated without a spatial re-sync (M3-05 drag) */
 	private deferred = new Set<string>();
+	/** monotonically increasing content revision — dirty-flag source (M3-06) */
+	private contentRevision = 0;
+
+	get revision(): number {
+		return this.contentRevision;
+	}
 
 	/** Listeners receive a summary of the last mutation batch. */
 	private listeners = new Set<(ev: ObjectStoreEvent) => void>();
@@ -27,6 +33,7 @@ export class ObjectStore {
 	}
 
 	private emit(ev: ObjectStoreEvent): void {
+		this.contentRevision++;
 		for (const fn of this.listeners) fn(ev);
 	}
 

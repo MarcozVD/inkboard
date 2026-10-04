@@ -4,11 +4,13 @@ import { BoardSession } from './BoardSession';
 import { CanvasEngine } from '$lib/canvas/CanvasEngine';
 import { DEFAULT_CAMERA } from '$lib/canvas/Camera';
 import { loadBoard } from '$lib/io/persistence';
+import { serializeBoard } from '$lib/io/InternalFormat';
 import { createShape } from '$lib/objects/factory';
+import type { Board } from '$lib/objects/types';
 
 const GRID = { enabled: true, size: 32, color: '#2a2d34', opacity: 0.6 };
 
-function makeSession(boardId = 'session-test') {
+function makeSession(boardId = 'session-test', serialize?: (board: Board) => Promise<string>) {
 	const engine = new CanvasEngine({ camera: () => DEFAULT_CAMERA, onDirty: () => {} });
 	const states: string[] = [];
 	const session = new BoardSession({
@@ -16,7 +18,8 @@ function makeSession(boardId = 'session-test') {
 		engine,
 		getSnapshot: () => ({ name: 'Test board', camera: DEFAULT_CAMERA, grid: GRID }),
 		onSaveState: (s) => states.push(s),
-		debounceMs: 5
+		debounceMs: 5,
+		serialize
 	});
 	return { engine, session, states };
 }
@@ -61,6 +64,31 @@ describe('BoardSession', () => {
 		const reloaded = await second.session.load();
 		expect(reloaded.createdAt).toBe(board.createdAt);
 		second.session.dispose();
+	});
+
+	it('skips serialization when the content revision has not changed (M3-06)', async () => {
+		const calls: number[] = [];
+		const { engine, session } = makeSession('dirty-flag', async (board) => {
+			calls.push(engine.store.revision);
+			return serializeBoard(board);
+		});
+		await session.load();
+
+		engine.store.add(createShape(0, 0, 10, 10, 'rect'));
+		session.scheduleAutosave();
+		await session.flushSave();
+		expect(calls).toHaveLength(1);
+
+		// clean save → neither serialization nor persistence runs
+		await session.saveNow();
+		expect(calls).toHaveLength(1);
+
+		// a new mutation invalidates the dirty flag
+		engine.store.add(createShape(40, 40, 10, 10, 'rect'));
+		session.scheduleAutosave();
+		await session.flushSave();
+		expect(calls).toHaveLength(2);
+		session.dispose();
 	});
 
 	it('reports save state transitions', async () => {

@@ -65,10 +65,12 @@ Monochrome infinite whiteboard — desktop-first app for visual thinking.
 | Open `.inkboard` by double-click | **Works** since M4-03 — extension registered in the bundle, the file received on `argv` is imported by Rust and the frontend only gets board ids |
 | Logs in release | **Works** since M4-04 — rotating file in the OS log dir (5 MB × 5), info level, panic hook, Settings → Open logs folder |
 | Release binary size | **Works** after M4-08 — 13.3 MB against the 15 MB budget (up from 10.5 MB with the `usvg`/`svg2pdf` PDF path of M2-10), enforced by `build.yml` on every tagged or manual build |
+| In-app updates | **Works** since M4-05 — `tauri-plugin-updater` + `process`: silent check a few seconds after startup with a discreet notice, Settings → About → Check for updates, then install and relaunch behind a confirmation; downloaded in Rust, `process:allow-restart` added and `fs` still absent. **Not usable until a real release exists**: the signing secrets are not in the repo yet and `plugins.updater.pubkey` is still the Tauri template placeholder |
+| Release workflow | **Works** since M4-06 — `release.yml` builds NSIS + MSI, a universal macOS `.dmg` and AppImage + `.deb` on a `v*` tag or a manual run, into one draft release with `latest.json`; unsigned (D4), fails early with a clear error when the signing secrets are missing, and `scripts/check-versions.mjs` keeps the three version files in sync — see [Releases](#releases) |
 | Theme on canvas | **Works** since M1-10 (D1 option b) — dark / light / `system`, `ink` resolves per theme, exports resolve it too |
 | Collaboration | UI stub |
 
-Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1 closed: M1-01…M1-13 done; **M2 closed with its gate met**: M2-01…M2-11 all done, with M2-09 still pending its manual Tauri check; M3 closed with its CI gate verified on GitHub Actions; M4 in progress with M4-01, M4-03, M4-04 and M4-08 done).
+Full bug table: `implementation_plan.md` §0.2. Active plan: §24 (M0 closed: M0-01…M0-17 done, with M0-15 and M0-16 pending their manual/GitHub checks; M1 closed: M1-01…M1-13 done; **M2 closed with its gate met**: M2-01…M2-11 all done, with M2-09 still pending its manual Tauri check; M3 closed with its CI gate verified on GitHub Actions; M4 in progress with M4-01, M4-03, M4-04, M4-05, M4-06 and M4-08 done, the first release still pending the signing secrets and a tag; see [Releases](#releases)).
 
 ## Tech Stack
 
@@ -97,17 +99,41 @@ pnpm build            # Frontend → `build/`
 pnpm tauri build      # Desktop distributable (installers under src-tauri/target/release/bundle/)
 ```
 
-**Windows build:** `pnpm tauri build` produces a signed-less installer, so SmartScreen will warn on first run — that is the current decision (D4 in `implementation_plan.md` §28), and signing comes before any public distribution. The release binary is 10.5 MB against the 15 MB budget (RNF-06), kept there by `opt-level = "s"`, fat LTO, one codegen unit and `strip` in `[profile.release]`. `.github/workflows/build.yml` builds it on `windows-latest` for `workflow_dispatch` and `v*` tags only and fails if the exe goes over 15 MB.
+**Windows build:** `pnpm tauri build` produces a signed-less installer, so SmartScreen will warn on first run — that is the current decision (D4 in `implementation_plan.md` §28), and signing comes before any public distribution. The release binary is 13.3 MB against the 15 MB budget (RNF-06), kept there by `opt-level = "s"`, fat LTO, one codegen unit and `strip` in `[profile.release]`. `.github/workflows/build.yml` builds it on `windows-latest` for `workflow_dispatch` and `v*` tags only and fails if the exe goes over 15 MB.
 
 **Opening `.inkboard` files:** the installers register the extension (M4-03), so double-clicking a `.inkboard` file in Explorer or the file manager opens it in Inkboard. If the app is already running, the existing window comes to the front and the board is imported there instead of opening a second instance (M4-01). The import path is the same validated one as the dialog: Rust reads the file, checks its size, imports assets and opens the board with a new id.
 
 **Logs:** the desktop app writes rotating logs to its OS log directory (`%LOCALAPPDATA%\com.inkboard.app\logs` on Windows) — 5 MB per file, the last 5 kept, info level in release and debug in dev, including panics. Settings → **Open logs folder** opens that folder in the file manager. In the browser build there are no file logs; use the devtools console.
 
+## Releases
+
+`.github/workflows/release.yml` publishes the desktop app with `tauri-action` on a `v*` tag or a manual run — never on a plain push — and builds the three platforms in parallel:
+
+| Platform | Artifacts |
+|----------|-----------|
+| `windows-latest` | NSIS installer + MSI |
+| `macos-latest` | Universal binary (`universal-apple-darwin`, aarch64 + x86_64) in a `.dmg` |
+| `ubuntu-22.04` | AppImage + `.deb` (needs `libwebkit2gtk-4.1-dev`) |
+
+All three jobs land in the **same GitHub Release, left as a draft**, and `includeUpdaterJson` uploads the `latest.json` that the in-app updater reads from `releases/latest/download`. Nothing is code-signed and nothing is notarized: that is D4, and it is why Windows shows the SmartScreen warning and Gatekeeper blocks the `.dmg` until the user opens it anyway. Signing is a prerequisite for any public distribution.
+
+### Publishing a release
+
+1. **Set the version in all three files** — `package.json`, `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml` must agree. `node scripts/check-versions.mjs` fails the workflow if they don't, and `src/lib/workflows.test.ts` asserts the same thing. The version must also match the tag you push: `tauri-action` runs with `tagName: v__VERSION__`, so the version in those files is what decides the tag the draft release is attached to.
+2. **Before the first release**, add the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (Settings → Secrets and variables → Actions). The private key itself stays out of the repo; only the public half belongs in `src-tauri/tauri.conf.json`. Without both secrets the workflow stops early with an explicit error instead of failing halfway inside the action — the secrets are **not loaded in this repository yet**, so a tag pushed today fails on purpose.
+3. **Replace the placeholder updater public key.** `plugins.updater.pubkey` in `src-tauri/tauri.conf.json` currently holds the example key from the Tauri template; put the real public key there, or every downloaded update is rejected by the signature check.
+4. **Tag and push**: `git tag vX.Y.Z && git push origin vX.Y.Z`. The three builds run and the draft release is created.
+5. **Publish the draft** from the Releases page once the artifacts look right. The updater only sees a release once it is public.
+
+### In-app updates
+
+The desktop app checks `releases/latest/download/latest.json` a few seconds after startup and, if a newer version exists, shows a discreet notice pointing at Settings → About (**Check for updates**), which reports up to date, downloading with a percentage, installing or the error, and offers **Install and restart** behind a confirmation. The download happens in Rust and the webview never receives a filesystem path, the same rule as the rest of the desktop IO.
+
 ## Testing
 
 ```bash
-pnpm test                           # Unit (Vitest) — 194/194
-pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 67/67
+pnpm test                           # Unit (Vitest) — 200/200
+pnpm test:e2e                       # E2E (Playwright, boots `pnpm dev` on :1420) — 70/70
 pnpm bench                          # Benchmarks (M3-01) — synthetic 2k/5k/10k boards
 pnpm check                          # Svelte / TS check
 pnpm lint                           # ESLint (0 problems; rule banning `store.*` outside canvas/ and tools/)

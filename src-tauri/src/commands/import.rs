@@ -8,6 +8,7 @@
 
 use crate::commands::persistence::DbState;
 use crate::formats::{images, inkboard, ms_whiteboard};
+use tauri::ipc::{InvokeBody, Request};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -173,6 +174,58 @@ pub async fn export_inkboard(
     Ok(Some(payload))
 }
 
+/// Save exported PNG/JPG/SVG bytes through the native dialog (M2-09).
+/// The body carries the raw bytes, `x-name` the suggested file name. The
+/// webview never supplies or receives a filesystem path.
+#[tauri::command]
+pub fn save_export(app: AppHandle, request: Request<'_>) -> Result<Option<String>, String> {
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+    };
+    let file_name = suggested_export_name(header("x-name").as_deref());
+    let extension = file_name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_string())
+        .unwrap_or_else(|| "png".to_string());
+    let bytes: Vec<u8> = match request.body() {
+        InvokeBody::Raw(bytes) => bytes.clone(),
+        InvokeBody::Json(value) => {
+            serde_json::from_value(value.clone()).map_err(|e| e.to_string())?
+        }
+    };
+    if bytes.is_empty() {
+        return Err("export is empty".to_string());
+    }
+
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export")
+        .set_file_name(&file_name)
+        .add_filter("File", &[extension.as_str()])
+        .blocking_save_file();
+    let Some(path) = picked else {
+        return Ok(None);
+    };
+    let path = path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(&path, &bytes).map_err(|e| format!("cannot write file: {e}"))?;
+    Ok(Some(path.display().to_string()))
+}
+
+/// Sanitized suggested export name; always keeps an extension.
+fn suggested_export_name(name: Option<&str>) -> String {
+    let sanitized = sanitize_file_name(name.unwrap_or("inkboard.png"));
+    if sanitized.contains('.') {
+        sanitized
+    } else {
+        format!("{sanitized}.png")
+    }
+}
+
 /// Strip path separators and reserved characters from a suggested file name.
 fn sanitize_file_name(name: &str) -> String {
     let cleaned: String = name
@@ -190,5 +243,30 @@ fn sanitize_file_name(name: &str) -> String {
         "board".to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{sanitize_file_name, suggested_export_name};
+
+    #[test]
+    fn suggested_export_names_are_sanitized_and_keep_an_extension() {
+        assert_eq!(
+            suggested_export_name(Some("inkboard-ab12.png")),
+            "inkboard-ab12.png"
+        );
+        assert_eq!(suggested_export_name(Some("board.jpg")), "board.jpg");
+        assert_eq!(suggested_export_name(Some("no extension")), "no extension.png");
+        assert_eq!(suggested_export_name(Some("")), "board.png");
+        assert_eq!(suggested_export_name(None), "inkboard.png");
+    }
+
+    #[test]
+    fn file_names_cannot_smuggle_paths_or_control_characters() {
+        assert_eq!(sanitize_file_name("a/b:c?.png"), "a-b-c-.png");
+        assert_eq!(sanitize_file_name("..\\evil.png"), "..-evil.png");
+        assert_eq!(sanitize_file_name("\u{7}bell"), "-bell");
+        assert_eq!(sanitize_file_name("   "), "board");
     }
 }

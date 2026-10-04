@@ -2,6 +2,7 @@
 import type { CanvasObject } from '$lib/objects/types';
 import { getObjectBounds } from '$lib/objects/bounds';
 import { resolveColor, type ResolvedTheme } from '$lib/objects/colors';
+import type { ExportRegion } from '$lib/io/exportRegion';
 
 function esc(s: string): string {
 	return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -20,40 +21,65 @@ function rotationAttr(o: CanvasObject): string {
 /** Export a full board (objects in world coords) to an SVG string. */
 export function boardToSvg(
 	objects: CanvasObject[],
-	opts: { width?: number; height?: number; background?: string; theme?: ResolvedTheme } = {}
+	opts: {
+		width?: number;
+		height?: number;
+		/** explicit world region (M2-09: board/selection/viewport exports) */
+		region?: ExportRegion | null;
+		background?: string;
+		theme?: ResolvedTheme;
+	} = {}
 ): string {
-	// compute bounds over all objects (rotated AABBs, stroke widths included)
-	let minX = Infinity;
-	let minY = Infinity;
-	let maxX = -Infinity;
-	let maxY = -Infinity;
-	for (const o of objects) {
-		const b = getObjectBounds(o);
-		minX = Math.min(minX, b.x);
-		minY = Math.min(minY, b.y);
-		maxX = Math.max(maxX, b.x + b.width);
-		maxY = Math.max(maxY, b.y + b.height);
+	let viewX: number;
+	let viewY: number;
+	let viewW: number;
+	let viewH: number;
+	let width: number;
+	let height: number;
+
+	if (opts.region) {
+		viewX = opts.region.minX;
+		viewY = opts.region.minY;
+		viewW = opts.region.width;
+		viewH = opts.region.height;
+		width = opts.width ?? Math.round(viewW);
+		height = opts.height ?? Math.round(viewH);
+	} else {
+		// compute bounds over all objects (rotated AABBs)
+		let minX = Infinity;
+		let minY = Infinity;
+		let maxX = -Infinity;
+		let maxY = -Infinity;
+		for (const o of objects) {
+			const b = getObjectBounds(o);
+			minX = Math.min(minX, b.x);
+			minY = Math.min(minY, b.y);
+			maxX = Math.max(maxX, b.x + b.width);
+			maxY = Math.max(maxY, b.y + b.height);
+		}
+		if (!isFinite(minX)) {
+			minX = 0;
+			minY = 0;
+			maxX = opts.width ?? 1200;
+			maxY = opts.height ?? 800;
+		}
+		const pad = 20;
+		viewX = minX - pad;
+		viewY = minY - pad;
+		viewW = opts.width ?? Math.ceil(maxX - minX + 40);
+		viewH = opts.height ?? Math.ceil(maxY - minY + 40);
+		width = viewW;
+		height = viewH;
 	}
-	if (!isFinite(minX)) {
-		minX = 0;
-		minY = 0;
-		maxX = opts.width ?? 1200;
-		maxY = opts.height ?? 800;
-	}
-	const width = opts.width ?? Math.ceil(maxX - minX + 40);
-	const height = opts.height ?? Math.ceil(maxY - minY + 40);
-	const pad = 20;
 
 	const parts: string[] = [];
 	parts.push(
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-			`viewBox="${minX - pad} ${minY - pad} ${width} ${height}" ` +
+			`viewBox="${viewX} ${viewY} ${viewW} ${viewH}" ` +
 			`font-family="Segoe UI, sans-serif">`
 	);
 	if (opts.background) {
-		parts.push(
-			`<rect x="${minX - pad}" y="${minY - pad}" width="${width}" height="${height}" fill="${opts.background}"/>`
-		);
+		parts.push(`<rect x="${viewX}" y="${viewY}" width="${viewW}" height="${viewH}" fill="${opts.background}"/>`);
 	}
 	for (const o of objects) {
 		parts.push(objectToSvg(o, opts.theme ?? 'dark'));

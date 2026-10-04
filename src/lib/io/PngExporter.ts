@@ -1,81 +1,78 @@
-// PngExporter — render board objects to an offscreen canvas → PNG data URL (§18).
+// ImageExporter — render objects to an offscreen canvas → PNG/JPEG data URL
+// (§18, M2-09). PNG supports transparent backgrounds; JPEG takes a quality.
 import { renderObject } from '$lib/objects/renderers';
-import type { CanvasObject, GridConfig } from '$lib/objects/types';
+import { EXPORT_PAD, objectsBounds, type ExportRegion } from '$lib/io/exportRegion';
+import type { CanvasObject } from '$lib/objects/types';
 import type { ResolvedTheme } from '$lib/objects/colors';
 
-interface Bounds {
-	minX: number;
-	minY: number;
-	maxX: number;
-	maxY: number;
+export type ImageFormat = 'png' | 'jpeg';
+
+export interface ImageExportOptions {
+	format?: ImageFormat;
+	scale?: number;
+	/** JPEG quality 0..1 (default 0.9) */
+	quality?: number;
+	/** null = transparent; ignored for JPEG */
+	background?: string | null;
+	region?: ExportRegion | null;
+	theme?: ResolvedTheme;
+	getImage?: (src: string) => HTMLImageElement | undefined;
 }
 
-function computeBounds(objects: CanvasObject[]): Bounds | null {
-	let minX = Infinity;
-	let minY = Infinity;
-	let maxX = -Infinity;
-	let maxY = -Infinity;
-	for (const o of objects) {
-		const t = o.transform;
-		const x1 = t.x;
-		const y1 = t.y;
-		const x2 = t.x + (t.width ?? 0);
-		const y2 = t.y + (t.height ?? 0);
-		minX = Math.min(minX, x1, x2);
-		minY = Math.min(minY, y1, y2);
-		maxX = Math.max(maxX, x1, x2);
-		maxY = Math.max(maxY, y1, y2);
-	}
-	if (!isFinite(minX)) return null;
-	return { minX, minY, maxX, maxY };
+function fallbackRegion(objects: CanvasObject[]): ExportRegion {
+	const bounds = objectsBounds(objects);
+	if (!bounds) return { minX: 0, minY: 0, width: 1200, height: 800 };
+	return {
+		minX: bounds.minX - EXPORT_PAD,
+		minY: bounds.minY - EXPORT_PAD,
+		width: bounds.width + EXPORT_PAD * 2,
+		height: bounds.height + EXPORT_PAD * 2
+	};
 }
 
 /**
- * Render the board to a PNG data URL. Scale > 1 for hi-res export.
- * Works entirely off the main canvas (no DOM dependency beyond Image/Canvas).
+ * Render objects to a PNG/JPEG data URL at the given region and scale.
+ * Works entirely offscreen (no DOM dependency beyond Image/Canvas).
  */
-export async function boardToPngDataUrl(
-	objects: CanvasObject[],
-	opts: {
-		scale?: number;
-		background?: string;
-		grid?: GridConfig;
-		theme?: ResolvedTheme;
-		getImage?: (src: string) => HTMLImageElement | undefined;
-	} = {}
-): Promise<string> {
+export async function boardToImageDataUrl(objects: CanvasObject[], opts: ImageExportOptions = {}): Promise<string> {
+	const format = opts.format ?? 'png';
 	const scale = opts.scale ?? 2;
-	const bounds = computeBounds(objects);
-	if (!bounds) {
-		// empty board — export an empty canvas
-		const c = document.createElement('canvas');
-		c.width = 1200 * scale;
-		c.height = 800 * scale;
-		return c.toDataURL('image/png');
-	}
-
-	const pad = 20;
-	const width = Math.max(1, Math.ceil((bounds.maxX - bounds.minX + pad * 2) * scale));
-	const height = Math.max(1, Math.ceil((bounds.maxY - bounds.minY + pad * 2) * scale));
+	const region = opts.region ?? fallbackRegion(objects);
+	const width = Math.max(1, Math.round(region.width * scale));
+	const height = Math.max(1, Math.round(region.height * scale));
 
 	const canvas = document.createElement('canvas');
 	canvas.width = width;
 	canvas.height = height;
 	const ctx = canvas.getContext('2d');
-	if (!ctx) throw new Error('PNG export: canvas 2d context unavailable');
+	if (!ctx) throw new Error('image export: canvas 2d context unavailable');
 
-	ctx.fillStyle = opts.background ?? (opts.theme === 'light' ? '#f5f5f7' : '#0f1013');
-	ctx.fillRect(0, 0, width, height);
+	// transparency is PNG-only (JPEG has no alpha channel)
+	const transparent = opts.background === null && format === 'png';
+	if (!transparent) {
+		ctx.fillStyle = opts.background ?? (opts.theme === 'light' ? '#f5f5f7' : '#0f1013');
+		ctx.fillRect(0, 0, width, height);
+	}
 
-	// world → export-space: translate by -min + pad, then scale
+	// region world coords → export space
 	ctx.save();
 	ctx.scale(scale, scale);
-	ctx.translate(pad - bounds.minX, pad - bounds.minY);
-
-	for (const o of objects) {
-		renderObject(ctx, o, { getImage: opts.getImage, theme: opts.theme });
+	ctx.translate(-region.minX, -region.minY);
+	for (const obj of objects) {
+		renderObject(ctx, obj, { getImage: opts.getImage, theme: opts.theme });
 	}
 	ctx.restore();
 
+	if (format === 'jpeg') {
+		return canvas.toDataURL('image/jpeg', opts.quality ?? 0.9);
+	}
 	return canvas.toDataURL('image/png');
+}
+
+/** Backwards-compatible PNG helper (M0/M1 callers). */
+export function boardToPngDataUrl(
+	objects: CanvasObject[],
+	opts: Omit<ImageExportOptions, 'format'> = {}
+): Promise<string> {
+	return boardToImageDataUrl(objects, { ...opts, format: 'png' });
 }

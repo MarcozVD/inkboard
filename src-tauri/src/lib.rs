@@ -67,6 +67,7 @@ pub fn run() {
             commands::persistence::get_asset,
             commands::import::import_pick,
             commands::import::export_inkboard,
+            commands::import::save_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

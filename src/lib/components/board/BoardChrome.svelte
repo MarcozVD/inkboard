@@ -8,7 +8,7 @@
 	import { CREATE_ITEMS, TOOLBAR_TOOLS } from '$lib/board/boardInteractions';
 	import type { StyleControl } from '$lib/board/styleControls';
 	import type { BoardVersionMeta, GridConfig, ShapeType } from '$lib/objects/types';
-	import type { ExportFormat, ImportMode } from '$lib/io/transfer';
+	import type { ExportFormat, ExportImageOptions, ImportMode } from '$lib/io/transfer';
 
 	let {
 		state,
@@ -34,6 +34,7 @@
 			onStickyColor: (index: number) => void;
 			onCreate: (id: string) => void;
 			onExport: (format: ExportFormat) => void;
+			onExportImage: (options: ExportImageOptions) => void;
 			onImport: (mode?: ImportMode) => void;
 			onCloseSettings: () => void;
 			onGridChange: (grid: GridConfig) => void;
@@ -64,6 +65,7 @@
 		onStickyColor,
 		onCreate,
 		onExport,
+		onExportImage,
 		onImport,
 		onCloseSettings,
 		onGridChange,
@@ -87,7 +89,7 @@
 
 <CreatePanel open={showCreatePanel} items={CREATE_ITEMS} onSelect={onCreate} onClose={onToggleCreate} />
 
-<ExportMenu open={showExportMenu} {onExport} {onImport} />
+<ExportMenu open={showExportMenu} {onExport} {onExportImage} {onImport} />
 
 <SettingsPanel
 	open={showSettings}

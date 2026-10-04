@@ -11,13 +11,27 @@ import { resolveAssetSources } from '$lib/io/assets';
 import { createBoardFromImport, insertImportedBoard, validateBoardFile } from '$lib/io/importBoard';
 import { SCHEMA_VERSION, serializeBoard } from '$lib/io/InternalFormat';
 import { boardToSvg } from '$lib/io/SvgExporter';
-import { boardToPngDataUrl } from '$lib/io/PngExporter';
+import { boardToImageDataUrl } from '$lib/io/PngExporter';
+import { computeExportFrame, clampScale, type ExportMode, type ExportScale } from '$lib/io/exportRegion';
+import { insertImportedStickies } from '$lib/io/msWhiteboard';
 import { cssVar } from '$lib/objects/colors';
 import { themeController } from '$lib/board/theme.svelte';
+import { showNotice } from '$lib/stores/ui.svelte';
 
 export type ExportFormat = 'svg' | 'png' | 'json' | 'inkboard';
 /** `new` imports the file as a standalone board; `current` inserts it. */
 export type ImportMode = 'new' | 'current';
+
+/** Options for image exports (M2-09). */
+export interface ExportImageOptions {
+	format: 'png' | 'jpeg' | 'svg';
+	mode: ExportMode;
+	scale: ExportScale;
+	/** JPEG quality 0..1 */
+	quality?: number;
+	/** PNG/SVG only */
+	transparent?: boolean;
+}
 
 export function isTauri(): boolean {
 	return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -60,7 +74,21 @@ export function createTransferHandlers(host: TransferHost) {
 	return {
 		export(format: ExportFormat): void {
 			const engine = host.getEngine();
-			if (engine) void exportBoard(context(engine), format, { flush: host.flush });
+			if (!engine) return;
+			if (format === 'png' || format === 'svg') {
+				void exportImage(context(engine), { format, mode: 'board', scale: format === 'png' ? 2 : 1 });
+				return;
+			}
+			void exportBoard(context(engine), format, { flush: host.flush });
+		},
+		exportImage(options: ExportImageOptions): void {
+			const engine = host.getEngine();
+			if (engine) void exportImage(context(engine), options);
+		},
+		/** Context-menu action (M1-11): selection as PNG. */
+		exportSelection(): void {
+			const engine = host.getEngine();
+			if (engine) void exportImage(context(engine), { format: 'png', mode: 'selection', scale: 2 });
 		},
 		async import(mode: ImportMode = 'new'): Promise<void> {
 			const engine = host.getEngine();
@@ -95,6 +123,7 @@ export function downloadBlob(filename: string, blob: Blob): void {
 
 // ── export ──
 
+/** JSON / `.inkboard` document exports (PNG/JPG/SVG go through exportImage). */
 export async function exportBoard(
 	ctx: TransferContext,
 	format: ExportFormat,
@@ -112,32 +141,8 @@ export async function exportBoard(
 			await invoke('export_inkboard', { boardId: ctx.boardId });
 			return;
 		}
-
 		// M2-05: exported files are portable — asset refs become inline data URLs
 		const objects = await resolveAssetSources(ctx.engine.store.toJSON());
-		if (format === 'svg') {
-			const theme = themeController.resolved;
-			downloadFile(
-				`${base}.svg`,
-				boardToSvg(objects, { theme, background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013') }),
-				'image/svg+xml'
-			);
-			return;
-		}
-		if (format === 'png') {
-			const theme = themeController.resolved;
-			const getImage = createImageGetter();
-			await preloadImages(objects, getImage);
-			const dataUrl = await boardToPngDataUrl(objects, {
-				scale: 2,
-				theme,
-				background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013'),
-				getImage
-			});
-			const res = await fetch(dataUrl);
-			downloadBlob(`${base}.png`, await res.blob());
-			return;
-		}
 		const board: Board = {
 			id: ctx.boardId,
 			workspaceId: 'default',
@@ -158,26 +163,79 @@ export async function exportBoard(
 	}
 }
 
-/** Export the current selection as a PNG download (§M1-11). */
-export async function exportSelectionPng(engine: CanvasEngine): Promise<void> {
-	const selected = engine.selectionManager.selected.map((id) => engine.store.get(id)).filter(Boolean) as CanvasObject[];
-	if (selected.length === 0) return;
+/**
+ * Image export (M2-09): PNG/JPG/SVG with mode (board/selection/viewport),
+ * scale 1×–4× and optional transparent background.
+ */
+export async function exportImage(ctx: TransferContext, options: ExportImageOptions): Promise<void> {
+	const engine = ctx.engine;
+	const all = engine.store.toJSON();
+	const selection = engine.selectionManager.selected
+		.map((id) => engine.store.get(id))
+		.filter(Boolean) as CanvasObject[];
+	if (options.mode === 'selection' && selection.length === 0) return;
+
+	const meta = ctx.getMeta();
+	const scale = clampScale(options.scale);
+	const frame = computeExportFrame({
+		objects: all,
+		mode: options.mode,
+		camera: meta.camera,
+		view: meta.view,
+		scale,
+		selection
+	});
+	if (!frame) return;
+
+	const theme = themeController.resolved;
+	const pageBg = cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013');
+	const transparent = !!options.transparent && options.format !== 'jpeg';
+	const source = options.mode === 'selection' ? selection : all;
+	const objects = await resolveAssetSources(source);
+	const base =
+		options.mode === 'selection'
+			? `inkboard-selection-${Date.now()}`
+			: options.mode === 'viewport'
+				? `inkboard-visible-${Date.now()}`
+				: `inkboard-${ctx.boardId.slice(0, 8)}`;
 	try {
-		const theme = themeController.resolved;
-		const objects = await resolveAssetSources(selected);
+		if (options.format === 'svg') {
+			const svg = boardToSvg(objects, {
+				theme,
+				region: frame.region,
+				width: frame.width,
+				height: frame.height,
+				background: transparent ? undefined : pageBg
+			});
+			await saveExportFile(new Blob([svg], { type: 'image/svg+xml' }), `${base}.svg`);
+			return;
+		}
 		const getImage = createImageGetter();
 		await preloadImages(objects, getImage);
-		const dataUrl = await boardToPngDataUrl(objects, {
-			scale: 2,
+		const dataUrl = await boardToImageDataUrl(objects, {
+			format: options.format,
+			scale,
+			quality: options.quality,
+			background: transparent ? null : pageBg,
+			region: frame.region,
 			theme,
-			background: cssVar('--color-bg', theme === 'light' ? '#f5f5f7' : '#0f1013'),
 			getImage
 		});
 		const res = await fetch(dataUrl);
-		downloadBlob(`inkboard-selection-${Date.now()}.png`, await res.blob());
+		await saveExportFile(await res.blob(), `${base}.${options.format === 'jpeg' ? 'jpg' : 'png'}`);
 	} catch (err) {
-		console.error('export selection failed', err);
+		console.error('image export failed', err);
 	}
+}
+
+/** Tauri: Rust opens the native save dialog; browser: `<a download>` (M2-09). */
+async function saveExportFile(blob: Blob, filename: string): Promise<void> {
+	if (isTauri()) {
+		const bytes = new Uint8Array(await blob.arrayBuffer());
+		await invoke('save_export', bytes, { headers: { 'x-name': filename } });
+		return;
+	}
+	downloadBlob(filename, blob);
 }
 
 /** Loader for offscreen renders; exporters pass it to `renderObject`. */
@@ -308,10 +366,23 @@ async function applyImportPayload(
 		case 'inkboard':
 			await finishBoardImport(ctx, payload.boardJson, mode, host);
 			return;
-		case 'ms_whiteboard_zip':
-			insertImportedTexts(ctx.engine, payload.title, payload.texts ?? []);
+		case 'ms_whiteboard_zip': {
+			// M2-11: extracted texts become stickies centered on the viewport,
+			// as one undo step, with an honest note about the partial scope.
+			const meta = ctx.getMeta();
+			const center = {
+				x: (meta.view.width / 2 - meta.camera.x) / meta.camera.zoom,
+				y: (meta.view.height / 2 - meta.camera.y) / meta.camera.zoom
+			};
+			const count = insertImportedStickies(ctx.engine, payload.title, payload.texts ?? [], center);
+			if (count > 0) {
+				showNotice(
+					`Imported ${count} text ${count === 1 ? 'note' : 'notes'} as stickies — MS Whiteboard exports only text, not ink or shapes.`
+				);
+			}
 			ctx.onDirty?.();
 			return;
+		}
 		case 'image':
 			// Rust already sanitized and stored the asset (M2-08)
 			ctx.engine.imageTool.insertAsset(payload.src, payload.name);

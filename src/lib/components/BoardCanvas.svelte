@@ -15,14 +15,16 @@
 	import { resolveDoubleClick, groupSelection, ungroupSelection } from '$lib/board/groups';
 	import { toggleLockSelection } from '$lib/board/lock';
 	import { nudgeSelection } from '$lib/board/nudge';
+	import { runBoardCommand, selectAllObjects } from '$lib/board/boardCommands';
 	import { buildContextMenu, buildPaletteCommands, buildSelectionToolbar, type BoardActionDeps } from '$lib/board/boardInteractions';
-	import { createTransferHandlers, dropImage, exportSelectionPng, type ExportFormat, type ImportMode } from '$lib/io/transfer';
+	import { createTransferHandlers, dropImage, type ExportFormat, type ExportImageOptions, type ImportMode } from '$lib/io/transfer';
 	import type { Board, EditableObj, GridConfig, ShapeType } from '$lib/objects/types';
 	import { ui, uiActions } from '$lib/stores/ui.svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import TextEditor from '$lib/components/TextEditor.svelte';
 	import CanvasHint from '$lib/components/board/CanvasHint.svelte';
+	import BoardNotice from '$lib/components/board/BoardNotice.svelte';
 	import BoardChrome from '$lib/components/board/BoardChrome.svelte';
 	import ZoomControls from '$lib/components/board/ZoomControls.svelte';
 	import ContextMenu, { type MenuItem } from '$lib/components/menus/ContextMenu.svelte';
@@ -78,6 +80,10 @@
 		onDirty: () => markDirty()
 	});
 	const markDirty = () => runtime?.markDirty();
+	const afterCommand = () => {
+		syncShell();
+		markDirty();
+	};
 	$effect(() => {
 		document.documentElement.dataset.theme = themeController.resolved;
 		markDirty();
@@ -198,13 +204,7 @@
 			showPalette = true;
 		},
 		selectAll: () => {
-			if (!engine) return;
-			engine.selectionManager.selectMany(
-				engine.store
-					.getAll()
-					.filter((o) => o.type !== 'group')
-					.map((o) => o.id)
-			);
+			selectAllObjects(engine);
 			updateCtxBar();
 			markDirty();
 		},
@@ -221,50 +221,16 @@
 		pasteClipboard: (at?: { x: number; y: number } | null) => {
 			void clipboard.paste(at);
 		},
-		groupSelection: () => {
-			if (engine) {
-				groupSelection(engine);
-				syncShell();
-				markDirty();
-			}
-		},
-		ungroupSelection: () => {
-			if (engine) {
-				ungroupSelection(engine);
-				syncShell();
-				markDirty();
-			}
-		},
-		toggleLockSelection: () => {
-			if (engine) {
-				toggleLockSelection(engine);
-				syncShell();
-				markDirty();
-			}
-		},
-		nudgeSelection: (dx: number, dy: number) => {
-			if (engine) {
-				nudgeSelection(engine, dx, dy);
-				syncShell();
-				markDirty();
-			}
-		},
+		groupSelection: () => runBoardCommand(engine, afterCommand, groupSelection),
+		ungroupSelection: () => runBoardCommand(engine, afterCommand, ungroupSelection),
+		toggleLockSelection: () => runBoardCommand(engine, afterCommand, toggleLockSelection),
+		nudgeSelection: (dx: number, dy: number) => runBoardCommand(engine, afterCommand, (e) => nudgeSelection(e, dx, dy)),
 		toggleShortcutsOverlay: () => {
 			showShortcuts = !showShortcuts;
 		},
-		exportSelection: () => {
-			if (engine) void exportSelectionPng(engine);
-		},
-		undo: () => {
-			engine?.history.undo();
-			syncShell();
-			markDirty();
-		},
-		redo: () => {
-			engine?.history.redo();
-			syncShell();
-			markDirty();
-		},
+		exportSelection: () => transfer.exportSelection(),
+		undo: () => runBoardCommand(engine, afterCommand, (e) => e.history.undo()),
+		redo: () => runBoardCommand(engine, afterCommand, (e) => e.history.redo()),
 		zoomFit: zoom.zoomFit,
 		onExport: (format: ExportFormat) => {
 			showExportMenu = false;
@@ -340,6 +306,8 @@
 
 	<CanvasHint visible={objectCount === 0 && !textEdit.editingObj} />
 
+	<BoardNotice />
+
 	<BoardChrome
 		state={{ activeTool, currentShape, stickyColor: engine?.stickyTool.currentColor, styleControls: styles.toolControls, showCreatePanel, showExportMenu, showSettings, grid, theme: themeController.choice, versions: versionBridge.versions }}
 		actions={{
@@ -353,6 +321,10 @@
 				if (id === 'sticky' || id === 'text' || id === 'shape' || id === 'image') setTool(id as ToolId);
 			},
 			onExport: deps.onExport,
+			onExportImage: (options: ExportImageOptions) => {
+				showExportMenu = false;
+				transfer.exportImage(options);
+			},
 			onImport: (mode?: ImportMode) => void transfer.import(mode),
 			onCloseSettings: () => (showSettings = false),
 			onGridChange: (g: GridConfig) => {

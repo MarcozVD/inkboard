@@ -5,7 +5,9 @@ export const ui = $state({
 	boardName: 'Inkboard',
 	saveState: 'idle' as 'idle' | 'saving' | 'saved',
 	canUndo: false,
-	canRedo: false
+	canRedo: false,
+	/** transient message (M2-11 honest import scope) */
+	notice: null as string | null
 });
 
 export const uiActions = $state({
@@ -17,16 +19,33 @@ export const uiActions = $state({
 	back: undefined as (() => void) | undefined
 });
 
+let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Show a transient banner (M2-11 honest import scope and future notices). */
+export function showNotice(message: string, ms = 4500): void {
+	ui.notice = message;
+	if (noticeTimer) clearTimeout(noticeTimer);
+	noticeTimer = setTimeout(() => {
+		ui.notice = null;
+		noticeTimer = null;
+	}, ms);
+}
+
 /** Reset shell state when the board unmounts (B14) — Home must not inherit it. */
 export function resetUi(): void {
 	ui.boardName = 'Inkboard';
 	ui.saveState = 'idle';
 	ui.canUndo = false;
 	ui.canRedo = false;
+	ui.notice = null;
 	uiActions.undo = undefined;
 	uiActions.redo = undefined;
 	uiActions.rename = undefined;
 	uiActions.openSettings = undefined;
 	uiActions.share = undefined;
 	uiActions.back = undefined;
+	if (noticeTimer) {
+		clearTimeout(noticeTimer);
+		noticeTimer = null;
+	}
 }

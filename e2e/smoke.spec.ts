@@ -112,11 +112,13 @@ test.describe('board canvas', () => {
 		await expect(page.getByTestId('save-indicator')).toHaveText('✓', { timeout: 7000 });
 	});
 
-	test('export menu offers png/svg/json', async ({ page }) => {
+	test('export menu offers image options and JSON', async ({ page }) => {
 		await createBoard(page);
 		await page.getByTestId('export').click();
-		await expect(page.getByTestId('export-png')).toBeVisible();
-		await expect(page.getByTestId('export-svg')).toBeVisible();
+		await expect(page.getByTestId('export-format')).toBeVisible();
+		await expect(page.getByTestId('export-mode')).toBeVisible();
+		await expect(page.getByTestId('export-scale')).toBeVisible();
+		await expect(page.getByTestId('export-run')).toBeVisible();
 		await expect(page.getByTestId('export-json')).toBeVisible();
 	});
 });

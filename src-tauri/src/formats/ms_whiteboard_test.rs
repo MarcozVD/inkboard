@@ -65,6 +65,38 @@ fn parse_zip_extracts_text_from_json() {
 }
 
 #[test]
+fn fixture_zip_yields_sticky_texts_in_order() {
+    // resembles a MS Whiteboard ZIP export: nested JSON with title/text fields
+    let mut buf = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("whiteboard.json", opts).unwrap();
+        zip.write_all(
+            br#"{
+                "title": "Sprint board",
+                "notes": [
+                    { "text": "first note" },
+                    { "content": "second note" },
+                    { "text": "third note" }
+                ]
+            }"#,
+        )
+        .unwrap();
+        zip.finish().unwrap();
+    }
+
+    let content = parse_ms_whiteboard_zip(&buf).expect("fixture parses");
+    assert_eq!(content.title.as_deref(), Some("Sprint board"));
+    // title + texts feed the sticky grid (M2-11), preserving order
+    assert_eq!(
+        content.texts,
+        vec!["first note", "second note", "third note"]
+    );
+}
+
+#[test]
 fn parse_zip_rejects_non_whiteboard() {
     let mut buf = Vec::new();
     {

@@ -23,12 +23,19 @@ describe('release workflow (M4-06)', () => {
 		jobs: {
 			release: {
 				strategy: { matrix: { include: { platform: string; args: string }[] } };
-				steps: { uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> }[];
+				steps: {
+					name?: string;
+					uses?: string;
+					run?: string;
+					with?: Record<string, unknown>;
+					env?: Record<string, string>;
+				}[];
 			};
 		};
 	};
 	const steps = workflow.jobs.release.steps;
 	const stepText = JSON.stringify(steps);
+	const guardRun = steps.find((step) => step.name === 'Require updater signing secrets')?.run ?? '';
 
 	it('runs manually and on v* tags only', () => {
 		expect(workflow.on.workflow_dispatch).toBeDefined();
@@ -53,8 +60,24 @@ describe('release workflow (M4-06)', () => {
 	it('fails clearly when the signing secrets are missing', () => {
 		expect(stepText).toContain('TAURI_SIGNING_PRIVATE_KEY');
 		expect(stepText).toContain('TAURI_SIGNING_PRIVATE_KEY_PASSWORD');
-		expect(stepText).toContain('Missing TAURI_SIGNING_PRIVATE_KEY');
 		expect(stepText).toContain('check-versions.mjs');
+		expect(guardRun).toContain('is empty or not set');
+	});
+
+	it('guards the signing secrets against BOM, CRLF, trailing whitespace and bad base64', () => {
+		// UTF-8 BOM (EF BB BF) rejected for key and password
+		expect(guardRun.match(/\\xef\\xbb\\xbf/g)?.length).toBeGreaterThanOrEqual(2);
+		// carriage returns rejected
+		expect(guardRun).toMatch(/contains carriage returns/);
+		// trailing whitespace/newlines rejected
+		expect(guardRun).toMatch(/\[\[:space:\]\]\$/);
+		// key must be valid base64 decoding to a minisign secret key
+		expect(guardRun).toContain('base64 -d');
+		expect(guardRun).toContain('untrusted comment');
+		// never leak secret material: no echo of the values, no redirections, no set -x
+		expect(guardRun).not.toMatch(/echo[^\n]*\$TAURI_SIGNING_PRIVATE_KEY/);
+		expect(guardRun).not.toMatch(/TAURI_SIGNING_PRIVATE_KEY[^=\n]*>/);
+		expect(guardRun).not.toContain('set -x');
 	});
 
 	it('parses every workflow in .github/workflows', () => {

@@ -66,11 +66,36 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        # Fail in seconds on malformed secrets (e.g. a UTF-8 BOM added by
+        # PowerShell). Never echo or persist the secret values themselves.
         run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ] || [ -z "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
-            echo "::error::Missing TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD repository secrets (M4-06). Add them in Settings → Secrets and variables → Actions."
-            exit 1
-          fi
+          set -euo pipefail
+          fail() { echo "::error::TAURI updater secret problem: $1"; exit 1; }
+          key=${TAURI_SIGNING_PRIVATE_KEY:-}
+          pass=${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}
+          [ -n "$key" ] || fail "TAURI_SIGNING_PRIVATE_KEY is empty or not set (Settings → Secrets and variables → Actions)."
+          [ -n "$pass" ] || fail "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is empty or not set."
+
+          # UTF-8 BOM (EF BB BF) at the start of either value
+          case $key in $'\xef\xbb\xbf'*) fail "TAURI_SIGNING_PRIVATE_KEY starts with a UTF-8 BOM. Store it as pure base64 (Linux: base64 -w0 inkboard-updater.key)." ;; esac
+          case $pass in $'\xef\xbb\xbf'*) fail "TAURI_SIGNING_PRIVATE_KEY_PASSWORD starts with a UTF-8 BOM." ;; esac
+
+          # carriage returns and trailing whitespace/newlines
+          case $key in *$'\r'*) fail "TAURI_SIGNING_PRIVATE_KEY contains carriage returns (\\r) — likely pasted from a CRLF file." ;; esac
+          case $pass in *$'\r'*) fail "TAURI_SIGNING_PRIVATE_KEY_PASSWORD contains carriage returns (\\r)." ;; esac
+          [[ $key =~ [[:space:]]$ ]] && fail "TAURI_SIGNING_PRIVATE_KEY ends with whitespace/newline."
+          [[ $pass =~ [[:space:]]$ ]] && fail "TAURI_SIGNING_PRIVATE_KEY_PASSWORD ends with whitespace/newline."
+
+          # must decode as base64 (GNU and BSD agree on -d)...
+          decoded=$(printf '%s' "$key" | tr -d '\n' | base64 -d 2>/dev/null) \
+            || fail "TAURI_SIGNING_PRIVATE_KEY is not valid base64 (it must be the base64 of the minisign secret key file)."
+          # ...into a minisign secret key ("untrusted comment" header; a BOM
+          # inside the decoded text also fails this check)
+          case $decoded in
+            *"untrusted comment"*) ;;
+            *) fail "decoded TAURI_SIGNING_PRIVATE_KEY is not a minisign secret key (expected to contain 'untrusted comment')." ;;
+          esac
+          echo "Updater signing secrets present and well-formed."
 
       - name: Build and create draft release
         uses: tauri-apps/tauri-action@v0

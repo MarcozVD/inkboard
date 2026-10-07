@@ -174,15 +174,21 @@ All tasks implemented and tested. Not usable end to end until a first release ex
   file; the one in `tauri.conf.json` had been corrupted by a manual transcription.
   `src/lib/updaterKey.test.ts` decodes the key, checks the canonical 42-byte minisign format
   (`Ed` algorithm, key id matching the comment) and rejects the corrupted string (B20).
+- The release workflow now validates the updater signing secrets in seconds and fails with a
+  clear `::error::` when either value is empty, carries a UTF-8 BOM, contains CRLF or trailing
+  whitespace/newlines, or is not base64 that decodes to a minisign secret key. The first
+  `v0.5.0` run had died about 14 minutes in because the key had been loaded with a BOM from
+  PowerShell; after reloading the secrets without one the rerun passed on all three OS (B21).
+  `src/lib/workflows.test.ts` covers the guard and asserts no secret value is printed.
 - The release binary dropped from 15.49 MB to 10.15 MB, back under the RNF-06 budget: the
   release profile sets `panic = "abort"` and the panic hook writes a synchronous `panic.log`
   to the system log directory before aborting, so a crash still leaves a trace.
 
 #### Known gaps before the first release
 
-- The updater signing secrets `TAURI_SIGNING_PRIVATE_KEY` and
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are **not loaded in the repository yet**, so the
-  release cannot sign its artifacts. They must be loaded before a tag.
+- The release is **drafted, not published**: the GitHub Release `v0.5.0` exists as a draft
+  with the installers, their `.sig` files and `latest.json`, but the updater only sees a
+  release once the user publishes it from the Releases page.
 - Nothing is code-signed or notarized (decision D4): Windows shows the SmartScreen warning
   and macOS Gatekeeper blocks the `.dmg` until the user opens it manually. Signing is a
   prerequisite for public distribution.

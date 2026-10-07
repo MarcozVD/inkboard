@@ -7,7 +7,7 @@
 use crate::commands::persistence::DbState;
 use crate::formats::inkboard;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub const OPEN_BOARD_EVENT: &str = "inkboard:open-board";
@@ -23,6 +23,38 @@ pub fn inkboard_paths_from_args(args: &[String]) -> Vec<PathBuf> {
         .filter(|arg| arg.to_ascii_lowercase().ends_with(".inkboard"))
         .map(PathBuf::from)
         .collect()
+}
+
+/// Log directory used by the panic hook to append synchronously.
+static PANIC_LOG_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// Install the M4-04 panic hook. Besides `log::error!` (async file writer),
+/// it appends to `<log dir>/panic.log` **synchronously** so the message
+/// survives `panic = "abort"` in the release build (RNF-06 size profile).
+pub fn install_panic_hook(log_dir: Option<PathBuf>) {
+    let _ = PANIC_LOG_DIR.set(log_dir);
+    std::panic::set_hook(Box::new(|info| {
+        let message = format!("panic: {info}");
+        log::error!("{message}");
+        eprintln!("{message}");
+        if let Some(Some(dir)) = PANIC_LOG_DIR.get() {
+            let _ = append_panic_log(dir, &message);
+        }
+    }));
+}
+
+fn append_panic_log(dir: &Path, message: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    std::fs::create_dir_all(dir)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("panic.log"))?;
+    writeln!(file, "[{now}] {message}")
 }
 
 /// Debug logs in dev builds, info in release (M4-04).
@@ -128,6 +160,35 @@ fn open_in_file_manager(path: &Path) -> Result<(), String> {
 mod tests {
     use super::{inkboard_paths_from_args, log_level, LOG_ROTATION_KEEP};
     use std::path::PathBuf;
+
+    #[test]
+    fn panic_hook_persists_panics_synchronously() {
+        // install the real hook, let a panic run through it, and read back
+        // what was written — this is what survives `panic = "abort"`
+        let dir = std::env::temp_dir().join(format!(
+            "inkboard-panic-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let previous = std::panic::take_hook();
+        let _ = std::panic::catch_unwind(|| {
+            // OnceLock in `install_panic_hook` accepts the first value per test
+            // binary; keep this the only test that installs the hook
+            super::install_panic_hook(Some(dir.clone()));
+            panic!("boom 42");
+        });
+        let _ = std::panic::take_hook(); // drop our hook
+        std::panic::set_hook(previous);
+
+        let content = std::fs::read_to_string(dir.join("panic.log")).expect("panic.log");
+        assert!(content.contains("boom 42"), "got: {content}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn argv_parsing_skips_the_executable_and_finds_inkboard_files() {

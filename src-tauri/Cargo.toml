@@ -56,3 +56,5 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true
+# RNF-06: smaller binary. The panic hook (M4-04) still runs before abort.
+panic = "abort"

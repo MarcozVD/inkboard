@@ -97,10 +97,9 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // M4-04: log panics before the process unwinds
-            std::panic::set_hook(Box::new(|info| {
-                log::error!("panic: {info}");
-            }));
+            // M4-04: log panics; the hook also writes panic.log synchronously
+            // so nothing is lost when the release build aborts (panic = "abort")
+            commands::desktop::install_panic_hook(app.handle().path().app_log_dir().ok());
 
             app.manage(PendingOpens::default());
 

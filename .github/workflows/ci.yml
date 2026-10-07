@@ -43,6 +43,9 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+      - name: Check version consistency
+        run: node scripts/check-versions.mjs
+
       - name: Unit tests
         run: pnpm test
 

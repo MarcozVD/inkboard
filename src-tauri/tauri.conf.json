@@ -29,7 +29,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1NjZDMjI5QjNBMUIyNzIKUldSeXNxR3pLY0ptMWJ6b3ZZQ0lheWNIejBEU1hhSjFobW0wTzFqNTNBUnVRUDZURnNuTEpRWjBLCg==",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ1NjZDMjI5QjNBMUIyNzIKUldSeXNxR3pLY0ptMWJ6b3ZZQ0lheWNIejBEU1hhSjFobW1PMWo1M0FSdVFQNlRGc25MSlFaMEsK",
       "endpoints": ["https://github.com/MarcozVD/inkboard/releases/latest/download/latest.json"]
     }
   },

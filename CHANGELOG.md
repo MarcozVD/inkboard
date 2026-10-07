@@ -163,12 +163,26 @@ All tasks implemented and tested. Not usable end to end until a first release ex
   been failing only on `windows-latest` because dependency discovery reloaded the page
   mid-click.
 
+#### Fixed
+
+- Tauri plugin versions aligned between the Rust crates and the npm packages, so
+  `pnpm tauri build` stops rejecting the release: `@tauri-apps/plugin-process` (`2.3`) and
+  `@tauri-apps/plugin-updater` (`2.12`) now match the major.minor of their `tauri-plugin-*`
+  crates. `scripts/check-versions.mjs` reads both `Cargo.lock` and `pnpm-lock.yaml`, maps each
+  crate to its npm counterpart and fails CI when any pair differs in major.minor (B19).
+- The updater public key was replaced by the value taken verbatim from the minisign `.pub`
+  file; the one in `tauri.conf.json` had been corrupted by a manual transcription.
+  `src/lib/updaterKey.test.ts` decodes the key, checks the canonical 42-byte minisign format
+  (`Ed` algorithm, key id matching the comment) and rejects the corrupted string (B20).
+- The release binary dropped from 15.49 MB to 10.15 MB, back under the RNF-06 budget: the
+  release profile sets `panic = "abort"` and the panic hook writes a synchronous `panic.log`
+  to the system log directory before aborting, so a crash still leaves a trace.
+
 #### Known gaps before the first release
 
 - The updater signing secrets `TAURI_SIGNING_PRIVATE_KEY` and
-  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are **not loaded in the repository yet**, and
-  `plugins.updater.pubkey` is still the example key from the Tauri template. Both must be
-  fixed before a tag, or every update is rejected by the signature check.
+  `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` are **not loaded in the repository yet**, so the
+  release cannot sign its artifacts. They must be loaded before a tag.
 - Nothing is code-signed or notarized (decision D4): Windows shows the SmartScreen warning
   and macOS Gatekeeper blocks the `.dmg` until the user opens it manually. Signing is a
   prerequisite for public distribution.
